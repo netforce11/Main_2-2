@@ -1,0 +1,115 @@
+{
+  "CallPutGrid": {
+    "dark": true,
+    "font": 16
+  },
+  "MultiPriceGrid": {
+    "dark": true,
+    "font": 16
+  },
+  "1": {
+    "dark": true,
+    "font": 21,
+    "sym": "SPY",
+    "expiry": "CUSTOM",
+    "zone": "OTM",
+    "n": 20,
+    "h_main_split": [
+      98,
+      1803
+    ],
+    "ctrl_split": [
+      329,
+      203,
+      186,
+      371,
+      221,
+      184,
+      255
+    ],
+    "v_split": [
+      52,
+      395,
+      565
+    ],
+    "tbl_split": [
+      332,
+      457,
+      422,
+      565
+    ],
+    "watch_split": [
+      1327,
+      467
+    ],
+    "bot_split": [
+      1327,
+      467
+    ],
+    "alert_sound": "",
+    "watch_font_size": 13
+  },
+  "3": {
+    "dark": true,
+    "font": 23
+  },
+  "7": {
+    "dark": true,
+    "font": 16
+  },
+  "2": {
+    "dark": true,
+    "font": 16
+  },
+  "5": {
+    "dark": true,
+    "font": 16
+  },
+  "10": {
+    "dark": true,
+    "font": 16,
+    "expiry": "CUSTOM",
+    "n": 10,
+    "exch": "1500",
+    "v_split": [
+      70,
+      351,
+      544
+    ],
+    "mid_split": [
+      417,
+      835,
+      626
+    ],
+    "bot_split": [
+      280,
+      1614
+    ]
+  },
+  "9": {
+    "dark": true,
+    "font": 28
+  },
+  "8": {
+    "dark": true,
+    "font": 16
+  },
+  "4": {
+    "dark": true,
+    "font": 21,
+    "strat_idx": 0,
+    "main_hsplit": [
+      563,
+      1333
+    ],
+    "left_vsplit": [
+      699,
+      280
+    ],
+    "right_vsplit": [
+      324,
+      373,
+      274
+    ]
+  }
+}

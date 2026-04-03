@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1분봉 차트  v1.0</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+/* ── 기본 리셋 & CSS 변수 ─────────────────────────── */
+:root {
+  --bg:        #0d0d1a;
+  --panel:     #12122a;
+  --card:      #1a1a2e;
+  --border:    #2a2a4a;
+  --accent:    #5dade2;
+  --gold:      #ffd700;
+  --green:     #00e676;
+  --red:       #ff4c6a;
+  --orange:    #ff9800;
+  --purple:    #9c27b0;
+  --text:      #dde0f0;
+  --text-dim:  #888aaa;
+  --candle-up: #3c78ff;
+  --candle-dn: #ff3c3c;
+  --row-hi:    rgba(180,20,20,0.45);
+  --row-mid:   rgba(150,80,10,0.45);
+  --row-lo:    rgba(100,100,10,0.35);
+  --sidebar-w: 252px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+  font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; font-size: 13px; }
+
+/* ── 레이아웃: 사이드바 | 콘텐츠 ────────────────── */
+#app { display: flex; height: 100vh; overflow: hidden; }
+
+/* ── 사이드바 ─────────────────────────────────────── */
+#sidebar {
+  width: var(--sidebar-w); min-width: var(--sidebar-w);
+  background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#sidebar-scroll {
+  flex: 1; overflow-y: auto; overflow-x: hidden; padding: 8px 8px 16px;
+}
+#sidebar-scroll::-webkit-scrollbar { width: 5px; }
+#sidebar-scroll::-webkit-scrollbar-track { background: var(--panel); }
+#sidebar-scroll::-webkit-scrollbar-thumb { background: #334; border-radius: 3px; }
+
+.s-group { background: var(--card); border: 1px solid var(--border);
+  border-radius: 5px; padding: 8px; margin-bottom: 6px; }
+.s-group legend, .s-label {
+  color: var(--accent); font-weight: bold; font-size: 11px;
+  margin-bottom: 5px; display: block; }
+.s-sep { border: none; border-top: 1px solid var(--border); margin: 6px 0; }
+
+/* 라디오 버튼 */
+.radio-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.radio-row label { display: flex; align-items: center; gap: 4px;
+  cursor: pointer; color: var(--text); font-size: 12px; }
+.radio-row input[type=radio] { accent-color: var(--accent); }
+
+/* 입력 요소 */
+input[type=text], input[type=number], select {
+  width: 100%; background: #08080f; color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 4px 7px; font-size: 12px; outline: none;
+}
+input[type=text]:focus, input[type=number]:focus, select:focus {
+  border-color: var(--accent); }
+input[type=text]::placeholder { color: var(--text-dim); }
+
+/* 버튼 */
+.btn {
+  background: var(--card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 4px 10px; cursor: pointer; font-size: 12px;
+  transition: background .15s;
+}
+.btn:hover { background: #2a2a5a; }
+.btn.btn-green { background: #1a4a2a; border-color: #2a6a3a; color: #fff; font-weight: bold; }
+.btn.btn-green:hover { background: #1a6b3c; }
+.btn.btn-green.active { background: #6b0000; border-color: #a00; }
+.btn.btn-sm { padding: 2px 7px; font-size: 11px; }
+.btn-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+
+/* 관심종목 리스트 */
+#watch-list {
+  max-height: 90px; overflow-y: auto; background: #08080f;
+  border: 1px solid var(--border); border-radius: 4px; margin-top: 4px;
+}
+#watch-list::-webkit-scrollbar { width: 4px; }
+#watch-list::-webkit-scrollbar-thumb { background: #334; }
+.watch-item {
+  padding: 3px 8px; cursor: pointer; border-bottom: 1px solid #1a1a30;
+  font-size: 12px; color: var(--accent);
+}
+.watch-item:hover { background: #1c1c3a; }
+
+/* 필터 빠른 버튼 */
+.filter-btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin-top: 4px; }
+
+/* 캘린더 */
+#cal-wrap { background: #08080f; border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px; margin-top: 4px; }
+#cal-month-nav { display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 4px; }
+#cal-month-nav button { background: none; border: none; color: var(--accent);
+  cursor: pointer; font-size: 16px; padding: 0 4px; }
+#cal-month-label { color: var(--gold); font-weight: bold; font-size: 12px; }
+#cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+.cal-cell {
+  text-align: center; padding: 3px 2px; font-size: 11px;
+  cursor: pointer; border-radius: 3px; color: var(--text-dim);
+}
+.cal-cell:hover { background: #1c1c3a; color: var(--text); }
+.cal-cell.today { color: var(--gold); font-weight: bold; }
+.cal-cell.selected { background: var(--accent); color: #fff !important; }
+.cal-cell.header { color: var(--accent); cursor: default; font-weight: bold; }
+.cal-cell.header:hover { background: none; }
+.cal-cell.empty { cursor: default; }
+.cal-cell.empty:hover { background: none; }
+
+/* 연속보기 체크박스 */
+.chk-row { display: flex; gap: 8px; }
+.chk-row label { display: flex; align-items: center; gap: 4px;
+  cursor: pointer; font-size: 12px; }
+.chk-row input[type=checkbox] { accent-color: var(--accent); }
+
+/* 피크 결과 */
+.peak-result {
+  background: #08080f; border: 1px solid var(--border);
+  border-radius: 4px; padding: 6px; margin-top: 4px;
+  font-size: 12px; color: var(--text-dim); white-space: pre-line;
+  min-height: 36px;
+}
+.peak-result.red { color: #c62828; font-weight: bold; }
+.peak-result.green { color: #1b5e20; font-weight: bold; }
+.peak-result.purple { color: #ce93d8; font-weight: bold;
+  border-color: var(--purple); }
+
+/* 상태 라벨 */
+#status-lbl { font-size: 12px; font-weight: bold; color: var(--gold);
+  padding: 3px 0; min-height: 20px; }
+
+/* ── 우측 콘텐츠 영역 ────────────────────────────── */
+#content { flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; padding: 4px; gap: 4px; min-width: 0; }
+
+/* 라인 컨트롤 바 */
+#line-bar {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 8px; flex-shrink: 0;
+}
+#line-bar input { width: 90px; }
+.hline-chk-row { display: flex; align-items: center; gap: 3px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 8px; flex-shrink: 0; font-size: 11px;
+  flex-wrap: wrap; }
+.hline-chk-row label { color: #666; font-size: 11px;
+  display: inline-flex; align-items: center; gap: 2px; cursor: pointer;
+  padding: 1px 4px; border-radius: 3px; border: 1px solid transparent; white-space: nowrap; }
+.hline-chk-row label.active { color: #00e5ff; font-weight: bold;
+  border-color: #00e5ff44; background: #00e5ff11; }
+#zoom-time-lbl { margin-left: auto; color: var(--gold);
+  font-size: 11px; font-weight: bold; white-space: nowrap; }
+
+/* 테이블 영역 */
+#tbl-row { display: flex; gap: 4px; flex: 1; min-height: 0; overflow: hidden; }
+.tbl-box { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.tbl-box-title {
+  color: var(--accent); font-weight: bold; font-size: 11px;
+  padding: 2px 4px; flex-shrink: 0;
+}
+.tbl-scroll { flex: 1; overflow: auto; background: #08080f;
+  border: 1px solid var(--border); border-radius: 4px; }
+.tbl-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+.tbl-scroll::-webkit-scrollbar-thumb { background: #334; border-radius: 3px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+thead th {
+  background: #141430; color: var(--accent); position: sticky; top: 0; z-index: 1;
+  padding: 4px 6px; text-align: center; border-bottom: 1px solid var(--border);
+  white-space: nowrap; font-size: 11px;
+}
+tbody td { padding: 3px 6px; text-align: center; color: var(--text);
+  border-bottom: 1px solid #1a1a30; white-space: nowrap; }
+tbody tr:hover { background: #1c1c3a !important; }
+tbody tr.selected { background: #1c3a6a !important; }
+.row-hi { background: var(--row-hi); }
+.row-mid { background: var(--row-mid); }
+.row-lo { background: var(--row-lo); }
+
+/* 우측 테이블 헤더 행 */
+#rtbl-header { display: flex; align-items: center; gap: 6px;
+  padding: 2px 0; flex-shrink: 0; }
+#rtbl-header select { width: 130px; flex-shrink: 0; }
+#rtbl-header input { width: 80px; flex-shrink: 0; }
+
+/* 차트 영역 */
+#chart-wrap {
+  flex: 3; display: flex; flex-direction: column;
+  background: #0d0d1a; border: 1px solid var(--border);
+  border-radius: 4px; overflow: hidden; min-height: 200px;
+}
+#chart { flex: 1; }
+#vol-chart { height: 90px; border-top: 1px solid var(--border); overflow: hidden; }
+
+/* 폰트 크기 슬라이더 (상단 바) */
+#topbar {
+  background: #07070f; border-bottom: 1px solid var(--border);
+  padding: 3px 8px; display: flex; align-items: center; gap: 8px;
+  font-size: 11px; flex-shrink: 0;
+}
+#topbar label { color: var(--accent); }
+#topbar input[type=range] { width: 110px; accent-color: var(--accent); }
+#topbar #font-val { color: var(--gold); min-width: 30px; }
+.toggle-dark { padding: 2px 8px; font-size: 11px; }
+
+/* ── 다크/라이트 전환 ─────────────────────────────── */
+body.light {
+  --bg: #f0f2f5; --panel: #ffffff; --card: #e8eaf0;
+  --border: #cccccc; --text: #111111; --text-dim: #666;
+  --row-hi: rgba(255,180,180,0.6); --row-mid: rgba(255,220,170,0.6);
+  --row-lo: rgba(255,255,180,0.5);
+}
+body.light input[type=text], body.light input[type=number],
+body.light select { background: #fff; color: #111; }
+body.light #watch-list, body.light .tbl-scroll,
+body.light table tbody td { background: #fff; color: #111; }
+body.light table thead th { background: #e3f2fd; color: #1565c0; }
+body.light #line-bar, body.light .hline-chk-row { background: #fff; }
+
+/* ── 로딩 오버레이 ───────────────────────────────── */
+#loading {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  align-items: center; justify-content: center; z-index: 999; font-size: 16px;
+  color: var(--gold); gap: 10px;
+}
+#loading.show { display: flex; }
+.spinner { width: 22px; height: 22px; border: 3px solid #444;
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── API 키 모달 ─────────────────────────────────── */
+#apikey-modal {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.75);
+  align-items: center; justify-content: center; z-index: 1000;
+}
+#apikey-modal.show { display: flex; }
+.modal-box {
+  background: var(--panel); border: 1px solid var(--accent);
+  border-radius: 8px; padding: 20px; min-width: 340px; max-width: 420px;
+}
+.modal-box h3 { color: var(--accent); margin-bottom: 12px; font-size: 14px; }
+.modal-box p { color: var(--text-dim); font-size: 12px; margin-bottom: 10px; line-height: 1.6; }
+.modal-box input { margin-bottom: 10px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<!-- 로딩 오버레이 -->
+<div id="loading"><div class="spinner"></div><span id="loading-msg">데이터 로딩 중...</span></div>
+
+<!-- API 키 모달 -->
+<div id="apikey-modal">
+  <div class="modal-box">
+    <h3>🔑 Polygon.io API 키 설정</h3>
+    <p>Polygon.io API 키를 입력하세요.<br>
+      <a href="https://polygon.io" target="_blank" style="color:var(--accent)">polygon.io</a>에서
+      무료 계정으로 발급 가능합니다.</p>
+    <input type="text" id="apikey-input" placeholder="xxxxxxxxxxxxxxxxxxxx">
+    <div class="modal-actions">
+      <button class="btn" onclick="closeApiModal()">취소</button>
+      <button class="btn btn-green" onclick="saveApiKey()">저장</button>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+<!-- ════════════════════════════════════════════════
+     좌측 사이드바
+════════════════════════════════════════════════ -->
+<div id="sidebar">
+  <!-- 상단 바 (폰트/다크) -->
+  <div id="topbar">
+    <label>폰트:</label>
+    <input type="range" id="font-slider" min="10" max="22" value="13"
+      oninput="applyFont(this.value)">
+    <span id="font-val">13px</span>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+      <button class="btn toggle-dark" onclick="toggleDark()">🌙 다크</button>
+      <button class="btn btn-sm" onclick="showApiModal()">🔑 API키</button>
+    </div>
+  </div>
+
+  <div id="sidebar-scroll">
+
+    <!-- 데이터 소스 -->
+    <div class="s-group">
+      <span class="s-label">📡 데이터 소스</span>
+      <div class="radio-row">
+        <label><input type="radio" name="src" value="polygon" checked> Polygon.io</label>
+      </div>
+      <div id="lbl-mode" style="color:var(--text-dim);font-size:11px;margin-top:3px;">Polygon.io</div>
+    </div>
+
+    <!-- 종목 / 관심종목 -->
+    <div class="s-group">
+      <span class="s-label">📌 종목 / 관심종목</span>
+      <input type="text" id="sym-in" value="SPY" placeholder="심볼 입력"
+        onkeydown="if(event.key==='Enter') startStream()">
+      <div id="watch-list"></div>
+      <div class="btn-row">
+        <button class="btn btn-sm" onclick="watchAdd()">추가</button>
+        <button class="btn btn-sm" onclick="watchDel()">삭제</button>
+      </div>
+    </div>
+
+    <!-- 필터 -->
+    <div class="s-group">
+      <span class="s-label">💱 환율 / 필터</span>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+        <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">환율(원)</span>
+        <input type="number" id="fx-in" value="1480" style="width:80px;">
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">필터(억)</span>
+        <input type="number" id="high-in" value="3000" style="width:80px;">
+      </div>
+      <div class="filter-btns">
+        <button class="btn btn-sm" onclick="setFilter(1000)">1000억</button>
+        <button class="btn btn-sm" onclick="setFilter(3000)">3000억</button>
+        <button class="btn btn-sm" onclick="setFilter(5000)">5000억</button>
+        <button class="btn btn-sm" onclick="setFilter(7500)">7500억</button>
+      </div>
+    </div>
+
+    <!-- 캔들 수 -->
+    <div class="s-group">
+      <div id="status-lbl">상태: 대기</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+        <span style="font-size:11px;color:var(--text-dim);">캔들 갯수:</span>
+        <input type="number" id="candle-count" value="180" min="10" max="2000" style="width:70px;">
+      </div>
+    </div>
+
+    <!-- 옵션 -->
+    <div class="s-group">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;">
+        <input type="checkbox" id="holding-chk" onchange="refresh()">
+        종가홀딩 보기
+      </label>
+      <div style="color:var(--text-dim);font-size:10px;margin-top:3px;">
+        당일 15:00~마감 + 다음날 시초~10:30
+      </div>
+    </div>
+
+    <!-- 연속 보기 -->
+    <div class="s-group">
+      <span class="s-label">🔗 연속 보기</span>
+      <div class="chk-row">
+        <label><input type="checkbox" id="multi2" onchange="onMultiChk(2,this)"> 2일</label>
+        <label><input type="checkbox" id="multi3" onchange="onMultiChk(3,this)"> 3일</label>
+        <label><input type="checkbox" id="multi4" onchange="onMultiChk(4,this)"> 4일</label>
+      </div>
+    </div>
+
+    <!-- 캘린더 -->
+    <div class="s-group">
+      <span class="s-label">📅 과거 복기 (캘린더)</span>
+      <div id="cal-wrap">
+        <div id="cal-month-nav">
+          <button onclick="calPrev()">◀</button>
+          <span id="cal-month-label"></span>
+          <button onclick="calNext()">▶</button>
+        </div>
+        <div id="cal-grid"></div>
+      </div>
+    </div>
+
+    <!-- 피크 검색 1 -->
+    <div class="s-group">
+      <span class="s-label">🔴 수급 피크 검색 1 (±30분)</span>
+      <input type="text" id="pk1-in" placeholder="10:30 (ET)" style="margin-bottom:4px;">
+      <button class="btn btn-sm" onclick="peak1()" style="width:100%;">최대 거래대금 검색</button>
+      <div class="peak-result red" id="pk1-result">결과: ―</div>
+    </div>
+
+    <!-- 피크 검색 2 -->
+    <div class="s-group">
+      <span class="s-label">🟢 수급 피크 검색 2 (구간 합산)</span>
+      <div style="display:flex;gap:4px;margin-bottom:4px;">
+        <div style="flex:1;">
+          <div style="font-size:10px;color:var(--text-dim);">시작</div>
+          <input type="text" id="pk2-s" placeholder="09:30">
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:10px;color:var(--text-dim);">끝</div>
+          <input type="text" id="pk2-e" placeholder="10:30">
+        </div>
+      </div>
+      <button class="btn btn-sm" onclick="peak2()" style="width:100%;">구간 합산</button>
+      <div class="peak-result green" id="pk2-result">합산: ―</div>
+    </div>
+
+    <!-- 피크 검색 3 -->
+    <div class="s-group">
+      <span class="s-label">🟣 수급 피크 검색 3 (테이블 다중선택)</span>
+      <div class="peak-result purple" id="pk3-result">선택 합산: 0.00억</div>
+    </div>
+
+  </div><!-- /sidebar-scroll -->
+</div><!-- /sidebar -->
+
+<!-- ════════════════════════════════════════════════
+     우측 콘텐츠 영역
+════════════════════════════════════════════════ -->
+<div id="content">
+
+  <!-- 라인 긋기 컨트롤 바 -->
+  <div id="line-bar">
+    <button class="btn btn-sm" id="btn-hline" onclick="toggleHline()"
+      style="background:#1c1c3a;color:#aaa;border-color:#3a3a7a;">✏ 가로 라인 긋기</button>
+    <input type="text" id="time-marker-in" placeholder="HH:MM (마커)">
+    <button class="btn btn-sm" onclick="addTimeMarker()">▼ 마커</button>
+    <span style="font-size:11px;color:var(--text-dim);margin-left:4px;">│</span>
+    <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;white-space:nowrap;">
+      <input type="radio" name="tz" id="tz-et" value="ET" checked onchange="onTzChange()">
+      <span style="color:#5dade2;">🇺🇸 미국(ET)</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;white-space:nowrap;">
+      <input type="radio" name="tz" id="tz-kst" value="KST" onchange="onTzChange()">
+      <span style="color:#ffd700;">🇰🇷 한국(KST)</span>
+    </label>
+    <span id="hline-info" style="font-size:11px;color:var(--text-dim);">
+      라인 긋기 후 체크박스로 개별 삭제 가능</span>
+    <span id="zoom-time-lbl"></span>
+  </div>
+
+  <!-- 라인 체크박스 (슬롯 1-10) -->
+  <div class="hline-chk-row">
+    <span style="color:var(--text-dim);margin-right:4px;">라인:</span>
+    <span id="hline-chks" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;"></span>
+  </div>
+
+  <!-- 테이블 행 -->
+  <div id="tbl-row">
+    <!-- 좌측 테이블 -->
+    <div class="tbl-box">
+      <div class="tbl-box-title">▶ 데이터 테이블 (좌) &nbsp;
+        <span id="ltbl-count" style="color:var(--text-dim);font-weight:normal;font-size:10px;"></span>
+      </div>
+      <div class="tbl-scroll">
+        <table id="ltbl">
+          <thead><tr>
+            <th>시간(ET)</th><th>시가</th><th>고가</th><th>저가</th><th>종가</th><th>거래대금(억)</th>
+          </tr></thead>
+          <tbody id="ltbl-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 우측 테이블 -->
+    <div class="tbl-box">
+      <div id="rtbl-header">
+        <span class="tbl-box-title">▶ 대량체결 / FTD / 공매도 (우)</span>
+        <select id="file-type">
+          <option value="0">FTD (미결제)</option>
+          <option value="1">공매도 (Short Volume)</option>
+        </select>
+        <input type="text" id="file-sym" placeholder="종목(예:spy)">
+        <button class="btn btn-sm" onclick="loadAuxFile()">📂 불러오기</button>
+        <button class="btn btn-sm" onclick="clearRtbl()">초기화</button>
+        <span id="file-status" style="font-size:11px;color:var(--text-dim);"></span>
+      </div>
+      <div class="tbl-scroll">
+        <table id="rtbl">
+          <thead><tr id="rtbl-head">
+            <th>시간(ET)</th><th>시가</th><th>고가</th><th>저가</th><th>종가</th>
+            <th>거래대금(억)</th><th>구분</th>
+          </tr></thead>
+          <tbody id="rtbl-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 캔들 차트 -->
+  <div id="chart-wrap">
+    <div id="chart"></div>
+    <div id="vol-chart"></div>
+  </div>
+
+</div><!-- /content -->
+</div><!-- /app -->
+
+<script>
+// ════════════════════════════════════════════════════
+//  전역 상태
+// ════════════════════════════════════════════════════
+const S = {
+  symbol: 'SPY',
+  darkMode: true,
+  isRT: false,
+  rtTimer: null,
+  rtIntervalMs: 15000,   // 15초마다 폴링
+  bars: [],              // [{t,o,h,l,c,v}, ...]
+  processed: [],         // [{time,o,h,l,c,v,eok,et}, ...]
+  watchlist: [],
+  calYear: new Date().getFullYear(),
+  calMonth: new Date().getMonth(),   // 0-based
+  selectedDate: null,
+  multiDays: 0,
+  hlineMode: false,
+  hlines: {},            // slot → {price, series}
+  hlineSlots: 10,
+  timeMarkers: [],
+  xTimeMap: {},          // x(timestamp) → "HH:MM"
+  fontSize: 13,
+  // chart objects
+  chart: null,
+  volChart: null,
+  candleSeries: null,
+  volSeries: null,
+  hlineSeries: {},       // slot → ISeriesApi (price line)
+  selectedLRows: new Set(),
+  selectedRRows: new Set(),
+};
+
+// ════════════════════════════════════════════════════
+//  초기화
+// ════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', async () => {
+  loadSettings();
+  buildHlineChks();
+  buildCalendar();
+  initCharts();
+  await loadWatchlist();
+  checkApiKey();
+  window.addEventListener('resize', () => {
+    if (S.chart) S.chart.applyOptions({ width: document.getElementById('chart').clientWidth });
+    if (S.volChart) S.volChart.applyOptions({ width: document.getElementById('vol-chart').clientWidth });
+  });
+});
+
+// ════════════════════════════════════════════════════
+//  차트 초기화 (LightweightCharts)
+// ════════════════════════════════════════════════════
+function initCharts() {
+  const chartEl = document.getElementById('chart');
+  const volEl   = document.getElementById('vol-chart');
+
+  const bgColor = S.darkMode ? '#0d0d1a' : '#f5f5f5';
+  const txtColor = S.darkMode ? '#dde0f0' : '#111';
+  const gridColor = S.darkMode ? '#1e1e3a' : '#ddd';
+
+  S.chart = LightweightCharts.createChart(chartEl, {
+    width: chartEl.clientWidth,
+    height: chartEl.clientHeight || 300,
+    layout: { background: { color: bgColor }, textColor: txtColor },
+    grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: gridColor },
+    timeScale: {
+      borderColor: gridColor,
+      timeVisible: true,
+      secondsVisible: false,
+      tickMarkFormatter: (time) => {
+        const d = new Date(time * 1000);
+        const isKST = document.getElementById('tz-kst') && document.getElementById('tz-kst').checked;
+        if (isKST) {
+          // KST = UTC+9
+          const kstMs = time * 1000 + 9 * 3600 * 1000;
+          const kd = new Date(kstMs);
+          const h = kd.getUTCHours().toString().padStart(2,'0');
+          const m = kd.getUTCMinutes().toString().padStart(2,'0');
+          return `${h}:${m}`;
+        }
+        const h = d.getUTCHours().toString().padStart(2,'0');
+        const m = d.getUTCMinutes().toString().padStart(2,'0');
+        return `${h}:${m}`;
+      },
+    },
+    handleScroll: true,
+    handleScale: true,
+  });
+
+  S.candleSeries = S.chart.addCandlestickSeries({
+    upColor: '#3c78ff', downColor: '#ff3c3c',
+    borderUpColor: '#3c78ff', borderDownColor: '#ff3c3c',
+    wickUpColor: '#3c78ff', wickDownColor: '#ff3c3c',
+  });
+
+  S.volChart = LightweightCharts.createChart(volEl, {
+    width: volEl.clientWidth,
+    height: volEl.clientHeight || 90,
+    layout: { background: { color: bgColor }, textColor: txtColor },
+    grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+    rightPriceScale: { borderColor: gridColor, scaleMargins: { top: 0.1, bottom: 0 } },
+    timeScale: { borderColor: gridColor, timeVisible: false, visible: false },
+    handleScroll: false,
+    handleScale: false,
+  });
+
+  S.volSeries = S.volChart.addHistogramSeries({
+    color: '#3c78ff88', priceFormat: { type: 'volume' },
+    priceScaleId: '',
+  });
+
+  // 차트 클릭 → 가로 라인 긋기
+  S.chart.subscribeClick((param) => {
+    if (!S.hlineMode) return;
+    if (!param.point) return;
+    const price = S.candleSeries.coordinateToPrice(param.point.y);
+    if (price == null) return;
+    addHline(Math.round(price * 100) / 100);
+  });
+
+  // 줌/스크롤 → 시간대 표시 + volChart 동기화
+  S.chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+    if (!range) return;
+    S.volChart.timeScale().setVisibleLogicalRange(range);
+  });
+
+  S.chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
+    if (!range) return;
+    updateZoomTimeLabel(range.from, range.to);
+  });
+}
+
+// ════════════════════════════════════════════════════
+//  데이터 로딩 & 렌더링
+// ════════════════════════════════════════════════════
+async function fetchBars(symbol, dateStr='', days=1) {
+  showLoading(`${symbol} 데이터 로딩 중...`);
+  try {
+    let url = `/api/bars?symbol=${symbol}&days=${days}`;
+    if (dateStr) url += `&date=${dateStr}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) { alert(data.error); return null; }
+    return data.bars || [];
+  } catch(e) {
+    alert('서버 연결 실패: ' + e.message);
+    return null;
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderChart(bars) {
+  if (!bars || bars.length === 0) return;
+  S.bars = bars;
+
+  const fx     = parseFloat(document.getElementById('fx-in').value) || 1480;
+  const limit  = parseFloat(document.getElementById('high-in').value) || 3000;
+  const holding = document.getElementById('holding-chk').checked;
+  const maxCandles = parseInt(document.getElementById('candle-count').value) || 180;
+
+  // ET 시간 필터링 (UTC 기준: ET = UTC-4/5)
+  // Polygon t는 밀리초 UTC 타임스탬프
+  function toET(ms) {
+    const d = new Date(ms);
+    // 간단 ET 오프셋: 동부시간 = UTC - 4 (EDT) 또는 -5 (EST)
+    // 날짜를 ET로 변환: toLocaleString 사용
+    return new Date(d.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  }
+
+  let filtered = [];
+  for (const bar of bars) {
+    const et = toET(bar.t);
+    const h = et.getHours(), m = et.getMinutes();
+    const totalMin = h * 60 + m;
+    if (holding) {
+      // 종가홀딩: 15:00~16:00 + 09:30~10:30
+      if (!((totalMin >= 900 && totalMin < 960) || (totalMin >= 570 && totalMin <= 630))) continue;
+    } else {
+      // 정규장: 09:30~16:00
+      if (totalMin < 570 || totalMin >= 960) continue;
+    }
+    const eok = (bar.c * bar.v * fx) / 1e8;
+    filtered.push({ bar, et, eok });
+  }
+
+  if (S.isRT) {
+    filtered = filtered.slice(-maxCandles);
+  }
+
+  // xTimeMap 구축 (LWCharts는 timestamp 기반)
+  S.xTimeMap = {};
+  const candleData = [];
+  const volData    = [];
+  const processed  = [];
+
+  for (const { bar, et, eok } of filtered) {
+    // LWCharts: time은 초 단위 UTC timestamp
+    const timeSec = Math.floor(bar.t / 1000);
+    const hh = et.getHours().toString().padStart(2,'0');
+    const mm = et.getMinutes().toString().padStart(2,'0');
+    const displayHHMM = formatTimeForTz(et, timeSec);
+    S.xTimeMap[timeSec] = displayHHMM;
+
+    candleData.push({
+      time: timeSec,
+      open: bar.o || bar.open || 0,
+      high: bar.h || bar.high || 0,
+      low:  bar.l || bar.low  || 0,
+      close: bar.c || bar.close || 0,
+    });
+    volData.push({
+      time: timeSec,
+      value: bar.v || bar.volume || 0,
+      color: (bar.c >= bar.o) ? '#3c78ff88' : '#ff3c3c88',
+    });
+    processed.push({ timeSec, bar, et, eok, hhmm: displayHHMM });
+  }
+
+  S.processed = processed;
+
+  S.candleSeries.setData(candleData);
+  S.volSeries.setData(volData);
+
+  const isKST = document.getElementById('tz-kst') && document.getElementById('tz-kst').checked;
+  const tzLabel = isKST ? '시간(KST)' : '시간(ET)';
+  // 좌측 테이블 헤더 갱신
+  const ltblHead = document.querySelector('#ltbl thead tr th:first-child');
+  if (ltblHead) ltblHead.textContent = tzLabel;
+
+  // 좌측 테이블 (거래대금 필터 초과 행)
+  const hiRows = processed.filter(x => x.eok >= limit)
+                           .sort((a,b) => b.eok - a.eok);
+  renderLtbl(hiRows);
+
+  // 시간 마커 재그리기
+  redrawTimeMarkers();
+
+  // 가로 라인 재그리기
+  redrawHlines();
+}
+
+// ════════════════════════════════════════════════════
+//  테이블 렌더링
+// ════════════════════════════════════════════════════
+function renderLtbl(rows) {
+  const tbody = document.getElementById('ltbl-body');
+  tbody.innerHTML = '';
+  S.selectedLRows.clear();
+  document.getElementById('ltbl-count').textContent = `${rows.length}행`;
+  const isKST = document.getElementById('tz-kst') && document.getElementById('tz-kst').checked;
+  for (let i = 0; i < rows.length; i++) {
+    const { bar, et, eok, timeSec } = rows[i];
+    let timeStr;
+    if (isKST) {
+      const kstMs = timeSec * 1000 + 9 * 3600 * 1000;
+      const kd = new Date(kstMs);
+      timeStr = `${kd.getUTCHours().toString().padStart(2,'0')}:${kd.getUTCMinutes().toString().padStart(2,'0')}:${kd.getUTCSeconds().toString().padStart(2,'0')}`;
+    } else {
+      const hh = et.getHours().toString().padStart(2,'0');
+      const mm = et.getMinutes().toString().padStart(2,'0');
+      const ss = et.getSeconds().toString().padStart(2,'0');
+      timeStr = `${hh}:${mm}:${ss}`;
+    }
+    const bgClass = eok >= 5000 ? 'row-hi' : eok >= 3000 ? 'row-mid' : 'row-lo';
+    const tr = document.createElement('tr');
+    tr.className = bgClass;
+    tr.dataset.idx = i;
+    tr.innerHTML = `
+      <td>${timeStr}</td>
+      <td>${fmt(bar.o||bar.open)}</td>
+      <td>${fmt(bar.h||bar.high)}</td>
+      <td>${fmt(bar.l||bar.low)}</td>
+      <td>${fmt(bar.c||bar.close)}</td>
+      <td style="font-weight:bold;">${eok.toFixed(2)}</td>`;
+    tr.addEventListener('click', () => toggleRowSel(tr, S.selectedLRows, 'pk3'));
+    tbody.appendChild(tr);
+  }
+}
+
+function appendRtbl(bar, eok, label='실시간') {
+  const tbody = document.getElementById('rtbl-body');
+  const now = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false });
+  const bgClass = eok >= 5000 ? 'row-hi' : eok >= 3000 ? 'row-mid' : 'row-lo';
+  const tr = document.createElement('tr');
+  tr.className = bgClass;
+  tr.innerHTML = `
+    <td>${now}</td>
+    <td>${fmt(bar.o||bar.open)}</td>
+    <td>${fmt(bar.h||bar.high)}</td>
+    <td>${fmt(bar.l||bar.low)}</td>
+    <td>${fmt(bar.c||bar.close)}</td>
+    <td style="font-weight:bold;">${eok.toFixed(2)}</td>
+    <td>${label}</td>`;
+  tr.addEventListener('click', () => toggleRowSel(tr, S.selectedRRows, 'pk3'));
+  tbody.appendChild(tr);
+  tbody.parentElement.scrollTop = tbody.parentElement.scrollHeight;
+}
+
+function clearRtbl() {
+  document.getElementById('rtbl-body').innerHTML = '';
+  S.selectedRRows.clear();
+}
+
+function toggleRowSel(tr, selSet, pk3id) {
+  const idx = tr.dataset.idx;
+  if (selSet.has(idx)) {
+    selSet.delete(idx);
+    tr.classList.remove('selected');
+  } else {
+    selSet.add(idx);
+    tr.classList.add('selected');
+  }
+  updatePk3();
+}
+
+// ════════════════════════════════════════════════════
+//  피크 검색
+// ════════════════════════════════════════════════════
+function timeToMin(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function peak1() {
+  const inp = document.getElementById('pk1-in').value.trim();
+  const el  = document.getElementById('pk1-result');
+  if (!S.processed.length) { el.textContent = '데이터 없음'; return; }
+  if (!/^\d{1,2}:\d{2}$/.test(inp)) { el.textContent = '형식 오류 (HH:MM)'; return; }
+  const center = timeToMin(inp);
+  const window = S.processed.filter(x => {
+    const m = timeToMin(x.hhmm);
+    return Math.abs(m - center) <= 30;
+  });
+  if (!window.length) { el.textContent = '데이터 없음'; return; }
+  const mx = window.reduce((a,b) => a.eok > b.eok ? a : b);
+  el.textContent = `피크: ${mx.hhmm}\n최대: ${mx.eok.toFixed(2)}억`;
+}
+
+function peak2() {
+  const s = document.getElementById('pk2-s').value.trim();
+  const e = document.getElementById('pk2-e').value.trim();
+  const el = document.getElementById('pk2-result');
+  if (!S.processed.length) { el.textContent = '데이터 없음'; return; }
+  if (!/^\d{1,2}:\d{2}$/.test(s) || !/^\d{1,2}:\d{2}$/.test(e)) {
+    el.textContent = '형식 오류 (HH:MM)'; return; }
+  const sm = timeToMin(s), em = timeToMin(e);
+  const window = S.processed.filter(x => {
+    const m = timeToMin(x.hhmm);
+    return m >= sm && m <= em;
+  });
+  if (!window.length) { el.textContent = '데이터 없음'; return; }
+  const tot = window.reduce((a,b) => a + b.eok, 0);
+  const mx  = window.reduce((a,b) => a.eok > b.eok ? a : b);
+  el.textContent = `합산: ${tot.toFixed(2)}억 (${window.length}봉)\n피크: ${mx.hhmm} (${mx.eok.toFixed(2)}억)`;
+}
+
+function updatePk3() {
+  const el = document.getElementById('pk3-result');
+  // 좌/우 테이블 선택 행 합산
+  let total = 0, times = [];
+  document.querySelectorAll('#ltbl-body tr.selected, #rtbl-body tr.selected')
+    .forEach(tr => {
+      const cells = tr.querySelectorAll('td');
+      if (cells.length >= 6) {
+        const t = cells[0].textContent.substring(0,5);
+        const v = parseFloat(cells[5].textContent);
+        if (!isNaN(v)) { total += v; times.push(t); }
+      }
+    });
+  if (times.length) {
+    el.textContent = `선택 ${times.length}봉 합산:\n${total.toFixed(2)}억\n(${times.slice(0,6).join(', ')}${times.length>6?'...':''})`;
+  } else {
+    el.textContent = '선택 합산: 0.00억';
+  }
+}
+
+// ════════════════════════════════════════════════════
+//  가로 라인 (HLine) — 슬롯 기반
+// ════════════════════════════════════════════════════
+function buildHlineChks() {
+  const wrap = document.getElementById('hline-chks');
+  wrap.innerHTML = '';
+  for (let i = 0; i < S.hlineSlots; i++) {
+    const lbl = document.createElement('label');
+    lbl.id = `hchk-lbl-${i}`;
+    lbl.style.cssText = 'display:inline-flex;align-items:center;gap:2px;font-size:11px;white-space:nowrap;padding:1px 4px;border-radius:3px;border:1px solid transparent;cursor:pointer;';
+    lbl.innerHTML = `<input type="checkbox" id="hchk-${i}" disabled
+      onchange="onHlineChk(${i}, this)"> ${i+1}`;
+    wrap.appendChild(lbl);
+  }
+}
+
+function toggleHline() {
+  S.hlineMode = !S.hlineMode;
+  const btn = document.getElementById('btn-hline');
+  if (S.hlineMode) {
+    btn.style.background = '#2a4a2a'; btn.style.color = '#00e676';
+    btn.style.borderColor = '#00e676';
+    document.getElementById('hline-info').textContent = '차트를 클릭하면 가격에 라인을 긋습니다';
+  } else {
+    btn.style.background = '#1c1c3a'; btn.style.color = '#aaa';
+    btn.style.borderColor = '#3a3a7a';
+    document.getElementById('hline-info').textContent = '라인 긋기 후 체크박스로 개별 삭제 가능';
+  }
+}
+
+function addHline(price) {
+  // 중복 가격 체크
+  for (const info of Object.values(S.hlines)) {
+    if (Math.abs(info.price - price) < 0.01) return;
+  }
+  // 빈 슬롯 탐색
+  let slot = null;
+  for (let i = 0; i < S.hlineSlots; i++) {
+    if (!(i in S.hlines)) { slot = i; break; }
+  }
+  if (slot === null) {
+    document.getElementById('hline-info').textContent = '⚠ 슬롯 10개 꽉 참 — 체크 해제로 삭제';
+    return;
+  }
+
+  // LWCharts price line
+  const priceLine = S.candleSeries.createPriceLine({
+    price: price,
+    color: '#00e5ff',
+    lineWidth: 1,
+    lineStyle: LightweightCharts.LineStyle.Dashed,
+    axisLabelVisible: true,
+    title: `[${slot+1}] ${price.toFixed(2)}`,
+  });
+
+  S.hlines[slot] = { price, priceLine };
+
+  // 체크박스 활성화
+  const chk = document.getElementById(`hchk-${slot}`);
+  const lbl = document.getElementById(`hchk-lbl-${slot}`);
+  chk.disabled = false; chk.checked = true;
+  lbl.classList.add('active');
+  lbl.title = price.toFixed(2);
+
+  document.getElementById('hline-info').textContent =
+    `[${slot+1}] ${price.toFixed(2)}  (총 ${Object.keys(S.hlines).length}개)`;
+}
+
+function onHlineChk(slot, chkEl) {
+  if (chkEl.checked) return;
+  if (!(slot in S.hlines)) return;
+  const info = S.hlines[slot];
+  try { S.candleSeries.removePriceLine(info.priceLine); } catch(e){}
+  delete S.hlines[slot];
+  chkEl.disabled = true;
+  const lbl = document.getElementById(`hchk-lbl-${slot}`);
+  lbl.classList.remove('active');
+  lbl.title = '';
+  document.getElementById('hline-info').textContent =
+    `라인 [${slot+1}] 삭제됨  (남은 ${Object.keys(S.hlines).length}개)`;
+}
+
+function redrawHlines() {
+  // LWCharts의 priceLine은 setData 후에도 유지됨 — 재생성 불필요
+  // (시리즈를 교체할 경우에만 재생성 필요)
+}
+
+// ════════════════════════════════════════════════════
+//  시간 마커
+// ════════════════════════════════════════════════════
+function addTimeMarker() {
+  const val = document.getElementById('time-marker-in').value.trim();
+  if (!/^\d{1,2}:\d{2}$/.test(val)) {
+    document.getElementById('hline-info').textContent = '⚠ 형식: HH:MM'; return;
+  }
+  const [h, m] = val.split(':').map(Number);
+  const targetMin = h * 60 + m;
+
+  // xTimeMap에서 가장 가까운 timestamp 탐색
+  let bestTime = null, bestDiff = Infinity;
+  for (const [tSec, hhmm] of Object.entries(S.xTimeMap)) {
+    const diff = Math.abs(timeToMin(hhmm) - targetMin);
+    if (diff < bestDiff) { bestDiff = diff; bestTime = parseInt(tSec); }
+  }
+  if (bestTime === null) {
+    document.getElementById('hline-info').textContent = '⚠ 해당 시간 데이터 없음'; return;
+  }
+
+  // 기존 같은 시간 마커 제거
+  S.timeMarkers = S.timeMarkers.filter(mk => {
+    if (mk.label === val) {
+      try { S.chart.removeSeries(mk.series); } catch(e){}
+      return false;
+    }
+    return true;
+  });
+
+  // 수직선: LWCharts에는 직접 수직선이 없으므로 LineSeries로 구현
+  const markerSeries = S.chart.addLineSeries({
+    color: '#ff9800', lineWidth: 2,
+    lastValueVisible: false, priceLineVisible: false,
+    crosshairMarkerVisible: false,
+  });
+  // 세로선: y축 전체 범위에 걸친 두 점 (매우 큰 값과 작은 값)
+  // 대신 ISeriesApi.setMarkers 활용
+  const markers = [{
+    time: bestTime,
+    position: 'aboveBar',
+    color: '#ff9800',
+    shape: 'arrowDown',
+    text: val,
+  }];
+  S.candleSeries.setMarkers(
+    [...(S.candleSeries.markers||[])
+      .filter(mk => mk._markerLabel !== val),
+      ...markers.map(mk => ({ ...mk, _markerLabel: val }))
+    ]
+  );
+
+  S.timeMarkers.push({ label: val, time: bestTime });
+  document.getElementById('hline-info').textContent = `마커: ${val}`;
+}
+
+function redrawTimeMarkers() {
+  if (!S.timeMarkers.length) return;
+  const markers = S.timeMarkers.map(mk => {
+    // xTimeMap에서 재탐색
+    const [h, m] = mk.label.split(':').map(Number);
+    const targetMin = h * 60 + m;
+    let bestTime = mk.time, bestDiff = Infinity;
+    for (const [tSec, hhmm] of Object.entries(S.xTimeMap)) {
+      const diff = Math.abs(timeToMin(hhmm) - targetMin);
+      if (diff < bestDiff) { bestDiff = diff; bestTime = parseInt(tSec); }
+    }
+    mk.time = bestTime;
+    return { time: bestTime, position: 'aboveBar', color: '#ff9800',
+             shape: 'arrowDown', text: mk.label };
+  });
+  try { S.candleSeries.setMarkers(markers); } catch(e){}
+}
+
+// ════════════════════════════════════════════════════
+//  줌 시간대 표시
+// ════════════════════════════════════════════════════
+function updateZoomTimeLabel(from, to) {
+  const el = document.getElementById('zoom-time-lbl');
+  const keys = Object.keys(S.xTimeMap).map(Number).sort((a,b)=>a-b);
+  const vis = keys.filter(k => k >= from && k <= to);
+  if (!vis.length) { el.textContent = ''; return; }
+  const t1 = S.xTimeMap[vis[0]], t2 = S.xTimeMap[vis[vis.length-1]];
+  el.textContent = `📊 ${t1} ~ ${t2}  (${vis.length}봉)`;
+}
+
+// ════════════════════════════════════════════════════
+//  시간대 전환 (ET / KST)
+// ════════════════════════════════════════════════════
+function onTzChange() {
+  const isKST = document.getElementById('tz-kst').checked;
+
+  // tickMarkFormatter 재적용 (차트 옵션 업데이트)
+  if (S.chart) {
+    S.chart.applyOptions({
+      timeScale: {
+        tickMarkFormatter: (time) => {
+          if (isKST) {
+            const kstMs = time * 1000 + 9 * 3600 * 1000;
+            const kd = new Date(kstMs);
+            const h = kd.getUTCHours().toString().padStart(2,'0');
+            const m = kd.getUTCMinutes().toString().padStart(2,'0');
+            return `${h}:${m}`;
+          }
+          // ET: processed xTimeMap 사용
+          return S.xTimeMap[time] || (() => {
+            const d = new Date(time * 1000);
+            const h = d.getUTCHours().toString().padStart(2,'0');
+            const m = d.getUTCMinutes().toString().padStart(2,'0');
+            return `${h}:${m}`;
+          })();
+        },
+      }
+    });
+  }
+
+  // xTimeMap 재구축 및 테이블 헤더/내용 갱신
+  if (S.bars.length) renderChart(S.bars);
+
+  // 줌 레이블 갱신
+  if (S.chart) {
+    const range = S.chart.timeScale().getVisibleRange();
+    if (range) updateZoomTimeLabel(range.from, range.to);
+  }
+}
+
+// ────────────────────────────────────────────────────
+//  시간 문자열 변환 헬퍼
+// ────────────────────────────────────────────────────
+function formatTimeForTz(et, timeSec) {
+  const isKST = document.getElementById('tz-kst') && document.getElementById('tz-kst').checked;
+  if (isKST) {
+    const kstMs = timeSec * 1000 + 9 * 3600 * 1000;
+    const kd = new Date(kstMs);
+    const hh = kd.getUTCHours().toString().padStart(2,'0');
+    const mm = kd.getUTCMinutes().toString().padStart(2,'0');
+    return `${hh}:${mm}`;
+  }
+  const hh = et.getHours().toString().padStart(2,'0');
+  const mm = et.getMinutes().toString().padStart(2,'0');
+  return `${hh}:${mm}`;
+}
+
+
+async function toggleRT() {
+  if (S.isRT) {
+    stopRT();
+  } else {
+    const sym = document.getElementById('sym-in').value.toUpperCase().trim();
+    if (!sym) return;
+    S.symbol = sym;
+    startRT(sym);
+  }
+}
+
+async function startRT(symbol) {
+  stopRT();
+  S.isRT = true;
+  S.symbol = symbol;
+  document.getElementById('lbl-mode').textContent = `▶ Polygon RT ${symbol}`;
+  document.getElementById('status-lbl').textContent = `▶ ${symbol} 실시간`;
+
+  const bars = await fetchBars(symbol);
+  if (bars) renderChart(bars);
+
+  S.rtTimer = setInterval(async () => {
+    const bars = await fetchBars(symbol);
+    if (bars) renderChart(bars);
+  }, S.rtIntervalMs);
+}
+
+function stopRT() {
+  if (S.rtTimer) { clearInterval(S.rtTimer); S.rtTimer = null; }
+  S.isRT = false;
+  document.getElementById('lbl-mode').textContent = 'Polygon.io';
+  document.getElementById('status-lbl').textContent = '⏹ 중지됨';
+}
+
+async function startStream(symbol) {
+  document.getElementById('sym-in').value = symbol;
+  S.symbol = symbol;
+  stopRT();
+  await startRT(symbol);
+}
+
+// ════════════════════════════════════════════════════
+//  캘린더
+// ════════════════════════════════════════════════════
+function buildCalendar() {
+  const label = document.getElementById('cal-month-label');
+  const grid  = document.getElementById('cal-grid');
+
+  const y = S.calYear, mo = S.calMonth;
+  const monthNames = ['1월','2월','3월','4월','5월','6월',
+                      '7월','8월','9월','10월','11월','12월'];
+  label.textContent = `${y}년 ${monthNames[mo]}`;
+  grid.innerHTML = '';
+
+  const days = ['일','월','화','수','목','금','토'];
+  days.forEach(d => {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell header';
+    cell.textContent = d;
+    grid.appendChild(cell);
+  });
+
+  const firstDay = new Date(y, mo, 1).getDay();
+  const lastDate = new Date(y, mo+1, 0).getDate();
+  const today = new Date();
+
+  for (let i = 0; i < firstDay; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell empty';
+    grid.appendChild(cell);
+  }
+  for (let d = 1; d <= lastDate; d++) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell';
+    cell.textContent = d;
+    const dateObj = new Date(y, mo, d);
+    const dateStr = `${y}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if (dateObj.toDateString() === today.toDateString()) cell.classList.add('today');
+    if (S.selectedDate === dateStr) cell.classList.add('selected');
+    cell.addEventListener('click', () => onCalClick(dateStr, cell));
+    grid.appendChild(cell);
+  }
+}
+
+function calPrev() {
+  S.calMonth--;
+  if (S.calMonth < 0) { S.calMonth = 11; S.calYear--; }
+  buildCalendar();
+}
+
+function calNext() {
+  S.calMonth++;
+  if (S.calMonth > 11) { S.calMonth = 0; S.calYear++; }
+  buildCalendar();
+}
+
+async function onCalClick(dateStr, cell) {
+  stopRT();
+  S.selectedDate = dateStr;
+  document.querySelectorAll('.cal-cell.selected').forEach(c => c.classList.remove('selected'));
+  cell.classList.add('selected');
+
+  const days = S.multiDays > 1 ? S.multiDays : 1;
+  document.getElementById('status-lbl').textContent = `📅 ${dateStr} 복기 (ET)`;
+
+  const bars = await fetchBars(S.symbol, dateStr, days);
+  if (bars && bars.length) {
+    renderChart(bars);
+    S.chart.timeScale().fitContent();
+  } else {
+    document.getElementById('status-lbl').textContent = `⚠ ${dateStr} 데이터 없음`;
+  }
+}
+
+function onMultiChk(days, chkEl) {
+  if (chkEl.checked) {
+    // 다른 체크 해제
+    [2,3,4].filter(d=>d!==days).forEach(d => {
+      const c = document.getElementById(`multi${d}`);
+      if (c) c.checked = false;
+    });
+    S.multiDays = days;
+  } else {
+    S.multiDays = 0;
+  }
+  // 날짜 선택된 상태면 즉시 다시 로드
+  if (S.selectedDate) {
+    onCalClick(S.selectedDate, document.querySelector('.cal-cell.selected') || document.createElement('div'));
+  }
+}
+
+async function refresh() {
+  if (S.bars.length) renderChart(S.bars);
+}
+
+// ════════════════════════════════════════════════════
+//  관심종목
+// ════════════════════════════════════════════════════
+async function loadWatchlist() {
+  try {
+    const res = await fetch('/api/watchlist');
+    S.watchlist = await res.json();
+    renderWatchlist();
+  } catch(e) { S.watchlist = ['SPY','QQQ','NVDA','TSLA','AAPL']; renderWatchlist(); }
+}
+
+function renderWatchlist() {
+  const wrap = document.getElementById('watch-list');
+  wrap.innerHTML = '';
+  S.watchlist.forEach(sym => {
+    const div = document.createElement('div');
+    div.className = 'watch-item';
+    div.textContent = sym;
+    div.addEventListener('click', () => startStream(sym));
+    wrap.appendChild(div);
+  });
+}
+
+async function watchAdd() {
+  const v = prompt('종목 심볼 추가:');
+  if (!v) return;
+  const sym = v.toUpperCase().trim();
+  if (!S.watchlist.includes(sym)) {
+    S.watchlist.push(sym);
+    await fetch('/api/watchlist', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ items: S.watchlist })
+    });
+    renderWatchlist();
+  }
+}
+
+async function watchDel() {
+  const v = prompt('삭제할 심볼:');
+  if (!v) return;
+  const sym = v.toUpperCase().trim();
+  S.watchlist = S.watchlist.filter(s => s !== sym);
+  await fetch('/api/watchlist', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ items: S.watchlist })
+  });
+  renderWatchlist();
+}
+
+// ════════════════════════════════════════════════════
+//  보조 파일 (FTD / 공매도) — 서버 미지원, 안내만
+// ════════════════════════════════════════════════════
+function loadAuxFile() {
+  document.getElementById('file-status').textContent =
+    '⚠ CSV 파일 로드는 서버측 지원 필요 (chart_server.py 확장)';
+  document.getElementById('file-status').style.color = 'orange';
+}
+
+// ════════════════════════════════════════════════════
+//  API 키 모달
+// ════════════════════════════════════════════════════
+async function checkApiKey() {
+  try {
+    const res = await fetch('/api/apikey');
+    const data = await res.json();
+    if (!data.set) showApiModal();
+  } catch(e) {}
+}
+
+function showApiModal() {
+  document.getElementById('apikey-modal').classList.add('show');
+}
+function closeApiModal() {
+  document.getElementById('apikey-modal').classList.remove('show');
+}
+async function saveApiKey() {
+  const key = document.getElementById('apikey-input').value.trim();
+  if (!key) return;
+  const res = await fetch('/api/apikey', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ key })
+  });
+  const data = await res.json();
+  if (data.ok) { closeApiModal(); alert('API 키 저장 완료!'); }
+  else alert(data.error || '저장 실패');
+}
+
+// ════════════════════════════════════════════════════
+//  테마 / 폰트
+// ════════════════════════════════════════════════════
+function toggleDark() {
+  S.darkMode = !S.darkMode;
+  document.body.classList.toggle('light', !S.darkMode);
+  const bgColor  = S.darkMode ? '#0d0d1a' : '#f5f5f5';
+  const txtColor = S.darkMode ? '#dde0f0' : '#111';
+  const gridColor = S.darkMode ? '#1e1e3a' : '#ddd';
+  if (S.chart) {
+    S.chart.applyOptions({ layout: { background: { color: bgColor }, textColor: txtColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } } });
+  }
+  if (S.volChart) {
+    S.volChart.applyOptions({ layout: { background: { color: bgColor }, textColor: txtColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } } });
+  }
+  saveSettings();
+}
+
+function applyFont(size) {
+  S.fontSize = parseInt(size);
+  document.getElementById('font-val').textContent = size + 'px';
+  document.body.style.fontSize = size + 'px';
+  saveSettings();
+}
+
+function setFilter(v) { document.getElementById('high-in').value = v; refresh(); }
+
+// ════════════════════════════════════════════════════
+//  설정 저장/복원 (localStorage)
+// ════════════════════════════════════════════════════
+function saveSettings() {
+  const cfg = {
+    darkMode: S.darkMode,
+    fontSize: S.fontSize,
+    symbol: S.symbol,
+    fx: document.getElementById('fx-in').value,
+    filter: document.getElementById('high-in').value,
+    candleCount: document.getElementById('candle-count').value,
+  };
+  localStorage.setItem('chart_settings', JSON.stringify(cfg));
+}
+
+function loadSettings() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem('chart_settings') || '{}');
+    if (cfg.darkMode === false) { S.darkMode = false; document.body.classList.add('light'); }
+    if (cfg.fontSize) {
+      S.fontSize = cfg.fontSize;
+      document.getElementById('font-slider').value = cfg.fontSize;
+      document.getElementById('font-val').textContent = cfg.fontSize + 'px';
+      document.body.style.fontSize = cfg.fontSize + 'px';
+    }
+    if (cfg.symbol) { S.symbol = cfg.symbol; document.getElementById('sym-in').value = cfg.symbol; }
+    if (cfg.fx) document.getElementById('fx-in').value = cfg.fx;
+    if (cfg.filter) document.getElementById('high-in').value = cfg.filter;
+    if (cfg.candleCount) document.getElementById('candle-count').value = cfg.candleCount;
+  } catch(e) {}
+}
+
+// ════════════════════════════════════════════════════
+//  유틸
+// ════════════════════════════════════════════════════
+function fmt(v) { return v != null ? Number(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : '0.00'; }
+
+function showLoading(msg) {
+  document.getElementById('loading-msg').textContent = msg || '로딩 중...';
+  document.getElementById('loading').classList.add('show');
+}
+function hideLoading() { document.getElementById('loading').classList.remove('show'); }
+
+// 차트 크기 자동 조정 (ResizeObserver)
+const ro = new ResizeObserver(() => {
+  const chartEl = document.getElementById('chart');
+  const volEl   = document.getElementById('vol-chart');
+  if (S.chart && chartEl.clientWidth > 0) {
+    S.chart.applyOptions({ width: chartEl.clientWidth, height: chartEl.clientHeight });
+  }
+  if (S.volChart && volEl.clientWidth > 0) {
+    S.volChart.applyOptions({ width: volEl.clientWidth, height: volEl.clientHeight });
+  }
+});
+ro.observe(document.getElementById('chart'));
+ro.observe(document.getElementById('vol-chart'));
+</script>
+</body>
+</html>
