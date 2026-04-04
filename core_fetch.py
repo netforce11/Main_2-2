@@ -1,13 +1,14 @@
 """
-core_fetch.py — 조회·기초자산·테이블클릭·관심종목 로직  v6.4
+core_fetch.py — 조회·기초자산·테이블클릭·관심종목 로직  v6.5
 ════════════════════════════════════════════════════════
-수정 대상: 조회 동작, 기초자산 요청, 테이블 클릭 동작
 포함 메서드:
   _req_und() / _refresh_und()
   _fetch() / _init_tbl()
   _tbl_click() / _tbl_dbl()
   _on_watch_dbl() / _on_watch_single_click()
-  _w_add() / _w_del()
+  _w_add() / _w_del() / _notify_sniper_sync()
+포지션 관련(_refresh_positions/_apply_positions) →
+  core_fetch_pos.py (CoreFetchPosMixin)
 ════════════════════════════════════════════════════════
 """
 
@@ -20,6 +21,7 @@ try:
 except ImportError:
     PG = False
 
+from core_fetch_pos import CoreFetchPosMixin
 from core import (
     SYMBOL_CFG, DEFAULT_CFG, INDEX_SYM,
     REQ_UND, REQ_CALL, REQ_PUT,
@@ -40,7 +42,7 @@ def _is_index(sym: str) -> bool:
     return sym.upper().replace("SPXW", "SPX") in INDEX_SYM
 
 
-class CoreFetchMixin:
+class CoreFetchMixin(CoreFetchPosMixin):
     """조회·기초자산·테이블클릭·관심종목 로직. CallPutGrid에 mixin된다."""
 
     def _req_und(self, sym: str):
@@ -81,17 +83,28 @@ class CoreFetchMixin:
         if getattr(self, '_fetch_busy', False):
             self._log("⚠ 구독 진행 중 — 중복 조회 요청 무시 (잠시 후 재시도)")
             return
+        # ✅ fetch 세대 카운터 — 이전 세대의 QTimer.singleShot 콜백을 무효화
+        # _on_watch_dbl / _fetch 재시도 타이머가 중복 누적되는 것을 차단
+        self._fetch_gen = getattr(self, '_fetch_gen', 0) + 1
+        _my_gen = self._fetch_gen
         if self.und_price is None:
             sym = self.edit_sym.text().strip().upper() or "SPX"
             retry = getattr(self, '_fetch_retry', 0)
             if retry >= 5:
-                # 5회 재시도 후 포기 → 루프 방지
                 self._fetch_retry = 0
                 self._log(f"⚠ 현재가 수신 실패 ({sym}) — TWS 연결 상태를 확인하세요.")
                 return
             self._fetch_retry = retry + 1
             self._log(f"현재가 수신 중… ({sym}) 잠시 후 재시도합니다. ({self._fetch_retry}/5)")
-            self._req_und(sym); QTimer.singleShot(2000, self._fetch); return
+            self._req_und(sym)
+            # ✅ 세대 캡처: 이 타이머가 발동될 때 세대가 바뀌었으면 무시
+            _gen_at_schedule = _my_gen
+            def _retry_fetch():
+                if getattr(self, '_fetch_gen', 0) != _gen_at_schedule:
+                    return   # 새 _fetch()가 이미 시작됨 → 이 재시도는 무효
+                self._fetch()
+            QTimer.singleShot(2000, _retry_fetch)
+            return
         self._fetch_retry = 0   # 성공 시 카운터 초기화
         expiry, tag = self._get_expiry()
         if not expiry: return
@@ -303,7 +316,14 @@ class CoreFetchMixin:
         if hasattr(self, '_refresh_expiry_list'):
             self._refresh_expiry_list()
         self._req_und(sym)
-        QTimer.singleShot(1000, self._fetch)
+        # ✅ 세대 카운터 증가 → 이전 pending _fetch 타이머 무효화
+        self._fetch_gen = getattr(self, '_fetch_gen', 0) + 1
+        _gen = self._fetch_gen
+        def _dbl_fetch():
+            if getattr(self, '_fetch_gen', 0) != _gen:
+                return
+            self._fetch()
+        QTimer.singleShot(1000, _dbl_fetch)
         self._log(f"관심종목 더블클릭: {sym} ({self._sym_type_label(sym)}) → 옵션 재조회")
 
     def _on_watch_single_click(self, item):
@@ -313,6 +333,28 @@ class CoreFetchMixin:
 
         if not sym:
             return
+
+        # ── 중복 클릭 방어: 300ms 내 재클릭 무시 ────────────────
+        last_sym = getattr(self, '_watch_last_sym', None)
+        last_t   = getattr(self, '_watch_last_t', 0)
+        import time as _time
+        now = _time.monotonic()
+        if sym == last_sym and (now - last_t) < 0.3:
+            return
+        self._watch_last_sym = sym
+        self._watch_last_t   = now
+
+        # ── 진행 중인 히스토리 요청 취소 ────────────────────────
+        # _hist_router 슬롯을 모두 done=True로 마킹 → 폴링 타이머가 즉시 정리
+        if hasattr(self, '_hist_router'):
+            for slot in self._hist_router.values():
+                slot["done"] = True   # 타이머 폴링이 다음 틱에 정리
+            # IBKR에도 취소 신호 (무시해도 무방)
+            for req_id in list(self._hist_router.keys()):
+                try:
+                    self.mw.ib.cancelHistoricalData(req_id)
+                except Exception:
+                    pass
 
         is_idx = _is_index(sym)
 
@@ -361,15 +403,18 @@ class CoreFetchMixin:
                 f"관심종목 선택: {sym} {self._sym_type_label(sym)}"
                 f"  (장 중 — 분봉 차트 조회)")
         else:
-            if hasattr(self, '_fetch_daily'):
+            # 장 외: 일봉 완료 후 분봉 순차 실행 (req_id 9800/9801 충돌 방지)
+            if hasattr(self, '_fetch_daily') and hasattr(self, '_fetch_intraday'):
+                self._fetch_daily(on_done_extra=self._fetch_intraday)
+            elif hasattr(self, '_fetch_daily'):
                 self._fetch_daily()
-            if hasattr(self, '_fetch_intraday'):
+            elif hasattr(self, '_fetch_intraday'):
                 self._fetch_intraday()
             if hasattr(self, '_chart_tabs'):
                 self._chart_tabs.setCurrentIndex(1)
             self._log(
                 f"관심종목 선택: {sym} {self._sym_type_label(sym)}"
-                f"  (장 외 — 일봉+분봉 차트 조회)")
+                f"  (장 외 — 일봉 완료 후 분봉 순차 조회)")
 
     def _w_add(self):
         """관심종목 추가 — 지수/주식 자동 판별 후 레이블 붙여 표시."""
@@ -404,104 +449,3 @@ class CoreFetchMixin:
                 sniper._sync_from_cp(self, silent=True)
         except Exception:
             pass
-
-    # ── 포지션 조회 → 잔고 컬럼 갱신 ───────────────────────────
-    def _refresh_positions(self):
-        """IBKR reqPositions() 호출 → 콜-풋 테이블 잔고 컬럼(col=6) 갱신."""
-        if not self.mw.connected: return
-        from tab_options import _mk
-        ib = self.mw.ib
-
-        _pos_buf = {}        # { (symbol, right, strike, expiry): qty }
-        _avg_buf = {}        # { (symbol, right, strike, expiry): avg_cost }
-
-        def _on_position(account, contract, pos, avg_cost):
-            if getattr(contract, 'secType', '') != 'OPT': return
-            key = (
-                getattr(contract, 'symbol', ''),
-                getattr(contract, 'right', ''),
-                int(getattr(contract, 'strike', 0)),
-                getattr(contract, 'lastTradeDateOrContractMonth', '')[:8],
-            )
-            _pos_buf[key] = int(pos)
-            _avg_buf[key] = avg_cost
-
-        def _on_position_end():
-            from PyQt5.QtCore import QTimer
-            # avg_cost 딕셔너리를 특별 키로 함께 전달
-            _pos_buf['avg_cost'] = _avg_buf
-            QTimer.singleShot(0, lambda: self._apply_positions(_pos_buf))
-
-        # 기존 콜백 임시 교체
-        ib._orig_position    = getattr(ib, 'position',    lambda *a: None)
-        ib._orig_positionEnd = getattr(ib, 'positionEnd', lambda: None)
-        ib.position    = _on_position
-        ib.positionEnd = _on_position_end
-
-        try:
-            ib.reqPositions()
-        except Exception as e:
-            self._log(f"⚠ 포지션 조회 오류: {e}")
-
-        # 3초 후 콜백 복원
-        QTimer.singleShot(3000, lambda: (
-            setattr(ib, 'position',    ib._orig_position),
-            setattr(ib, 'positionEnd', ib._orig_positionEnd),
-        ))
-
-    def _apply_positions(self, pos_buf: dict):
-        """포지션 데이터를 콜-풋 테이블 잔고 컬럼(col=6) + 잔고 패널에 반영."""
-        from tab_options import _mk
-        sym    = self.edit_sym.text().strip().upper().replace('SPXW', 'SPX')
-        expiry, _ = self._get_expiry()
-        if not expiry: return
-
-        # 콜-풋 테이블 잔고 컬럼 전체 초기화
-        for r in range(self.tbl_call.rowCount()):
-            self.tbl_call.setItem(r, 6, _mk("―", "#aaaaaa"))
-        for r in range(self.tbl_put.rowCount()):
-            self.tbl_put.setItem(r, 6, _mk("―", "#aaaaaa"))
-
-        # 잔고 패널 테이블 초기화
-        if hasattr(self, 'tbl_positions'):
-            self.tbl_positions.setRowCount(0)
-
-        found = 0
-        avg_cost_map = pos_buf.get('avg_cost', {})
-        for (p_sym, p_right, p_strike, p_expiry), qty in pos_buf.items():
-            if not isinstance(p_sym, str): continue   # avg_cost 키 건너뜀
-            if p_sym != sym or p_expiry != expiry[:8]: continue
-            if qty == 0: continue
-
-            color = "#00ff88" if qty > 0 else "#ff6666"
-            text  = str(qty)
-
-            # ── 콜-풋 테이블 잔고 컬럼 갱신 ──
-            if p_right == 'C':
-                for r, st in enumerate(self.call_strikes):
-                    if int(st) == p_strike:
-                        self.tbl_call.setItem(r, 6, _mk(text, color))
-                        break
-            elif p_right == 'P':
-                for r, st in enumerate(self.put_strikes):
-                    if int(st) == p_strike:
-                        self.tbl_put.setItem(r, 6, _mk(text, color))
-                        break
-
-            # ── 잔고 패널 테이블에 행 추가 ──
-            if hasattr(self, 'tbl_positions'):
-                avg = avg_cost_map.get((p_sym, p_right, p_strike, p_expiry), 0)
-                r = self.tbl_positions.rowCount()
-                self.tbl_positions.insertRow(r)
-                cp_color = "#33aaff" if p_right == "C" else "#ff6666"
-                self.tbl_positions.setItem(r, 0, _mk("CALL" if p_right=="C" else "PUT", cp_color))
-                self.tbl_positions.setItem(r, 1, _mk(str(p_strike), "#ffd700"))
-                self.tbl_positions.setItem(r, 2, _mk(text, color))
-                self.tbl_positions.setItem(r, 3, _mk(f"{avg:.2f}" if avg else "―", "#aaa"))
-
-            found += 1
-
-        if found:
-            self._log(f"📊 잔고 갱신: {found}개 포지션 반영")
-        else:
-            self._log("📊 현재 만기 포지션 없음")

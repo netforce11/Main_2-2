@@ -362,12 +362,12 @@ class OptIntradayGrid(QWidget):
         self._log(f"⏳ {title} — IBKR 1분봉 요청 중...")
 
         # IBKR 계약 생성
-        exchange = "CBOE" if sym.upper() in ("SPX", "SPXW", "XSP", "NDX") else "SMART"
-        trading_class = sym.upper()
+        # core_contract.make_opt_contract(symbol, strike, right, expiry, tag="")
         contract = make_opt_contract(
-            sym, exp, strike, right[0],   # right[0] → "C" / "P"
-            exchange=exchange,
-            trading_class=trading_class,
+            sym,        # symbol
+            strike,     # strike (float)
+            right[0],   # right: "C" / "P"
+            exp,        # expiry: "YYYYMMDD"
         )
         if contract is None:
             self._log("❌ contract 생성 실패 — core.make_opt_contract 확인"); return
@@ -401,71 +401,67 @@ class OptIntradayGrid(QWidget):
         except Exception as e:
             self._bridge.error_sig.emit(f"reqHistoricalData 오류: {e}")
 
-    # ── IBKR 콜백 패치 ───────────────────────────────────────
-    # ── IBKR 콜백 패치 ───────────────────────────────────────
+    # ── bridge 시그널 연결 (monkeypatch 대신) ──────────────────
     def _patch_ib_callbacks(self, ib):
         """
-        IBapi 콜백 안전 등록.
-        인스턴스 메서드 덮어쓰기(monkey-patch)는 EWrapper 체인과 충돌 →
-        클래스 레벨 교체 + super() 체인 유지 방식으로 수정.
-        중복 등록 방지 플래그 _opt_intraday_patched 사용.
+        IBapi 클래스를 직접 수정하지 않는다.
+        core_contract.historicalData() 는 이미 bar → dict 변환 후
+        bridge.hist_bar(reqId, dict) 를 emit한다.
+        bridge.hist_end(reqId) 도 마찬가지.
+
+        여기서는 전역 bridge 시그널에 슬롯을 연결하고,
+        reqId 가 REQ_ID_OPT 인 경우만 내부 _bridge 로 중계한다.
+        중복 연결 방지 플래그 _opt_intraday_patched 를 사용한다.
+
+        주의: IBapi 클래스 레벨 monkeypatch는 core_contract.py 의
+        dict-emit 픽스를 덮어써 0xC0000005 를 재발시킨다 → 절대 금지.
         """
+        if getattr(self, '_opt_intraday_patched', False):
+            return
+        self._opt_intraday_patched = True
+
+        from core import bridge as _core_bridge
+        from PyQt5.QtCore import Qt
+
         bridge_ = self._bridge
 
-        # 이미 패치됐으면 스킵 (재조회 시 중복 등록 방지)
-        if getattr(ib, "_opt_intraday_patched", False):
-            return
-        ib._opt_intraday_patched = True
+        def _on_hist_bar(reqId, bar_dict):
+            # bar_dict 는 core_contract.historicalData 에서 이미 변환된 dict
+            if reqId != REQ_ID_OPT:
+                return
+            try:
+                bridge_.bar_ready.emit({
+                    "t": str(bar_dict["date"]),
+                    "o": float(bar_dict["open"]),
+                    "h": float(bar_dict["high"]),
+                    "l": float(bar_dict["low"]),
+                    "c": float(bar_dict["close"]),
+                    "v": int(bar_dict["volume"]),
+                })
+            except Exception as e:
+                bridge_.error_sig.emit(f"bar 파싱 오류: {e}")
 
-        # 클래스 레벨 원본 메서드 보존
-        orig_hist     = ib.__class__.historicalData
-        orig_hist_end = ib.__class__.historicalDataEnd
-        orig_grk      = ib.__class__.tickOptionComputation
-
-        def historicalData(self_ib, reqId, bar):
-            if reqId == REQ_ID_OPT:
-                try:
-                    bridge_.bar_ready.emit({
-                        "t": str(bar.date),
-                        "o": float(bar.open),
-                        "h": float(bar.high),
-                        "l": float(bar.low),
-                        "c": float(bar.close),
-                        "v": int(bar.volume),
-                    })
-                except Exception as e:
-                    bridge_.error_sig.emit(f"bar 파싱 오류: {e}")
-            else:
-                orig_hist(self_ib, reqId, bar)
-
-        def historicalDataEnd(self_ib, reqId, start, end):
+        def _on_hist_end(reqId):
             if reqId == REQ_ID_OPT:
                 bridge_.bars_done.emit()
-            else:
-                orig_hist_end(self_ib, reqId, start, end)
 
-        def tickOptionComputation(self_ib, reqId, tickType, tickAttrib,
-                                  impliedVol, delta, optPrice,
-                                  pvDividend, gamma, vega, theta, undPrice):
-            if reqId == REQ_ID_GRK:
-                # IBKR 는 미수신 값을 -1e308 로 보냄
-                def _safe(v): return float(v) if v not in (None, -1e308) else 0.0
-                bridge_.greek_ready.emit({
-                    "delta": _safe(delta),
-                    "gamma": _safe(gamma),
-                    "vega":  _safe(vega),
-                    "theta": _safe(theta),
-                    "iv":    _safe(impliedVol),
-                })
-            else:
-                orig_grk(self_ib, reqId, tickType, tickAttrib,
-                         impliedVol, delta, optPrice,
-                         pvDividend, gamma, vega, theta, undPrice)
+        _core_bridge.hist_bar.connect(_on_hist_bar, Qt.QueuedConnection)
+        _core_bridge.hist_end.connect(_on_hist_end, Qt.QueuedConnection)
 
-        # 클래스 레벨 교체 (self 인자가 있는 함수로 바인딩)
-        ib.__class__.historicalData        = historicalData
-        ib.__class__.historicalDataEnd     = historicalDataEnd
-        ib.__class__.tickOptionComputation = tickOptionComputation
+        # tick_option 은 전역 bridge 에서 reqId 필터링
+        def _on_tick_option(reqId, tickType, iv, delta, optPrice, gamma, vega, theta):
+            if reqId != REQ_ID_GRK:
+                return
+            def _safe(v): return float(v) if v not in (None, -1e308) else 0.0
+            bridge_.greek_ready.emit({
+                "delta": _safe(delta),
+                "gamma": _safe(gamma),
+                "vega":  _safe(vega),
+                "theta": _safe(theta),
+                "iv":    _safe(iv),
+            })
+
+        _core_bridge.tick_option.connect(_on_tick_option, Qt.QueuedConnection)
 
     # ══════════════════════════════════════════════════════════
     #  데이터 수신 콜백

@@ -1,11 +1,13 @@
 """
-chart_panel_builder.py — _build_chart_panel() 및 _wrap_tbl() UI 빌더
+chart_panel_builder.py — _build_chart_panel() / _wrap_tbl() UI builder
+Changes: intraday tab now uses MiniChartCanvas (matplotlib candle/line)
+         instead of pyqtgraph, matching spxw_core rendering style.
 """
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QRadioButton, QButtonGroup, QCheckBox, QComboBox,
-    QTabWidget, QPushButton, QSpinBox,
+    QTabWidget, QPushButton, QSpinBox, QSizePolicy,
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
@@ -16,22 +18,26 @@ try:
 except ImportError:
     PG = False
 
+# MiniChartCanvas: lazy import — top-level import triggers matplotlib backend
+# init before Qt event loop exists → 0xC0000005 on Windows.
+# Import is deferred to _build_intraday_tab() call time instead.
+MiniChartCanvas = None
+
 from chart_utils import (
-    CB_STYLE      as _CB_STYLE,
-    SB_STYLE      as _SB_STYLE,
-    BTN_STYLE     as _BTN_STYLE,
+    CB_STYLE        as _CB_STYLE,
+    SB_STYLE        as _SB_STYLE,
+    BTN_STYLE       as _BTN_STYLE,
     QUERY_BTN_STYLE as _QUERY_BTN_STYLE,
-    TAB_STYLE     as _TAB_STYLE,
+    TAB_STYLE       as _TAB_STYLE,
 )
 
 
 def _lbl(text):
-    """미니 레이블 헬퍼."""
     return QLabel(text, styleSheet="color:#aaa;font-size:11px;border:none;")
 
 
 # ──────────────────────────────────────────────────────────────
-# 탭1: 실시간
+# Tab 1: Realtime (pyqtgraph — unchanged)
 # ──────────────────────────────────────────────────────────────
 def _build_realtime_tab(host):
     rt_w = QWidget()
@@ -68,37 +74,44 @@ def _build_realtime_tab(host):
     ctrl_row.addStretch()
     rt_v.addLayout(ctrl_row)
 
-    host._pw1 = pg.PlotWidget()
-    host._pw1.showGrid(x=True, y=True, alpha=0.2)
-    host._pw1.setLabel('left', '프리미엄 ($)')
-    host._x_axis_line = pg.DateAxisItem(orientation='bottom')
-    host._pw1.setAxisItems({'bottom': host._x_axis_line})
-    host._c_p  = host._pw1.plot(pen=pg.mkPen('#ffd700', width=2), name="Price")
-    host._c_ma = host._pw1.plot(
-        pen=pg.mkPen('#ff8800', width=1, style=Qt.DashLine), name="MA10")
-    host._c_und = host._pw1.plot(
-        pen=pg.mkPen('#5dade2', width=1, style=Qt.DotLine), name="UND")
-    host._price_line = pg.InfiniteLine(
-        angle=0, movable=False,
-        pen=pg.mkPen('#00e676', width=1, style=Qt.DashLine))
-    host._pw1.addItem(host._price_line)
+    if PG:
+        pg.setConfigOption('background', '#06060e')
+        pg.setConfigOption('foreground', '#ccc')
 
-    host._pw_candle = pg.PlotWidget()
-    host._pw_candle.showGrid(x=True, y=True, alpha=0.2)
-    host._pw_candle.setLabel('left', '프리미엄 ($)')
-    host._x_axis_candle = pg.DateAxisItem(orientation='bottom')
-    host._pw_candle.setAxisItems({'bottom': host._x_axis_candle})
-    host._candle_bars = {}
-    host._candle_items = []
-    host._pw_candle.setVisible(False)
+        host._pw1 = pg.PlotWidget()
+        host._pw1.showGrid(x=True, y=True, alpha=0.2)
+        host._pw1.setLabel('left', '프리미엄 ($)')
+        host._x_axis_line = pg.DateAxisItem(orientation='bottom')
+        host._pw1.setAxisItems({'bottom': host._x_axis_line})
+        host._c_p  = host._pw1.plot(pen=pg.mkPen('#ffd700', width=2), name="Price")
+        host._c_ma = host._pw1.plot(
+            pen=pg.mkPen('#ff8800', width=1, style=Qt.DashLine), name="MA10")
+        host._c_und = host._pw1.plot(
+            pen=pg.mkPen('#5dade2', width=1, style=Qt.DotLine), name="UND")
+        host._price_line = pg.InfiniteLine(
+            angle=0, movable=False,
+            pen=pg.mkPen('#00e676', width=1, style=Qt.DashLine))
+        host._pw1.addItem(host._price_line)
 
-    rt_v.addWidget(host._pw1, 1)
-    rt_v.addWidget(host._pw_candle, 1)
+        host._pw_candle = pg.PlotWidget()
+        host._pw_candle.showGrid(x=True, y=True, alpha=0.2)
+        host._pw_candle.setLabel('left', '프리미엄 ($)')
+        host._x_axis_candle = pg.DateAxisItem(orientation='bottom')
+        host._pw_candle.setAxisItems({'bottom': host._x_axis_candle})
+        host._candle_bars  = {}
+        host._candle_items = []
+        host._pw_candle.setVisible(False)
+
+        rt_v.addWidget(host._pw1, 1)
+        rt_v.addWidget(host._pw_candle, 1)
+    else:
+        rt_v.addWidget(QLabel("pip install pyqtgraph  (실시간 탭 전용)"))
+
     return rt_w
 
 
 # ──────────────────────────────────────────────────────────────
-# 탭2: 일봉
+# Tab 2: Daily (pyqtgraph — unchanged)
 # ──────────────────────────────────────────────────────────────
 def _build_daily_tab(host):
     daily_w = QWidget()
@@ -130,24 +143,29 @@ def _build_daily_tab(host):
     d_ctrl.addStretch()
     daily_v.addLayout(d_ctrl)
 
-    host._pw_daily = pg.PlotWidget()
-    host._pw_daily.showGrid(x=True, y=True, alpha=0.2)
-    host._pw_daily.setLabel('left', '가격')
-    host._pw_daily.getPlotItem().setContentsMargins(10, 4, 10, 4)
-    host._daily_items = []
-    daily_v.addWidget(host._pw_daily, 1)
+    if PG:
+        host._pw_daily = pg.PlotWidget()
+        host._pw_daily.showGrid(x=True, y=True, alpha=0.2)
+        host._pw_daily.setLabel('left', '가격')
+        host._pw_daily.getPlotItem().setContentsMargins(10, 4, 10, 4)
+        host._daily_items = []
+        daily_v.addWidget(host._pw_daily, 1)
+    else:
+        daily_v.addWidget(QLabel("pip install pyqtgraph  (일봉 탭 전용)"))
+
     return daily_w
 
 
 # ──────────────────────────────────────────────────────────────
-# 탭3: 분봉
+# Tab 3: Intraday — MiniChartCanvas (matplotlib) IBKR-only
 # ──────────────────────────────────────────────────────────────
 def _build_intraday_tab(host):
     intra_w = QWidget()
     intra_v = QVBoxLayout(intra_w)
     intra_v.setContentsMargins(0, 2, 0, 0)
-    intra_v.setSpacing(2)
+    intra_v.setSpacing(4)
 
+    # ── Control row ──────────────────────────────────────────
     i_ctrl = QHBoxLayout()
     i_ctrl.setSpacing(6)
 
@@ -178,33 +196,55 @@ def _build_intraday_tab(host):
     host.chk_intra_ext.setStyleSheet("color:#90caf9;font-size:11px;")
     host.chk_intra_ext.setChecked(False)
 
+    # Chart mode toggle (캔들 / 라인) — mirrors spxw_1min_tab style
+    host.combo_intra_chart_mode = QComboBox()
+    host.combo_intra_chart_mode.addItems(["캔들", "라인"])
+    host.combo_intra_chart_mode.setFixedWidth(52)
+    host.combo_intra_chart_mode.setFixedHeight(22)
+    host.combo_intra_chart_mode.setStyleSheet(_CB_STYLE)
+    # Re-render on mode change if data is already loaded
+    host.combo_intra_chart_mode.currentIndexChanged.connect(
+        lambda: host._redraw_intraday_cache()
+    )
+
     btn_intra = QPushButton("▶ 조회")
     btn_intra.setFixedHeight(22)
     btn_intra.setStyleSheet(_QUERY_BTN_STYLE)
     btn_intra.clicked.connect(host._fetch_intraday)
 
-    host.lbl_intra_status = QLabel("기초자산 클릭 시 자동 조회")
+    host.lbl_intra_status = QLabel("▶ 조회 버튼으로 IBKR 분봉 요청")
     host.lbl_intra_status.setStyleSheet("color:#666;font-size:10px;border:none;")
 
     for w in (_lbl("봉:"), host.combo_intra_tf,
               _lbl("개수:"), host.spin_intra_bars,
               btn_1d, btn_2d, btn_3d,
-              host.chk_intra_ext, btn_intra, host.lbl_intra_status):
+              host.chk_intra_ext,
+              _lbl("차트:"), host.combo_intra_chart_mode,
+              btn_intra, host.lbl_intra_status):
         i_ctrl.addWidget(w)
     i_ctrl.addStretch()
     intra_v.addLayout(i_ctrl)
 
-    host._pw_intra = pg.PlotWidget()
-    host._pw_intra.showGrid(x=True, y=True, alpha=0.2)
-    host._pw_intra.setLabel('left', '가격')
-    host._pw_intra.getPlotItem().setContentsMargins(10, 4, 10, 4)
-    host._intra_items = []
-    intra_v.addWidget(host._pw_intra, 1)
+    # ── MiniChartCanvas (spxw_core) ──────────────────────────
+    # Deferred import: matplotlib backend must be initialized AFTER Qt event
+    # loop starts. Top-level import causes 0xC0000005 on Windows.
+    try:
+        from spxw_core import MiniChartCanvas as _MCC
+        host.mini_chart_intra = _MCC(parent=intra_w, width=7, height=3, dpi=100)
+        host.mini_chart_intra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        intra_v.addWidget(host.mini_chart_intra, 1)
+    except Exception as e:
+        host.mini_chart_intra = None
+        err_lbl = QLabel(f"⚠ MiniChartCanvas 로드 실패: {e}")
+        err_lbl.setStyleSheet("color:#ff5252;font-size:11px;")
+        intra_v.addWidget(err_lbl, 1)
+        print(f"[chart_panel_builder] MiniChartCanvas import error: {e}")
+
     return intra_w
 
 
 # ──────────────────────────────────────────────────────────────
-# 메인 빌더 (ChartMixin에서 호출)
+# Main builder (called from ChartMixin)
 # ──────────────────────────────────────────────────────────────
 def build_chart_panel(host):
     outer = QWidget()
@@ -225,20 +265,12 @@ def build_chart_panel(host):
     hdr.addWidget(host.lbl_pv)
     v.addLayout(hdr)
 
-    if not PG:
-        v.addWidget(QLabel("pip install pyqtgraph"))
-        host._chart_outer = outer
-        return outer
-
-    pg.setConfigOption('background', '#06060e')
-    pg.setConfigOption('foreground', '#ccc')
-
     host._chart_tabs = QTabWidget()
     host._chart_tabs.setStyleSheet(_TAB_STYLE)
     host._chart_tabs.addTab(_build_realtime_tab(host), "⚡ 실시간")
-    host._chart_tabs.addTab(_build_daily_tab(host),   "📅 일봉")
+    host._chart_tabs.addTab(_build_daily_tab(host),    "📅 일봉")
     host._chart_tabs.addTab(_build_intraday_tab(host), "🕐 분봉")
-    host._chart_tabs.setCurrentIndex(2)   # ✅ 기본값: 분봉 탭
+    host._chart_tabs.setCurrentIndex(2)   # default: intraday tab
 
     v.addWidget(host._chart_tabs, 1)
     host._chart_outer = outer
@@ -246,7 +278,7 @@ def build_chart_panel(host):
 
 
 def wrap_tbl(host, tbl, title, color):
-    """테이블 위에 컬러 제목을 달아주는 래퍼."""
+    """Wrap a table widget with a colored title label."""
     w = QWidget()
     v = QVBoxLayout(w)
     v.setContentsMargins(0, 0, 0, 0)

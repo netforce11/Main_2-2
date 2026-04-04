@@ -1,0 +1,1 @@
+tab_options_chart.py202ChartMixin 통합 진입점 (Main.py 연결 동일 유지)chart_tick.py169Tick 수신 — 가격 / Greekschart_history.py248일봉/분봉 조회, OHLC 캔들 렌더러chart_panel_builder.py259UI 빌더 (탭 3개)chart_ibkr.py106IBKR reqHistoricalData fallbackchart_utils.py125Polygon API, DST/KST 유틸, QSS 상수, FetchSignal
