@@ -431,16 +431,36 @@ def make_opt_contract(symbol: str, strike: float, right: str,
     return c
 
 def make_und_contract(symbol: str) -> "Contract":
+    """
+    기초자산 Contract 생성.
+    - 지수 (IND) : SPX/SPXW→SPX@CBOE, NDX@NASDAQ, RUT@RUSSELL,
+                   VIX/DJX/XSP→CBOE
+    - 주식/ETF (STK) : SMART
+    SPXW는 내부적으로 항상 SPX로 정규화.
+    """
+    sym = symbol.upper().replace("SPXW", "SPX")
     c = Contract()
-    c.symbol   = symbol.upper()
     c.currency = "USD"
-    if symbol.upper() in INDEX_SYM:
-        c.secType  = "IND"
-        # IND는 거래소 직접 지정 필요 (SMART 미지원)
-        c.exchange = "NASDAQ" if symbol.upper() in ("NDX",) else "CBOE"
-    else:
-        c.secType  = "STK"
-        c.exchange = "SMART"
+
+    # ── 지수 ──────────────────────────────────────────────────
+    if sym in INDEX_SYM:
+        c.symbol  = sym
+        c.secType = "IND"
+        _IND_EXCH = {
+            "NDX": "NASDAQ",   # Nasdaq-100
+            "RUT": "RUSSELL",  # Russell 2000
+            "DJX": "CBOE",
+            "XSP": "CBOE",
+            "VIX": "CBOE",
+            "SPX": "CBOE",
+        }
+        c.exchange = _IND_EXCH.get(sym, "CBOE")
+        return c
+
+    # ── 주식/ETF ──────────────────────────────────────────────
+    c.symbol   = sym
+    c.secType  = "STK"
+    c.exchange = "SMART"
     return c
 
 
