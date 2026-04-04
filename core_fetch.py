@@ -390,31 +390,24 @@ class CoreFetchMixin(CoreFetchPosMixin):
             if hasattr(self, '_c_und'):
                 self._c_und.setData([])
 
-        # ⑤ 히스토리 차트 조회
-        from core import is_market_open
-        market_open = is_market_open()
+        # ⑤ 히스토리 차트 조회 — 장중/장외 모두 분봉 탭 우선
+        # edit_sym 업데이트가 Qt 이벤트 루프에 반영된 후 조회해야 함 → 150ms 딜레이
+        if hasattr(self, '_chart_tabs'):
+            self._chart_tabs.setCurrentIndex(2)   # 먼저 분봉 탭으로 전환
 
-        if market_open:
+        def _do_fetch():
             if hasattr(self, '_fetch_intraday'):
                 self._fetch_intraday()
-            if hasattr(self, '_chart_tabs'):
-                self._chart_tabs.setCurrentIndex(2)
-            self._log(
-                f"관심종목 선택: {sym} {self._sym_type_label(sym)}"
-                f"  (장 중 — 분봉 차트 조회)")
-        else:
-            # 장 외: 일봉 완료 후 분봉 순차 실행 (req_id 9800/9801 충돌 방지)
-            if hasattr(self, '_fetch_daily') and hasattr(self, '_fetch_intraday'):
-                self._fetch_daily(on_done_extra=self._fetch_intraday)
-            elif hasattr(self, '_fetch_daily'):
+            if hasattr(self, '_fetch_daily'):
                 self._fetch_daily()
-            elif hasattr(self, '_fetch_intraday'):
-                self._fetch_intraday()
-            if hasattr(self, '_chart_tabs'):
-                self._chart_tabs.setCurrentIndex(1)
-            self._log(
-                f"관심종목 선택: {sym} {self._sym_type_label(sym)}"
-                f"  (장 외 — 일봉 완료 후 분봉 순차 조회)")
+
+        QTimer.singleShot(150, _do_fetch)
+
+        from core import is_market_open
+        market_open = is_market_open()
+        self._log(
+            f"관심종목 선택: {sym} {self._sym_type_label(sym)}"
+            f"  ({'장 중' if market_open else '장 외'} — 분봉 즉시 조회)")
 
     def _w_add(self):
         """관심종목 추가 — 지수/주식 자동 판별 후 레이블 붙여 표시."""

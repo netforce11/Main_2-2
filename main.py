@@ -168,7 +168,7 @@ class TradingDashboard(QMainWindow):
   #      add(MultiPriceGrid,                   "5. 복수 현재가",  self)
         print("[DIAG] 탭4 완료 / 탭6 GreeksGrid 생성 전...", flush=True)
         self.tab_greeks  = add(GreeksGrid,    "6. Greeks Matrix",self)
- #       add(ChartGrid,                        "7. 1분봉 차트",   self)
+        add(ChartGrid,                        "7. 1분봉 차트",   self)
   #      add(OITrackerGrid,                    "8. OI 추적",      self)
   #      self.tab_trading = add(TradingGrid,   "9. 주문/잔고",    self)
         print("[DIAG] 탭6 완료 / 탭10 KRFuturesGrid 생성 전...", flush=True)

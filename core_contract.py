@@ -82,29 +82,17 @@ if IBAPI_AVAILABLE:
                 float(execution.price))
 
         def historicalData(self, reqId, bar):
-            # ── bar 속성을 C++ 객체에서 즉시 Python primitive로 추출 ──
-            # ibapi는 내부적으로 bar 객체를 재사용한다.
-            # try/except는 C 레벨 Access Violation(0xC0000005)을 잡지 못하므로
-            # 속성 접근 전에 id/type 검사 없이 최대한 빠르게 primitive 복사만 수행.
-            # float() 변환도 C 객체 접근이므로 str() 경유로 안전하게 처리.
-            try:
-                date_s   = str(bar.date)
-                open_s   = str(bar.open)
-                high_s   = str(bar.high)
-                low_s    = str(bar.low)
-                close_s  = str(bar.close)
-                volume_s = str(bar.volume)
-            except Exception as e:
-                print(f"[historicalData] bar 속성 추출 실패: {e}")
-                return
+            # bar 객체를 백그라운드에서 dict로 변환 후 emit.
+            # pyqtSignal(int, object)로 IBKR bar를 직접 전달하면
+            # Qt cross-thread 복사 시 메모리 접근 위반(0xC0000005) 발생.
             try:
                 bar_dict = {
-                    "date":   date_s,
-                    "open":   float(open_s),
-                    "high":   float(high_s),
-                    "low":    float(low_s),
-                    "close":  float(close_s),
-                    "volume": float(volume_s),
+                    "date":   bar.date,
+                    "open":   float(bar.open),
+                    "high":   float(bar.high),
+                    "low":    float(bar.low),
+                    "close":  float(bar.close),
+                    "volume": float(bar.volume),
                 }
             except Exception as e:
                 print(f"[historicalData] bar 변환 실패: {e}")
@@ -113,6 +101,35 @@ if IBAPI_AVAILABLE:
 
         def historicalDataEnd(self, reqId, start, end):
             bridge.hist_end.emit(reqId)
+
+        def historicalTicks(self, reqId, ticks, done):
+            """TRADES 틱 콜백 — STK/ETF용."""
+            tick_list = []
+            for t in ticks:
+                try:
+                    tick_list.append({
+                        "t": float(t.time),
+                        "p": float(t.price),
+                        "s": int(t.size),
+                    })
+                except Exception:
+                    pass
+            bridge.hist_ticks.emit(reqId, tick_list, bool(done))
+
+        def historicalTicksBidAsk(self, reqId, ticks, done):
+            """BID_ASK 틱 콜백 — IND(지수)용. mid price로 변환."""
+            tick_list = []
+            for t in ticks:
+                try:
+                    mid = (float(t.priceBid) + float(t.priceAsk)) / 2.0
+                    tick_list.append({
+                        "t": float(t.time),
+                        "p": mid,
+                        "s": int(t.sizeBid) + int(t.sizeAsk),
+                    })
+                except Exception:
+                    pass
+            bridge.hist_ticks.emit(reqId, tick_list, bool(done))
 
         def get_next_id(self):
             oid = self._next_id
@@ -285,3 +302,6 @@ def make_und_contract(symbol: str) -> "Contract":
     c.secType  = "STK"
     c.exchange = "SMART"
     return c
+
+
+

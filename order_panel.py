@@ -16,8 +16,9 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QLineEdit, QComboBox,
     QGroupBox, QRadioButton, QButtonGroup,
-    QSpinBox, QTabWidget,
+    QSpinBox, QTabWidget, QCheckBox,
     QTableWidget, QHeaderView, QAbstractItemView,
+    QMessageBox,
 )
 from PyQt5.QtCore import Qt, QTimer
 
@@ -167,12 +168,12 @@ class OrderPanelMixin:
         self.btn_qord_buy.setStyleSheet(
             "background:#1a5c2e;color:#00ff88;font-size:16px;"
             "font-weight:bold;padding:10px 4px;border-radius:4px;")
-        self.btn_qord_buy.clicked.connect(lambda _: self._qord_place("BUY"))
+        self.btn_qord_buy.clicked.connect(lambda: self._qord_place_validated("BUY"))
         self.btn_qord_sell = QPushButton("▼ 매도")
         self.btn_qord_sell.setStyleSheet(
             "background:#6b1a1a;color:#ff6666;font-size:16px;"
             "font-weight:bold;padding:10px 4px;border-radius:4px;")
-        self.btn_qord_sell.clicked.connect(lambda _: self._qord_place("SELL"))
+        self.btn_qord_sell.clicked.connect(lambda: self._qord_place_validated("SELL"))
         btn_row.addWidget(self.btn_qord_buy, 1)
         btn_row.addWidget(self.btn_qord_sell, 1)
         root_v.addLayout(btn_row)
@@ -183,6 +184,53 @@ class OrderPanelMixin:
             "color:#888;font-size:13px;"
             "border:1px solid #333;border-radius:3px;padding:2px;")
         root_v.addWidget(self.lbl_qord_status)
+
+        # ── Feature 4: 확인창 체크박스 ───────────────────────
+        confirm_row = QHBoxLayout()
+        self.chk_order_confirm = QCheckBox("주문 확인창")
+        self.chk_order_confirm.setChecked(True)
+        self.chk_order_confirm.setToolTip("ON: 주문 전 확인 팝업 표시 / OFF: 즉시 주문")
+        self.chk_order_confirm.setStyleSheet(
+            "QCheckBox{color:#90caf9;font-size:12px;}"
+            "QCheckBox::indicator{width:14px;height:14px;}"
+            "QCheckBox::indicator:checked{background:#1a4a6b;border:1px solid #90caf9;border-radius:2px;}"
+            "QCheckBox::indicator:unchecked{background:#0a0a1e;border:1px solid #444;border-radius:2px;}")
+        confirm_row.addStretch()
+        confirm_row.addWidget(self.chk_order_confirm)
+        root_v.addLayout(confirm_row)
+
+        # ── 가격 정정 버튼 (+0.05 / -0.05 / +0.10 / -0.10) ──
+        _bump_title = QLabel("빠른 가격 정정")
+        _bump_title.setStyleSheet("color:#aaa;font-size:11px;border:none;margin-top:4px;")
+        root_v.addWidget(_bump_title)
+
+        bump_row = QHBoxLayout(); bump_row.setSpacing(3)
+        _bs = ("QPushButton{font-size:12px;font-weight:bold;"
+               "border-radius:3px;padding:3px 2px;border:1px solid #3a3a6a;}"
+               "QPushButton:hover{opacity:0.85;}")
+        _up_s   = _bs + "QPushButton{background:#1a3a5a;color:#90caf9;}"
+        _down_s = _bs + "QPushButton{background:#3a1a3a;color:#ff90f0;}"
+
+        for label, delta, style in [
+            ("+0.05", +0.05, _up_s),
+            ("+0.10", +0.10, _up_s),
+            ("-0.05", -0.05, _down_s),
+            ("-0.10", -0.10, _down_s),
+        ]:
+            b = QPushButton(label)
+            b.setFixedHeight(24)
+            b.setStyleSheet(style)
+            b.clicked.connect(lambda _, d=delta: self._bump_price_and_amend(d))
+            bump_row.addWidget(b)
+        root_v.addLayout(bump_row)
+
+        # 정정 상태 레이블
+        self.lbl_bump_status = QLabel("")
+        self.lbl_bump_status.setAlignment(Qt.AlignCenter)
+        self.lbl_bump_status.setStyleSheet(
+            "color:#666;font-size:11px;border:none;")
+        root_v.addWidget(self.lbl_bump_status)
+
         root_v.addStretch()
         tab_w.addTab(new_w, "⚡ 신규")
 
@@ -364,6 +412,165 @@ class OrderPanelMixin:
 
         gb_v.addWidget(self._pos_sell_panel)
         return gb
+
+    # ─────────────────────────────────────────────────────
+    # Feature 4: 주문 전 검증 + 확인창 토글
+    # ─────────────────────────────────────────────────────
+    def _validate_quick_order(self, action: str) -> tuple:
+        """
+        신규 주문 필수 필드 검증 (UI 팝업 없음 — 호출자가 처리).
+        반환: (valid: bool, error_msg: str)
+        """
+        errors = []
+
+        # ── C/P (side) — 주식 모드면 side 불필요 ──
+        side_val = getattr(self, 'qord_side', None)
+        side_val = side_val.text().strip() if side_val else ""
+        strike_val = getattr(self, 'qord_strike', None)
+        strike_val = strike_val.text().strip() if strike_val else ""
+
+        # 옵션 주문: side 와 strike 모두 필요
+        if side_val or strike_val:
+            if not side_val:
+                errors.append("• C/P (콜/풋) 대상이 없습니다\n  (옵션 체인에서 행 클릭하세요)")
+            if not strike_val:
+                errors.append("• 행사가가 없습니다\n  (옵션 체인에서 행 클릭하세요)")
+
+        # ── 수량 ──
+        qty_spin = getattr(self, 'qord_qty', None)
+        qty = qty_spin.value() if qty_spin else 0
+        if qty <= 0:
+            errors.append("• 수량을 1 이상 입력하세요")
+
+        # ── 지정가 ──
+        is_lmt = getattr(self, 'qord_lmt', None)
+        if is_lmt and is_lmt.isChecked():
+            price_edit = getattr(self, 'qord_price', None)
+            price_txt  = price_edit.text().strip() if price_edit else ""
+            try:
+                if float(price_txt) <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                errors.append("• 지정가(가격)를 올바르게 입력하세요")
+
+        if errors:
+            return False, "\n\n".join(errors)
+        return True, ""
+
+    def _qord_place_validated(self, action: str):
+        """
+        매수/매도 버튼 클릭
+          1) 필드 검증 → 실패 시 경고 팝업
+          2) chk_order_confirm ON  → _qord_place() 내부 팝업 그대로 사용
+             chk_order_confirm OFF → _skip_confirm 플래그로 _qord_place() 팝업 건너뜀
+        """
+        valid, err_msg = self._validate_quick_order(action)
+        if not valid:
+            QMessageBox.warning(self, "⚠ 주문 불가 — 입력 확인",
+                                f"주문을 넣기 전에 확인하세요:\n\n{err_msg}")
+            return
+
+        chk = getattr(self, 'chk_order_confirm', None)
+        # OFF → _qord_place()의 QMessageBox.question 을 자동 Yes 처리
+        self._skip_order_confirm = (chk is not None and not chk.isChecked())
+        self._qord_place(action)
+        self._skip_order_confirm = False
+
+    # ─────────────────────────────────────────────────────
+    # Feature: +0.05/-0.05/+0.10/-0.10 가격 정정 (빠른 정정)
+    # ─────────────────────────────────────────────────────
+    def _bump_price_and_amend(self, delta: float):
+        """
+        현재 주문창 가격에 delta 를 더해 정정 주문 전송.
+        미체결 주문 버퍼(self._open_orders_buf)에서 OID 자동 조회.
+        OID 가 없으면 정정 탭에 입력된 amend_oid 사용.
+        """
+        # ── 현재 가격 읽기 ──
+        price_edit = getattr(self, 'qord_price', None)
+        price_txt  = price_edit.text().strip() if price_edit else ""
+        try:
+            cur_price = float(price_txt)
+            if cur_price <= 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            lbl = getattr(self, 'lbl_bump_status', None)
+            if lbl: lbl.setText("⚠ 가격을 먼저 입력하세요")
+            return
+
+        new_price = round(cur_price + delta, 2)
+        if new_price <= 0:
+            lbl = getattr(self, 'lbl_bump_status', None)
+            if lbl: lbl.setText("⚠ 정정가가 0 이하입니다")
+            return
+
+        # ── OID 결정 ──
+        # 우선순위: 미체결 버퍼의 가장 최근 주문 → 정정 탭 amend_oid → 없으면 중단
+        oid = None
+        buf = getattr(self, '_open_orders_buf', [])
+        if buf:
+            oid = buf[-1]["oid"]   # 마지막 미체결 주문
+
+        if oid is None:
+            amend_edit = getattr(self, 'amend_oid', None)
+            oid_txt = amend_edit.text().strip() if amend_edit else ""
+            try:
+                oid = int(oid_txt)
+            except (ValueError, TypeError):
+                lbl = getattr(self, 'lbl_bump_status', None)
+                if lbl: lbl.setText("⚠ 미체결 주문 조회 후 시도하세요")
+                return
+
+        # ── 확인창 체크 (chk_order_confirm 따라감) ──
+        chk = getattr(self, 'chk_order_confirm', None)
+        if chk is not None and chk.isChecked():
+            sign = f"+{delta:.2f}" if delta > 0 else f"{delta:.2f}"
+            reply = QMessageBox.question(
+                self, "빠른 정정 확인",
+                f"OID={oid}  현재가 ${cur_price:.2f} → 정정가 ${new_price:.2f}  ({sign})\n\n정정 주문을 전송하시겠습니까?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply != QMessageBox.Yes:
+                return
+
+        # ── 정정 전송 ──
+        if not self.mw.connected:
+            QMessageBox.warning(self, "미연결", "TWS에 먼저 연결하세요.")
+            return
+        try:
+            matched = next((o for o in buf if o["oid"] == oid), None)
+            if matched is None:
+                lbl = getattr(self, 'lbl_bump_status', None)
+                if lbl: lbl.setText(f"⚠ OID={oid} contract 없음 — 조회 먼저")
+                return
+
+            from ibapi.order import Order as IbOrder
+            ibord = IbOrder()
+            ibord.action        = matched["action"]
+            ibord.orderType     = "LMT"
+            ibord.totalQuantity = matched["qty"]
+            ibord.lmtPrice      = new_price
+            ibord.tif           = matched.get("tif", "DAY")
+            ibord.eTradeOnly    = False
+            ibord.firmQuoteOnly = False
+
+            self.mw.ib.placeOrder(oid, matched["contract"], ibord)
+
+            # 주문창 가격 업데이트
+            if price_edit:
+                price_edit.setText(f"{new_price:.2f}")
+
+            sign_str = f"+{delta:.2f}" if delta > 0 else f"{delta:.2f}"
+            msg = f"✅ 정정 전송: OID={oid}  ${cur_price:.2f} → ${new_price:.2f} ({sign_str})"
+            lbl = getattr(self, 'lbl_bump_status', None)
+            if lbl:
+                lbl.setStyleSheet("color:#90caf9;font-size:11px;border:none;")
+                lbl.setText(msg)
+            self._log(msg)
+        except Exception as e:
+            lbl = getattr(self, 'lbl_bump_status', None)
+            if lbl:
+                lbl.setStyleSheet("color:#ff5252;font-size:11px;border:none;")
+                lbl.setText(f"❌ 정정 오류: {e}")
+            self._log(f"❌ 빠른 정정 오류: {e}")
 
     # ─────────────────────────────────────────────────────
     # 수수료 예상 계산 (IBKR 기준: $0.65/계약, 최소 $1.00)

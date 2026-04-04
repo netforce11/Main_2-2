@@ -171,6 +171,7 @@ class SignalBridge(QObject):
     # 히스토리
     hist_bar       = pyqtSignal(int, dict)   # bar를 dict로 직렬화 후 emit (object는 cross-thread 크래시)
     hist_end       = pyqtSignal(int)
+    hist_ticks     = pyqtSignal(int, list, bool)  # reqId, ticks(list of dict), done
 
 # 전역 브릿지 싱글턴
 bridge = SignalBridge()

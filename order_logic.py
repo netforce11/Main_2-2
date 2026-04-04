@@ -137,10 +137,13 @@ class OrderLogicMixin:
             msg = (f"{action_kr} {order_type}  "
                    f"{sym}  {qty}주  {price_disp}  {tif}")
 
-        ret = QMessageBox.question(self, f"주문 확인 — {action_kr}",
-            f"⚠ 아래 주문을 전송합니다.\n\n{msg}\n\n계속하시겠습니까?",
-            QMessageBox.Yes | QMessageBox.No)
-        if ret != QMessageBox.Yes: return
+        # chk_order_confirm OFF 시 _skip_order_confirm=True → 팝업 건너뜀
+        skip_confirm = getattr(self, '_skip_order_confirm', False)
+        if not skip_confirm:
+            ret = QMessageBox.question(self, f"주문 확인 — {action_kr}",
+                f"⚠ 아래 주문을 전송합니다.\n\n{msg}\n\n계속하시겠습니까?",
+                QMessageBox.Yes | QMessageBox.No)
+            if ret != QMessageBox.Yes: return
         if not self.mw.connected:
             QMessageBox.warning(self,"미연결","TWS에 먼저 연결하세요.")
             return
