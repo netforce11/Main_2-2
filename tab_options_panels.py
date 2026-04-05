@@ -193,7 +193,11 @@ class PanelsMixin(PricePanelMixin):
         _ppc_v.addWidget(self._build_position_panel())
         self._tbl_splitter.addWidget(_ppc)
 
-        self._tbl_splitter.addWidget(self._build_quick_order_panel())
+        # [S6] Quick-order panel slot is now empty — panel moved to bot area
+        self._qord_placeholder = QWidget()
+        self._qord_placeholder.setStyleSheet("background:#06060e;")
+        self._tbl_splitter.addWidget(self._qord_placeholder)
+
         self._tbl_splitter.setSizes([460, 460, 180, 220])
         from PyQt5.QtWidgets import QSizePolicy as _SP
         self._tbl_splitter.setSizePolicy(_SP.Ignored, _SP.Ignored)
@@ -203,7 +207,69 @@ class PanelsMixin(PricePanelMixin):
     def _build_bot_panel(self) -> QSplitter:
         self._bot_splitter = self._spl(Qt.Horizontal)
         self._bot_splitter.addWidget(self._build_chart_panel())
-        self._bot_splitter.addWidget(self._build_watch_widget())
-        self._bot_splitter.setSizes([820, 500])
+
+        # [S6] Quick-order panel + 감시 popup button in one container
+        qord_container = QWidget()
+        qord_container.setStyleSheet("background:#06060e;")
+        qv = QVBoxLayout(qord_container)
+        qv.setContentsMargins(0, 0, 0, 0)
+        qv.setSpacing(0)
+
+        # 🔔 감시 버튼 — opens watch panel as floating dialog
+        btn_watch_popup = QPushButton("🔔  감시 패널 열기")
+        btn_watch_popup.setFixedHeight(28)
+        btn_watch_popup.setStyleSheet(
+            "QPushButton{background:#1a2a1a;color:#00e676;font-size:12px;"
+            "font-weight:bold;border:1px solid #2a5a2a;border-radius:0px;}"
+            "QPushButton:hover{background:#2a3a2a;color:#00ff88;}"
+            "QPushButton:pressed{background:#0a1a0a;}")
+        btn_watch_popup.clicked.connect(self._open_watch_popup)
+        qv.addWidget(btn_watch_popup)
+        qv.addWidget(self._build_quick_order_panel(), 1)
+
+        self._bot_splitter.addWidget(qord_container)
+        self._bot_splitter.setSizes([820, 300])
         self._watch_splitter = self._bot_splitter
         return self._bot_splitter
+
+    # ── 감시 팝업 ─────────────────────────────────────────────
+    def _open_watch_popup(self):
+        """Open watch panel as a floating dialog.
+        Called by the 🔔 감시 button in the quick-order panel.
+        The dialog is non-modal so trading can continue while it's open.
+        Re-uses the existing _build_watch_widget() so all logic is intact.
+        """
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout as _V, QSizePolicy as _SP
+        from PyQt5.QtCore import Qt as _Qt
+
+        # Reuse existing popup if already open
+        if getattr(self, '_watch_popup', None) and self._watch_popup.isVisible():
+            self._watch_popup.raise_()
+            self._watch_popup.activateWindow()
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("🔔 감시 패널")
+        dlg.setWindowFlags(
+            _Qt.Window |
+            _Qt.WindowCloseButtonHint |
+            _Qt.WindowMinimizeButtonHint |
+            _Qt.WindowMaximizeButtonHint
+        )
+        dlg.setMinimumSize(520, 600)
+        dlg.resize(620, 720)
+        dlg.setStyleSheet(
+            "QDialog{background:#06060e;}"
+            "QLabel{color:#dde0f0;}"
+        )
+
+        v = _V(dlg)
+        v.setContentsMargins(4, 4, 4, 4)
+        v.setSpacing(0)
+
+        # Build a fresh watch widget inside the popup
+        watch_w = self._build_watch_widget()
+        v.addWidget(watch_w)
+
+        self._watch_popup = dlg
+        dlg.show()
