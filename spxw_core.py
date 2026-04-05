@@ -54,12 +54,8 @@ except ImportError:
 # 저장 기본 폴더
 _SAVE_BASE_DIR = r"C:\data\Zeroday_option_1Sec"
 
-import matplotlib
+import matplotlib  # keep for any remaining matplotlib.patches refs in this file
 matplotlib.use("Qt5Agg")
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-import matplotlib.patches
-import matplotlib.ticker as mticker
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -486,84 +482,9 @@ def _index_existing_for_expiry(base_dir: str, expiry: str) -> Set[Tuple[float, s
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  PART 2: 차트 캔버스 내장
+#  PART 2: 차트 캔버스 — mini_chart_canvas.py 로 분리 [S9]
 # ═══════════════════════════════════════════════════════════════════
-
-class MiniChartCanvas(FigureCanvas):
-    """1분봉/1초봉 캔들+라인 차트"""
-
-    def __init__(self, parent=None, width=5, height=3, dpi=100):
-        self._fig = Figure(figsize=(width, height), dpi=dpi)
-        self._fig.patch.set_facecolor("#ffffff")
-        self._ax = self._fig.add_subplot(111)
-        self._ax_vol = self._ax.twinx()
-        super().__init__(self._fig)
-        self.setParent(parent)
-        self._fig.subplots_adjust(left=0.06, right=0.94, top=0.92, bottom=0.14)
-
-    def _reset(self):
-        self._ax.cla()
-        self._ax_vol.cla()
-        self._ax.set_facecolor("#fafafa")
-        self._ax_vol.set_facecolor("#fafafa")
-
-    def plot_line(self, times: List[str], closes: List[float],
-                  volumes: Optional[List[float]] = None):
-        self._reset()
-        if not times:
-            self._fig.canvas.draw_idle()
-            return
-        xs = list(range(len(times)))
-        self._ax.plot(xs, closes, color="#1565c0", linewidth=1.4, zorder=3)
-        step = max(1, len(xs) // 10)
-        self._ax.set_xticks(xs[::step])
-        self._ax.set_xticklabels([times[i] for i in xs[::step]], rotation=30, fontsize=7)
-        self._ax.grid(True, alpha=0.25, linestyle="--")
-        if volumes:
-            self._ax_vol.bar(xs, volumes, color="#90caf9", alpha=0.35, zorder=1)
-            self._ax_vol.set_ylabel("Vol", fontsize=7, color="#90caf9")
-        self._ax_vol.yaxis.set_tick_params(labelsize=6)
-        self._ax.yaxis.set_tick_params(labelsize=7)
-        self._ax.autoscale_view()
-        try:
-            self._fig.canvas.draw_idle()
-        except Exception:
-            pass
-
-    def plot_candles(self, times: List[str], opens: List[float],
-                     highs: List[float], lows: List[float], closes: List[float],
-                     volumes: Optional[List[float]] = None):
-        self._reset()
-        if not times:
-            self._fig.canvas.draw_idle()
-            return
-        xs = list(range(len(times)))
-        for i, (o, h, l, c) in enumerate(zip(opens, highs, lows, closes)):
-            color = "#e53935" if c >= o else "#1e88e5"
-            self._ax.plot([i, i], [l, h], color=color, linewidth=0.8, zorder=2)
-            body_h = max(abs(c - o), 1e-9)
-            rect = matplotlib.patches.Rectangle(
-                (i - 0.3, min(o, c)), 0.6, body_h,
-                facecolor=color, edgecolor=color, linewidth=0.5, zorder=3
-            )
-            self._ax.add_patch(rect)
-        step = max(1, len(xs) // 10)
-        self._ax.set_xticks(xs[::step])
-        self._ax.set_xticklabels([times[i] for i in xs[::step]], rotation=30, fontsize=7)
-        self._ax.set_xlim(-0.5, len(xs) - 0.5)
-        self._ax.grid(True, alpha=0.25, linestyle="--")
-        if volumes:
-            bar_colors = ["#ef9a9a" if closes[i] >= opens[i] else "#90caf9"
-                          for i in range(len(volumes))]
-            self._ax_vol.bar(xs, volumes, color=bar_colors, alpha=0.35, zorder=1)
-            self._ax_vol.set_ylabel("Vol", fontsize=7)
-        self._ax_vol.yaxis.set_tick_params(labelsize=6)
-        self._ax.yaxis.set_tick_params(labelsize=7)
-        self._ax.autoscale_view()
-        try:
-            self._fig.canvas.draw_idle()
-        except Exception:
-            pass
+from mini_chart_canvas import MiniChartCanvas  # noqa: F401  re-export
 
 
 # ═══════════════════════════════════════════════════════════════════

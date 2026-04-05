@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
-from order_panel import _LS, _TBL_S
+from order_panel_common import _LS, _TBL_S
 
 
 class OrderUtilMixin:

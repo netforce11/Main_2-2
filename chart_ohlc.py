@@ -113,6 +113,7 @@ except ImportError:
             def __new__(cls, key): return _pytz.timezone(key)
 
 _ET_ZONE = _ZoneInfo("America/New_York")
+_KST_ZONE = _ZoneInfo("Asia/Seoul")
 
 
 def _utc_to_et(unix_sec: float) -> datetime:
@@ -121,10 +122,19 @@ def _utc_to_et(unix_sec: float) -> datetime:
     return utc_dt.astimezone(_ET_ZONE)
 
 
+def _utc_to_kst(unix_sec: float) -> datetime:
+    from datetime import timezone
+    utc_dt = datetime.fromtimestamp(unix_sec, tz=timezone.utc)
+    return utc_dt.astimezone(_KST_ZONE)
+
+
 def _bars_to_rows(bars: List[Dict[str, Any]],
                   include_ext: bool = False,
-                  tf_min: int = 1) -> List[Dict[str, Any]]:
-    """Convert IBKR bar list to MiniChartCanvas row format (UTC → ET)."""
+                  tf_min: int = 1,
+                  use_kst: bool = False) -> List[Dict[str, Any]]:
+    """Convert IBKR bar list to MiniChartCanvas row format.
+    use_kst=True → timestamps shown in KST (Korea Standard Time).
+    """
     def _is_regular(unix_sec: float) -> bool:
         try:
             et = _utc_to_et(unix_sec)
@@ -138,12 +148,14 @@ def _bars_to_rows(bars: List[Dict[str, Any]],
         if filtered:
             bars = filtered
 
+    _convert = _utc_to_kst if use_kst else _utc_to_et
+
     rows = []
     for b in bars:
         try:
-            et = _utc_to_et(b["t"])
+            dt = _convert(b["t"])
             rows.append({
-                "time":   et.strftime("%H:%M"),
+                "time":   dt.strftime("%H:%M"),
                 "open":   float(b.get("o", 0)),
                 "high":   float(b.get("h", 0)),
                 "low":    float(b.get("l", 0)),

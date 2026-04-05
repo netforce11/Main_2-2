@@ -1,6 +1,8 @@
 """
-tab_options_panels.py — PanelsMixin: ctrl / tbl / bot panel builders  [S6]
-Price panel + position panel → tab_options_price.PricePanelMixin
+tab_options_panels.py — PanelsMixin: ctrl / tbl / bot panel builders  [S9]
+변경: _build_tbl_panel → 현재가+잔고를 _build_price_pos_widget() 수직 스플리터로 교체
+      _build_quick_order_panel 탭 위젯 ref(_qord_tab_widget) 저장
+      placeholder → _build_strategy_panel() 스프레드 전략 패널 [S9]
 """
 
 from PyQt5.QtWidgets import (
@@ -13,6 +15,7 @@ from PyQt5.QtGui import QColor, QBrush
 
 from core import make_table
 from tab_options_price import PricePanelMixin
+from strategy_panel import StrategyPanelMixin
 
 
 def _mk(text: str, color: str = "#dde0f0") -> QTableWidgetItem:
@@ -22,15 +25,13 @@ def _mk(text: str, color: str = "#dde0f0") -> QTableWidgetItem:
     return it
 
 
-class PanelsMixin(PricePanelMixin):
+class PanelsMixin(PricePanelMixin, StrategyPanelMixin):
     """Ctrl / tbl / bot layout builders for CallPutGrid."""
 
     def _wrap_tbl(self, tbl, title, color):
-        w = QWidget()
-        v = QVBoxLayout(w)
+        w = QWidget(); v = QVBoxLayout(w)
         v.setContentsMargins(0, 0, 0, 0); v.setSpacing(1)
-        lbl = QLabel(title)
-        lbl.setAlignment(Qt.AlignCenter)
+        lbl = QLabel(title); lbl.setAlignment(Qt.AlignCenter)
         lbl.setStyleSheet(f"color:{color};font-weight:bold;border:none;")
         v.addWidget(lbl); v.addWidget(tbl)
         return w
@@ -38,7 +39,6 @@ class PanelsMixin(PricePanelMixin):
     # ── ② Control bar ─────────────────────────────────────────
     def _build_ctrl_panel(self) -> QSplitter:
         self._ctrl_splitter = self._spl(Qt.Horizontal)
-        # No setMinimumHeight — let _v_splitter handle freely
 
         _gb = ("QGroupBox{font-size:10px;color:#5dade2;"
                "border:1px solid #2a2a5a;border-radius:4px;"
@@ -59,8 +59,7 @@ class PanelsMixin(PricePanelMixin):
         self.btn_conn = QPushButton("🔌 연결"); self.btn_conn.setStyleSheet(_btn)
         self.btn_disc = QPushButton("⏏ 해제");  self.btn_disc.setStyleSheet(_btn)
         self.lbl_status = QLabel("● 미연결")
-        self.lbl_status.setStyleSheet(
-            "color:#ff5252;font-weight:bold;border:none;font-size:11px;")
+        self.lbl_status.setStyleSheet("color:#ff5252;font-weight:bold;border:none;font-size:11px;")
         for w in (self.btn_conn, self.btn_disc, self.lbl_status): h1.addWidget(w)
         self._ctrl_splitter.addWidget(g1)
 
@@ -88,8 +87,8 @@ class PanelsMixin(PricePanelMixin):
         self._ctrl_splitter.addWidget(g3)
 
         g4, h4 = _gb_w("종목 / 만기  📅")
-        self.edit_sym = QLineEdit("SPX")
-        self.edit_sym.setFixedWidth(66); self.edit_sym.setFixedHeight(24)
+        self.edit_sym = QLineEdit("SPX"); self.edit_sym.setFixedWidth(66)
+        self.edit_sym.setFixedHeight(24)
         self.edit_sym.setStyleSheet(
             "background:#0a0a18;color:#ffd700;border:1px solid #2e3060;"
             "font-size:12px;font-weight:bold;padding:2px;")
@@ -104,8 +103,7 @@ class PanelsMixin(PricePanelMixin):
         for label, code, tag in self._expiry_list:
             self.combo_exp.addItem(label)
         self.combo_exp.currentIndexChanged.connect(self._on_exp_change)
-        self.edit_custom = QLineEdit()
-        self.edit_custom.setPlaceholderText("YYYYMMDD")
+        self.edit_custom = QLineEdit(); self.edit_custom.setPlaceholderText("YYYYMMDD")
         self.edit_custom.setFixedWidth(78); self.edit_custom.setFixedHeight(24)
         self.edit_custom.setVisible(False)
         self.edit_custom.setStyleSheet(
@@ -117,8 +115,7 @@ class PanelsMixin(PricePanelMixin):
             "background:#0a0a18;color:#ffd700;border:1px solid #2e3060;font-size:11px;")
         self.date_edit.dateChanged.connect(self._on_date_edit_changed)
         self.btn_cal = QPushButton("📅"); self.btn_cal.setFixedSize(26, 24)
-        self.btn_cal.setStyleSheet(_btn)
-        self.btn_cal.setToolTip("날짜 선택")
+        self.btn_cal.setStyleSheet(_btn); self.btn_cal.setToolTip("날짜 선택")
         self.btn_cal.clicked.connect(self._open_calendar)
         for w in (self.edit_sym, self.combo_exp,
                   self.edit_custom, self.date_edit, self.btn_cal):
@@ -186,19 +183,13 @@ class PanelsMixin(PricePanelMixin):
         self._tbl_splitter.addWidget(self._wrap_tbl(self.tbl_call, "CALL", "#33aaff"))
         self._tbl_splitter.addWidget(self._wrap_tbl(self.tbl_put,  "PUT",  "#ff6666"))
 
-        _ppc = QWidget()
-        _ppc_v = QVBoxLayout(_ppc)
-        _ppc_v.setContentsMargins(0, 0, 0, 0); _ppc_v.setSpacing(3)
-        _ppc_v.addWidget(self._build_price_panel())
-        _ppc_v.addWidget(self._build_position_panel())
-        self._tbl_splitter.addWidget(_ppc)
+        # [S8] 현재가(상단) + 잔고(하단) 수직 스플리터
+        self._tbl_splitter.addWidget(self._build_price_pos_widget())
 
-        # [S6] Quick-order panel slot is now empty — panel moved to bot area
-        self._qord_placeholder = QWidget()
-        self._qord_placeholder.setStyleSheet("background:#06060e;")
-        self._tbl_splitter.addWidget(self._qord_placeholder)
+        # [S9] 스프레드 전략 패널
+        self._tbl_splitter.addWidget(self._build_strategy_panel())
 
-        self._tbl_splitter.setSizes([460, 460, 180, 220])
+        self._tbl_splitter.setSizes([440, 440, 180, 220])
         from PyQt5.QtWidgets import QSizePolicy as _SP
         self._tbl_splitter.setSizePolicy(_SP.Ignored, _SP.Ignored)
         return self._tbl_splitter
@@ -208,14 +199,10 @@ class PanelsMixin(PricePanelMixin):
         self._bot_splitter = self._spl(Qt.Horizontal)
         self._bot_splitter.addWidget(self._build_chart_panel())
 
-        # [S6] Quick-order panel + 감시 popup button in one container
-        qord_container = QWidget()
-        qord_container.setStyleSheet("background:#06060e;")
+        qord_container = QWidget(); qord_container.setStyleSheet("background:#06060e;")
         qv = QVBoxLayout(qord_container)
-        qv.setContentsMargins(0, 0, 0, 0)
-        qv.setSpacing(0)
+        qv.setContentsMargins(0, 0, 0, 0); qv.setSpacing(0)
 
-        # 🔔 감시 버튼 — opens watch panel as floating dialog
         btn_watch_popup = QPushButton("🔔  감시 패널 열기")
         btn_watch_popup.setFixedHeight(28)
         btn_watch_popup.setStyleSheet(
@@ -234,42 +221,17 @@ class PanelsMixin(PricePanelMixin):
 
     # ── 감시 팝업 ─────────────────────────────────────────────
     def _open_watch_popup(self):
-        """Open watch panel as a floating dialog.
-        Called by the 🔔 감시 button in the quick-order panel.
-        The dialog is non-modal so trading can continue while it's open.
-        Re-uses the existing _build_watch_widget() so all logic is intact.
-        """
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout as _V, QSizePolicy as _SP
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout as _V
         from PyQt5.QtCore import Qt as _Qt
-
-        # Reuse existing popup if already open
         if getattr(self, '_watch_popup', None) and self._watch_popup.isVisible():
-            self._watch_popup.raise_()
-            self._watch_popup.activateWindow()
-            return
-
+            self._watch_popup.raise_(); self._watch_popup.activateWindow(); return
         dlg = QDialog(self)
         dlg.setWindowTitle("🔔 감시 패널")
         dlg.setWindowFlags(
-            _Qt.Window |
-            _Qt.WindowCloseButtonHint |
-            _Qt.WindowMinimizeButtonHint |
-            _Qt.WindowMaximizeButtonHint
-        )
-        dlg.setMinimumSize(520, 600)
-        dlg.resize(620, 720)
-        dlg.setStyleSheet(
-            "QDialog{background:#06060e;}"
-            "QLabel{color:#dde0f0;}"
-        )
-
-        v = _V(dlg)
-        v.setContentsMargins(4, 4, 4, 4)
-        v.setSpacing(0)
-
-        # Build a fresh watch widget inside the popup
-        watch_w = self._build_watch_widget()
-        v.addWidget(watch_w)
-
-        self._watch_popup = dlg
-        dlg.show()
+            _Qt.Window | _Qt.WindowCloseButtonHint |
+            _Qt.WindowMinimizeButtonHint | _Qt.WindowMaximizeButtonHint)
+        dlg.setMinimumSize(520, 600); dlg.resize(620, 720)
+        dlg.setStyleSheet("QDialog{background:#06060e;}QLabel{color:#dde0f0;}")
+        v = _V(dlg); v.setContentsMargins(4, 4, 4, 4); v.setSpacing(0)
+        v.addWidget(self._build_watch_widget())
+        self._watch_popup = dlg; dlg.show()

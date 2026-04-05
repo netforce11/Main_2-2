@@ -1,5 +1,3 @@
-import faulthandler
-faulthandler.enable()
 """
 main.py — 0DTE Master Dashboard  v6.5  메인 진입점
 ════════════════════════════════════════════════════════════════
@@ -61,17 +59,6 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QKeySequence
 from PyQt5.QtWidgets import QShortcut
 
-# ══════════════════════════════════════════════════════════════
-# ★ QApplication을 탭 모듈 import보다 먼저 생성해야 한다.
-#   spxw_core.py가 최상단에서 matplotlib.use("Qt5Agg")를 호출하는데,
-#   QApplication 없이 Qt5Agg 백엔드를 초기화하면 0xC0000005 발생.
-# ══════════════════════════════════════════════════════════════
-app = QApplication(sys.argv)
-app.setStyle("Fusion")
-_default_font = QFont()
-_default_font.setPointSize(10)
-app.setFont(_default_font)
-
 # ── 공통 코어 ─────────────────────────────────────────────────
 from core import (
     IBapi, bridge, router, SignalBridge,
@@ -80,7 +67,7 @@ from core import (
     GridTab, TabWrapper, SAVE_DIR
 )
 
-# ── 탭 모듈 (QApplication 생성 후 import) ─────────────────────
+# ── 탭 모듈 ───────────────────────────────────────────────────
 from tab_options import CallPutGrid
 from tab_sniper  import SniperGrid
 from tab_oi      import OITrackerGrid
@@ -156,28 +143,18 @@ class TradingDashboard(QMainWindow):
             return grid
 
         # ── 탭 등록 ────────────────────────────────────────────
-        import sys
-        print("[DIAG] 탭1 CallPutGrid 생성 전...", flush=True); sys.stdout.flush()
         self.tab_callput = add(CallPutGrid,   "1. 콜-풋 (Main)", self)
-        print("[DIAG] 탭1 완료 / 탭2 BalanceGrid 생성 전...", flush=True)
         self.tab_balance = add(BalanceGrid,   "2. 잔고/PnL",     self)
-        print("[DIAG] 탭2 완료 / 탭3 SniperGrid 생성 전...", flush=True)
         self.tab_sniper  = add(SniperGrid,    "3. 스나이퍼",     self)
-        print("[DIAG] 탭3 완료 / 탭4 ComboStrategyGrid 생성 전...", flush=True)
         add(ComboStrategyGrid,                "4. 복합 전략",    self)
-  #      add(MultiPriceGrid,                   "5. 복수 현재가",  self)
-        print("[DIAG] 탭4 완료 / 탭6 GreeksGrid 생성 전...", flush=True)
+        add(MultiPriceGrid,                   "5. 복수 현재가",  self)
         self.tab_greeks  = add(GreeksGrid,    "6. Greeks Matrix",self)
         add(ChartGrid,                        "7. 1분봉 차트",   self)
-  #      add(OITrackerGrid,                    "8. OI 추적",      self)
-  #      self.tab_trading = add(TradingGrid,   "9. 주문/잔고",    self)
-        print("[DIAG] 탭6 완료 / 탭10 KRFuturesGrid 생성 전...", flush=True)
+        add(OITrackerGrid,                    "8. OI 추적",      self)
+        self.tab_trading = add(TradingGrid,   "9. 주문/잔고",    self)
         self.tab_kr      = add(KRFuturesGrid, "10. 한국선물옵션", self)
-        print("[DIAG] 탭10 완료 / SpxHistoryGrid 생성 전...", flush=True)
         self.tabs.addTab(SpxHistoryGrid(self),   "📜 SPX 히스토리")
-        print("[DIAG] SpxHistory 완료 / OptIntradayGrid 생성 전...", flush=True)
         self.tabs.addTab(OptIntradayGrid(self),  "📊 옵션 분봉")
-        print("[DIAG] 모든 탭 생성 완료!", flush=True)
 
         # ── Ctrl+1~10 단축키 — 탭 전환 ────────────────────────
         for i in range(min(10, self.tabs.count())):
@@ -287,7 +264,13 @@ if __name__ == "__main__":
     print(f"저장 경로: {SAVE_DIR.resolve()}")
     print("=" * 60)
 
-    # app / font 는 모듈 최상단에서 이미 생성됨 (spxw_core matplotlib 초기화 순서 보장)
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+
+    default_font = QFont()
+    default_font.setPointSize(10)
+    app.setFont(default_font)
+
     win = TradingDashboard()
     win.show()
     sys.exit(app.exec_())

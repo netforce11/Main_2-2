@@ -41,6 +41,51 @@ class CoreConnMixin:
         router.register_option(REQ_CALL, REQ_CALL+self._MAX_STRIKES-1, self._on_tick_option)
         router.register_option(REQ_PUT,  REQ_PUT +self._MAX_STRIKES-1, self._on_tick_option)
         self._watch_timer.start()
+        # ✅ 체결 콜백 등록 (연결 후 ib 객체에 직접 패치)
+        QTimer.singleShot(3000, self._hook_fill_callbacks)
+
+    def _hook_fill_callbacks(self):
+        """체결(execDetails) 및 주문상태(orderStatus) 콜백을 ib 객체에 패치."""
+        if not self.mw.connected or not self.mw.ib: return
+        ib = self.mw.ib
+
+        _orig_exec = getattr(ib, 'execDetails', lambda *a: None)
+        def _on_exec(reqId, contract, execution):
+            try: _orig_exec(reqId, contract, execution)
+            except: pass
+            sym  = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
+            qty  = getattr(execution, 'shares', 0)
+            side = getattr(execution, 'side', '')
+            px   = getattr(execution, 'price', 0)
+            from PyQt5.QtCore import QTimer as _QT
+            _QT.singleShot(0, lambda: self._on_fill_event(sym, qty, side, px))
+        ib.execDetails = _on_exec
+
+        _orig_status = getattr(ib, 'orderStatus', lambda *a: None)
+        def _on_status(orderId, status, filled, remaining, avgFillPrice,
+                       permId, parentId, lastFillPrice, clientId, whyHeld, mktCapPrice):
+            try: _orig_status(orderId, status, filled, remaining, avgFillPrice,
+                              permId, parentId, lastFillPrice, clientId, whyHeld, mktCapPrice)
+            except: pass
+            if status == 'Filled' and filled > 0:
+                from PyQt5.QtCore import QTimer as _QT
+                _QT.singleShot(0, lambda: self._on_fill_event(
+                    f"OID={orderId}", filled, "", avgFillPrice))
+        ib.orderStatus = _on_status
+
+    def _on_fill_event(self, sym, qty, side, price):
+        """체결 이벤트 공통 처리: 로그 출력 + 잔고창 자동 팝업 + 포지션 갱신."""
+        side_str = f" {side}" if side else ""
+        self._log(f"✅ 체결 완료: {sym}{side_str} {qty}계약  @{price:.2f}")
+        # 잔고창 자동 팝업 (항상 위로)
+        if hasattr(self, 'btn_pos_toggle'):
+            if not getattr(self, '_pos_float_win', None) or \
+               not self._pos_float_win.isVisible():
+                self.btn_pos_toggle.setChecked(True)
+                self._on_pos_toggle()
+            # 잔고 갱신
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(500, self._refresh_positions)
 
     def _log(self, msg):
         self.log.append(f"[{ts()}] {msg}")

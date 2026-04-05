@@ -76,6 +76,12 @@ class VlineMixin:
         self._vlines.append((text, cb))
         self.intra_time_input.clear()
 
+        # Force redraw so vline appears immediately on the current chart
+        try:
+            self._redraw_intraday_cache()
+        except Exception:
+            pass
+
         if hasattr(self, 'lbl_intra_status'):
             self.lbl_intra_status.setText(f"✅ 세로선 추가: {label_text}")
 

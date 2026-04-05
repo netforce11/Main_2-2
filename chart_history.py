@@ -160,10 +160,13 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
         end_dt = qdate.toString("yyyyMMdd") + " 23:59:59 US/Eastern"
         self._fetch_intraday(end_date=end_dt)
 
-    def _on_intra_done(self, bars: list, sym: str, tf: int, max_bars: int = 399):
+    def _on_intra_done(self, bars: list, sym: str, tf: int, max_bars: int = 300):
         include_ext = (self.chk_intra_ext.isChecked()
                        if hasattr(self, 'chk_intra_ext') else False)
-        rows = _bars_to_rows(bars, include_ext=include_ext, tf_min=tf)
+        use_kst = (self.chk_kst.isChecked()
+                   if hasattr(self, 'chk_kst') else False)
+        rows = _bars_to_rows(bars, include_ext=include_ext, tf_min=tf,
+                             use_kst=use_kst)
         if len(rows) > max_bars:
             rows = rows[-max_bars:]
         if not rows:
@@ -171,8 +174,9 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
             return
         t0, t1 = rows[0]["time"], rows[-1]["time"]
         ext_label = "(시간외포함)" if include_ext else "(정규장)"
+        kst_label = " [KST]" if use_kst else ""
         self.lbl_intra_status.setText(
-            f"✅ {sym}  {tf}분봉  {len(rows)}봉  ({t0}~{t1})  {ext_label}")
+            f"✅ {sym}  {tf}분봉  {len(rows)}봉  ({t0}~{t1})  {ext_label}{kst_label}")
         self._render_mini_chart(rows)
 
     def _render_mini_chart(self, rows: List[Dict[str, Any]]):
@@ -186,15 +190,33 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
         lows   = [r["low"]           for r in rows]
         closes = [r["close"]         for r in rows]
         vols   = [r.get("volume", 0) for r in rows]
+
+        # Volume threshold: highlight bars >= N * 10000 shares
+        vol_thresh_units = (self.spin_vol_threshold.value()
+                            if hasattr(self, 'spin_vol_threshold') else 0)
+        vol_thresh = vol_thresh_units * 10_000  # convert 만주 → shares
+
         try:
             mode = (self.combo_intra_chart_mode.currentText()
                     if hasattr(self, 'combo_intra_chart_mode') else "캔들")
             if mode == "캔들":
-                canvas.plot_candles(times, opens, highs, lows, closes, volumes=vols)
+                canvas.plot_candles(times, opens, highs, lows, closes,
+                                    volumes=vols,
+                                    vol_highlight=vol_thresh if vol_thresh > 0 else None)
             else:
                 canvas.plot_line(times, closes, volumes=vols)
         except Exception as e:
             self.lbl_intra_status.setText(f"⚠ 차트 오류: {e}")
+            return
+
+        # Re-apply vlines after chart redraw (fix: vlines disappear on redraw)
+        for time_str, cb in getattr(self, '_vlines', []):
+            try:
+                canvas.add_vline(time_str)
+                if cb and not cb.isChecked():
+                    canvas.set_vline_visible(time_str, False)
+            except Exception:
+                pass
 
     def _redraw_intraday_cache(self):
         bars = getattr(self, '_intra_cache_bars', None)
@@ -203,7 +225,7 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
         self._on_intra_done(bars,
                             getattr(self, '_intra_cache_sym', ""),
                             getattr(self, '_intra_cache_tf', 1),
-                            getattr(self, '_intra_cache_maxbars', 399))
+                            getattr(self, '_intra_cache_maxbars', 300))
 
     # ── Tick Chart ────────────────────────────────────────────
     def _fetch_tick_chart(self):

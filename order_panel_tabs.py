@@ -1,26 +1,45 @@
-"""order_panel_tabs.py — OrderTabsMixin: tab builder methods  [NEW S6]
-신규탭/_build_amend_tab/_build_cancel_tab/_build_sell_tab/잔고/pos_sell/util
+"""order_panel_tabs.py — OrderTabsMixin: tab builder methods  [S9]
+변경: ① 주문확인 체크박스 → 신규탭 최상단 우측
+      ② 빠른매도 탭에 매도가격·수량 필드 추가 (행 클릭 시 자동 채움)
+      ③ 취소 탭 하단 전체 주문 강제 취소 버튼 추가 (reqGlobalCancel)
 """
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit,
     QComboBox, QRadioButton, QButtonGroup,
-    QSpinBox, QCheckBox, QGroupBox, QFrame,
+    QSpinBox, QCheckBox, QFrame, QGridLayout,
     QTableWidget, QHeaderView, QAbstractItemView, QMessageBox,
 )
 from PyQt5.QtCore import Qt
 
-from order_panel import _make_order_tbl, _LS, _ES, _FETCH_S, _TBL_S
-from order_panel import _BUMP_UP, _BUMP_DN, _SELL_UP, _SELL_DN
+from order_panel_common import (
+    _make_order_tbl, _LS, _ES, _FETCH_S, _TBL_S,
+    _BUMP_UP, _BUMP_DN, _SELL_UP, _SELL_DN,
+)
 
 
 class OrderTabsMixin:
     """Tab builder methods for OrderPanelMixin."""
+
     # ── 신규 탭 ───────────────────────────────────────────────
     def _build_new_tab(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w); v.setSpacing(4); v.setContentsMargins(6, 6, 6, 6)
+
+        # ① 주문확인 체크박스 — 최상단 우측
+        top_row = QHBoxLayout()
+        self.chk_order_confirm = QCheckBox("주문 확인창")
+        self.chk_order_confirm.setChecked(True)
+        self.chk_order_confirm.setToolTip("ON: 주문 전 확인 팝업 / OFF: 즉시 주문")
+        self.chk_order_confirm.setStyleSheet(
+            "QCheckBox{color:#90caf9;font-size:12px;}"
+            "QCheckBox::indicator{width:14px;height:14px;}"
+            "QCheckBox::indicator:checked{background:#1a4a6b;border:1px solid #90caf9;border-radius:2px;}"
+            "QCheckBox::indicator:unchecked{background:#0a0a1e;border:1px solid #444;border-radius:2px;}")
+        top_row.addStretch()
+        top_row.addWidget(self.chk_order_confirm)
+        v.addLayout(top_row)
 
         # 대상 행
         tgt_row = QHBoxLayout()
@@ -145,19 +164,7 @@ class OrderTabsMixin:
             "color:#888;font-size:13px;border:1px solid #333;border-radius:3px;padding:2px;")
         v.addWidget(self.lbl_qord_status)
 
-        # 주문확인 체크 + 빠른가격정정
-        confirm_row = QHBoxLayout()
-        self.chk_order_confirm = QCheckBox("주문 확인창")
-        self.chk_order_confirm.setChecked(True)
-        self.chk_order_confirm.setToolTip("ON: 주문 전 확인 팝업 / OFF: 즉시 주문")
-        self.chk_order_confirm.setStyleSheet(
-            "QCheckBox{color:#90caf9;font-size:12px;}"
-            "QCheckBox::indicator{width:14px;height:14px;}"
-            "QCheckBox::indicator:checked{background:#1a4a6b;border:1px solid #90caf9;border-radius:2px;}"
-            "QCheckBox::indicator:unchecked{background:#0a0a1e;border:1px solid #444;border-radius:2px;}")
-        confirm_row.addStretch(); confirm_row.addWidget(self.chk_order_confirm)
-        v.addLayout(confirm_row)
-
+        # 빠른 가격 정정 (신규 탭)
         v.addWidget(QLabel("빠른 가격 정정", styleSheet="color:#aaa;font-size:11px;border:none;"))
         bump_row = QHBoxLayout(); bump_row.setSpacing(3)
         for lbl, delta, st in [("+0.05",+0.05,_BUMP_UP),("+0.10",+0.10,_BUMP_UP),
@@ -172,7 +179,6 @@ class OrderTabsMixin:
         self.lbl_bump_status.setStyleSheet("color:#666;font-size:11px;border:none;")
         v.addWidget(self.lbl_bump_status)
 
-        # [S6] 잔고 패널 인라인 (신규 탭 하단)
         v.addWidget(self._build_inline_position_panel())
         return w
 
@@ -261,54 +267,84 @@ class OrderTabsMixin:
         self.lbl_cancel_status.setStyleSheet(
             "color:#888;font-size:13px;border:1px solid #333;border-radius:3px;padding:2px;")
         cv.addWidget(self.lbl_cancel_status)
+
+        # ── 전체 강제 취소 구분선 + 버튼 ─────────────────────
+        sep_global = QFrame(); sep_global.setFrameShape(QFrame.HLine)
+        sep_global.setStyleSheet("border:none;background:#5a2a2a;max-height:1px;margin-top:4px;")
+        cv.addWidget(sep_global)
+
+        btn_global_cancel = QPushButton("🚨 전체 주문 강제 취소 (reqGlobalCancel)")
+        btn_global_cancel.setFixedHeight(38)
+        btn_global_cancel.setStyleSheet(
+            "QPushButton{background:#8B0000;color:#ffffff;font-size:13px;"
+            "font-weight:bold;border-radius:4px;border:1px solid #cc2222;}"
+            "QPushButton:hover{background:#aa0000;}")
+        btn_global_cancel.setToolTip(
+            "현재 API 세션의 모든 미체결 주문을 즉시 취소합니다.\n"
+            "TWS UI 상태와 무관하게 서버에 직접 전달됩니다.")
+        btn_global_cancel.clicked.connect(self._on_global_cancel)
+        cv.addWidget(btn_global_cancel)
+
         cv.addStretch()
         return w
 
-    # ── [S6] 빠른매도 탭 ──────────────────────────────────────
+    # ── 빠른매도 탭 ──────────────────────────────────────────
     def _build_sell_tab(self) -> QWidget:
-        """빠른 매도 전용 탭: 미체결 주문 기준 즉시 매도 + 가격 bump."""
+        """빠른 매도 탭: 잔고 클릭 → 수량·가격 자동입력 → bump 또는 즉시 매도."""
         w = QWidget()
-        sv = QVBoxLayout(w); sv.setSpacing(6); sv.setContentsMargins(8,8,8,8)
+        sv = QVBoxLayout(w); sv.setSpacing(5); sv.setContentsMargins(8, 8, 8, 8)
 
-        sv.addWidget(QLabel("📋 미체결 주문 → 선택 후 매도 정정",
+        sv.addWidget(QLabel("📊 잔고 행 클릭 → 수량·가격 자동입력",
             styleSheet="color:#ff8800;font-size:12px;font-weight:bold;border:none;"))
-
-        btn_fetch = QPushButton("📋 미체결 주문 조회")
-        btn_fetch.setStyleSheet(_FETCH_S)
-        btn_fetch.clicked.connect(self._fetch_open_orders)
-        sv.addWidget(btn_fetch)
-
-        self.tbl_open_orders_s = _make_order_tbl("#3a1a1a")
-        self.tbl_open_orders_s.setStyleSheet(
-            _TBL_S + "QTableWidget::item:selected{background:#3a1a1a;color:#ff6666;}")
-        self.tbl_open_orders_s.cellClicked.connect(
-            lambda r, c: self._fill_sell_from_table(r))
-        sv.addWidget(self.tbl_open_orders_s)
 
         sep = QFrame(); sep.setFrameShape(QFrame.HLine)
         sep.setStyleSheet("border:none;background:#3a1a1a;max-height:1px;")
         sv.addWidget(sep)
 
-        sv.addWidget(QLabel("빠른 매도 가격 조정",
+        # ② 매도가격 + 수량 필드 (신규 탭처럼)
+        price_qty_gl = QGridLayout(); price_qty_gl.setSpacing(4)
+
+        self.sell_price = QLineEdit()
+        self.sell_price.setPlaceholderText("매도가격")
+        self.sell_price.setStyleSheet(
+            "color:#ff9999;font-weight:bold;font-size:15px;"
+            "background:#0a0a1e;border:1px solid #6a2a2a;")
+
+        sell_qty_w = QWidget(); sell_qty_h = QHBoxLayout(sell_qty_w)
+        sell_qty_h.setContentsMargins(0,0,0,0); sell_qty_h.setSpacing(3)
+        self.sell_qty = QSpinBox()
+        self.sell_qty.setRange(1, 9999); self.sell_qty.setValue(1)
+        self.sell_qty.setFixedHeight(26)
+        self.sell_qty.setStyleSheet(
+            "background:#0a0a1e;color:#fff;border:1px solid #6a2a2a;font-size:14px;")
+        sell_qty_h.addWidget(self.sell_qty)
+
+        price_qty_gl.addWidget(QLabel("매도가격:", styleSheet=_LS), 0, 0)
+        price_qty_gl.addWidget(self.sell_price, 0, 1)
+        price_qty_gl.addWidget(QLabel("수량:", styleSheet=_LS), 1, 0)
+        price_qty_gl.addWidget(sell_qty_w, 1, 1)
+        sv.addLayout(price_qty_gl)
+
+        sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine)
+        sep2.setStyleSheet("border:none;background:#3a1a1a;max-height:1px;")
+        sv.addWidget(sep2)
+
+        # ③ bump 버튼 — 전체 미체결 주문 가격 일괄 조정
+        sv.addWidget(QLabel("빠른 매도 가격 조정 (전체 미체결 일괄)",
             styleSheet="color:#aaa;font-size:11px;border:none;"))
 
-        # +0.05 / +0.10 → 가격 올려서 매도 (더 비싸게)
-        # -0.05 / -0.10 → 가격 내려서 매도 (더 싸게 = 빠른 체결)
         sell_bump_row = QHBoxLayout(); sell_bump_row.setSpacing(3)
         for lbl, delta, st, tip in [
-            ("+0.05", +0.05, _SELL_DN, "매도가 +0.05 (더 비싸게)"),
-            ("+0.10", +0.10, _SELL_DN, "매도가 +0.10 (더 비싸게)"),
-            ("-0.05", -0.05, _SELL_UP, "매도가 -0.05 (빠른 체결)"),
-            ("-0.10", -0.10, _SELL_UP, "매도가 -0.10 (빠른 체결)"),
+            ("+0.05", +0.05, _SELL_DN, "전체 미체결 매도가 +0.05"),
+            ("+0.10", +0.10, _SELL_DN, "전체 미체결 매도가 +0.10"),
+            ("-0.05", -0.05, _SELL_UP, "전체 미체결 매도가 -0.05 (빠른체결)"),
+            ("-0.10", -0.10, _SELL_UP, "전체 미체결 매도가 -0.10 (빠른체결)"),
         ]:
             b = QPushButton(lbl); b.setFixedHeight(26); b.setStyleSheet(st)
             b.setToolTip(tip)
             b.clicked.connect(lambda _, d=delta: self._bump_sell_price(d))
             sell_bump_row.addWidget(b)
         sv.addLayout(sell_bump_row)
-
-        sv.addWidget(QLabel("선택 주문 즉시 매도",
-            styleSheet="color:#aaa;font-size:11px;border:none;"))
 
         btn_sell_now = QPushButton("▼ 선택 주문 즉시 매도 전송")
         btn_sell_now.setFixedHeight(40)
@@ -326,4 +362,3 @@ class OrderTabsMixin:
         sv.addWidget(self.lbl_sell_status)
         sv.addStretch()
         return w
-

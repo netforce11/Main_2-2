@@ -1,95 +1,911 @@
 """
-order_panel.py — 빠른 주문 패널 UI  v6.7  [S6]
-════════════════════════════════════════════════════════
-[S6 변경]
-  - 탭 구성: 신규 / 정정 / 취소 / 빠른매도  (4탭)
-  - 정정·취소 탭 진입 시 미체결 주문 자동 조회
-  - 신규 탭 하단 잔고 패널 내장
-  - 빠른 매도 버튼 (+0.05/-0.05/+0.10/-0.10 매도)
-  - 정정/취소/빠른매도 로직 → order_panel_amend.py
-════════════════════════════════════════════════════════
+order_panel.py — 빠른 주문 패널 UI  v6.8
+변경:
+  - 잔고 버튼 → 플로팅 잔고창 토글 (항상 위, X버튼 없음)
+  - 버튼 클릭 시 QPropertyAnimation 피드백
+  - 정정/취소 탭 우측 KST 시각 표시 (1초 갱신)
+  - +1호가 매수 버튼
+  - 긴급 매도 버튼 (잔고 전체 + 미체결 취소)
+  - 체결 시 잔고창 자동 팝업
 """
+import re
+from datetime import datetime, timezone, timedelta
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QLineEdit, QComboBox,
     QGroupBox, QRadioButton, QButtonGroup,
-    QSpinBox, QTabWidget, QCheckBox,
-    QTableWidget, QHeaderView, QAbstractItemView,
-    QMessageBox, QFrame,
+    QSpinBox, QTabWidget, QTableWidget,
+    QHeaderView, QAbstractItemView, QFrame,
 )
-from PyQt5.QtCore import Qt, QTimer
-from order_panel_amend import AmendPanelMixin
-from order_panel_tabs import OrderTabsMixin
+from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QRect, pyqtProperty
+from PyQt5.QtGui import QColor
 
 
-# ── 공통 스타일 상수 ──────────────────────────────────────────
-_LS   = "color:#aaa;font-size:13px;border:none;"
-_ES   = "background:#0a0a1e;color:#ffd700;border:1px solid #444;font-size:15px;"
-_FETCH_S = ("background:#1a3a1a;color:#00ff88;font-size:13px;font-weight:bold;"
-            "padding:5px;border-radius:3px;border:1px solid #2a6a2a;")
-_TBL_S = (
-    "QTableWidget{background:#05050f;color:#ccc;"
-    "gridline-color:#1a1a3a;font-size:13px;}"
-    "QHeaderView::section{background:#0a0a1e;color:#90caf9;"
-    "border:1px solid #1a1a3a;font-size:12px;}"
-    "QTableWidget::item:selected{background:#1a3a6b;color:#ffd700;}")
-_TAB_S = (
-    "QTabWidget::pane{border:1px solid #2a2a4a;background:#07070f;}"
-    "QTabBar::tab{background:#0a0a1e;color:#aaa;padding:4px 8px;"
-    "border:1px solid #2a2a4a;border-bottom:none;font-size:13px;}"
-    "QTabBar::tab:selected{background:#12122a;color:#ffd700;"
-    "border-bottom:1px solid #12122a;}"
-    "QTabBar::tab:hover{background:#1a1a3a;color:#fff;}")
-_BUMP_UP   = ("QPushButton{background:#1a3a5a;color:#90caf9;font-size:12px;"
-              "font-weight:bold;border-radius:3px;padding:3px 2px;"
-              "border:1px solid #3a3a6a;}QPushButton:hover{background:#2a4a6a;}")
-_BUMP_DN   = ("QPushButton{background:#3a1a3a;color:#ff90f0;font-size:12px;"
-              "font-weight:bold;border-radius:3px;padding:3px 2px;"
-              "border:1px solid #3a3a6a;}QPushButton:hover{background:#4a2a4a;}")
-_SELL_UP   = ("QPushButton{background:#3a1a1a;color:#ff6666;font-size:12px;"
-              "font-weight:bold;border-radius:3px;padding:3px 2px;"
-              "border:1px solid #6a2a2a;}QPushButton:hover{background:#5a2a2a;}")
-_SELL_DN   = ("QPushButton{background:#1a3a1a;color:#00e676;font-size:12px;"
-              "font-weight:bold;border-radius:3px;padding:3px 2px;"
-              "border:1px solid #2a6a2a;}QPushButton:hover{background:#2a5a2a;}")
+# ── KST 헬퍼 ────────────────────────────────────────────────
+def _kst_now() -> str:
+    return (datetime.utcnow() + timedelta(hours=9)).strftime("%H:%M:%S")
 
 
-def _make_order_tbl(sel_color="#1a3a6b"):
-    tbl = QTableWidget(0, 4)
-    tbl.setHorizontalHeaderLabels(["OID", "종목", "방향", "가격"])
-    tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-    tbl.verticalHeader().setVisible(False)
-    tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
-    tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
-    tbl.setMaximumHeight(110)
-    tbl.setStyleSheet(_TBL_S.replace("#1a3a6b", sel_color))
-    return tbl
+# ── 버튼 클릭 애니메이션 (1~2px 아래로 눌림) ─────────────────
+def _animate_press(btn):
+    """버튼을 순간적으로 2px 아래로 밀었다가 복귀."""
+    geo = btn.geometry()
+    anim = QPropertyAnimation(btn, b"geometry")
+    anim.setDuration(80)
+    pressed = QRect(geo.x(), geo.y()+2, geo.width(), geo.height())
+    anim.setKeyValueAt(0,   geo)
+    anim.setKeyValueAt(0.5, pressed)
+    anim.setKeyValueAt(1,   geo)
+    anim.start()
+    btn._anim = anim   # GC 방지
 
 
-class OrderPanelMixin(OrderTabsMixin, AmendPanelMixin):
+class OrderPanelMixin:
     """빠른 주문 패널 UI. CallPutGrid에 mixin된다."""
 
     def _build_quick_order_panel(self) -> QWidget:
         gb = QGroupBox("⚡ 빠른 주문")
         gb_v = QVBoxLayout(gb)
-        gb_v.setSpacing(3); gb_v.setContentsMargins(4, 6, 4, 4)
+        gb_v.setSpacing(3); gb_v.setContentsMargins(4,6,4,4)
 
-        tab_w = QTabWidget(); tab_w.setStyleSheet(_TAB_S)
+        _tab_s = (
+            "QTabWidget::pane{border:1px solid #2a2a4a;background:#07070f;}"
+            "QTabBar::tab{background:#0a0a1e;color:#aaa;padding:4px 8px;"
+            "border:1px solid #2a2a4a;border-bottom:none;font-size:13px;}"
+            "QTabBar::tab:selected{background:#12122a;color:#ffd700;"
+            "border-bottom:1px solid #12122a;}"
+            "QTabBar::tab:hover{background:#1a1a3a;color:#fff;}")
+        tab_w = QTabWidget(); tab_w.setStyleSheet(_tab_s)
+        self._qord_tab_widget = tab_w
 
-        tab_w.addTab(self._build_new_tab(),    "⚡ 신규")
-        tab_w.addTab(self._build_amend_tab(),  "✏ 정정")
-        tab_w.addTab(self._build_cancel_tab(), "✕ 취소")
-        tab_w.addTab(self._build_sell_tab(),   "▼ 빠른매도")
+        # ── 탭1: 신규 ────────────────────────────────────────
+        new_w  = QWidget()
+        root_v = QVBoxLayout(new_w)
+        root_v.setSpacing(5); root_v.setContentsMargins(6,6,6,6)
 
-        # [S6] 정정·취소 탭 진입 시 미체결 자동 조회
-        def _on_tab_changed(idx):
-            if idx in (1, 2):   # 정정=1, 취소=2
-                QTimer.singleShot(100, self._fetch_open_orders)
-        tab_w.currentChanged.connect(_on_tab_changed)
+        tgt_row = QHBoxLayout()
+        tgt_row.addWidget(QLabel("대상:"))
+        self.qord_side = QLineEdit(); self.qord_side.setReadOnly(True)
+        self.qord_side.setFixedWidth(28)
+        self.qord_side.setStyleSheet(
+            "color:#ffd700;font-weight:bold;font-size:15px;"
+            "background:#0a0a1e;border:1px solid #333;")
+        self.qord_strike = QLineEdit(); self.qord_strike.setReadOnly(True)
+        self.qord_strike.setFixedWidth(62)
+        self.qord_strike.setStyleSheet(
+            "color:#ffd700;font-weight:bold;font-size:15px;"
+            "background:#0a0a1e;border:1px solid #333;")
+        tgt_row.addWidget(self.qord_side); tgt_row.addWidget(self.qord_strike)
+        tgt_row.addStretch()
+        root_v.addLayout(tgt_row)
 
-        gb_v.addWidget(tab_w, 1)
+        self.lbl_qord_src = QLabel("")
+        self.lbl_qord_src.setStyleSheet("color:#ff8800;font-size:12px;border:none;")
+        self.lbl_qord_src.setWordWrap(True)
+        root_v.addWidget(self.lbl_qord_src)
 
-        # 잔고 청산 슬라이드업 패널 (기존 유지)
-        gb_v.addWidget(self._build_pos_sell_panel())
+        line = QLabel(); line.setFixedHeight(1)
+        line.setStyleSheet("background:#333;border:none;")
+        root_v.addWidget(line)
+
+        gl = QGridLayout(); gl.setSpacing(4)
+        _ls = "color:#aaa;font-size:13px;border:none;"
+
+        type_w = QWidget(); type_h = QHBoxLayout(type_w)
+        type_h.setContentsMargins(0,0,0,0); type_h.setSpacing(6)
+        self.qord_lmt = QRadioButton("지정가")
+        self.qord_mkt = QRadioButton("시장가")
+        self.qord_lmt.setChecked(True)
+        self.qord_lmt.setStyleSheet("color:#ffd700;font-size:13px;")
+        self.qord_mkt.setStyleSheet("color:#ffd700;font-size:13px;")
+        qord_grp = QButtonGroup(self)
+        qord_grp.addButton(self.qord_lmt); qord_grp.addButton(self.qord_mkt)
+        self.qord_lmt.toggled.connect(self._on_qord_type_toggle)
+        type_h.addWidget(self.qord_lmt); type_h.addWidget(self.qord_mkt)
+        type_h.addStretch()
+        _abtn_s = ("QPushButton{background:#1a2a3a;color:#90caf9;font-size:12px;"
+                   "font-weight:bold;padding:1px 5px;border-radius:3px;"
+                   "border:1px solid #2a4a6a;}"
+                   "QPushButton:hover{background:#2a3a5a;}"
+                   "QPushButton:pressed{background:#0a1a2a;}")
+        self.btn_qty_max = QPushButton("MAX"); self.btn_qty_max.setFixedHeight(22); self.btn_qty_max.setFixedWidth(38)
+        self.btn_qty_200 = QPushButton("$200"); self.btn_qty_200.setFixedHeight(22); self.btn_qty_200.setFixedWidth(38)
+        self.btn_qty_max.setStyleSheet(_abtn_s); self.btn_qty_200.setStyleSheet(_abtn_s)
+        self.btn_qty_max.clicked.connect(self._calc_qty_max)
+        self.btn_qty_200.clicked.connect(self._calc_qty_200)
+        type_h.addWidget(self.btn_qty_max); type_h.addWidget(self.btn_qty_200)
+
+        self.qord_price = QLineEdit(); self.qord_price.setPlaceholderText("가격 입력")
+        self.qord_price.setStyleSheet(
+            "color:#ffd700;font-weight:bold;font-size:15px;"
+            "background:#0a0a1e;border:1px solid #444;")
+
+        qty_w = QWidget(); qty_h = QHBoxLayout(qty_w)
+        qty_h.setContentsMargins(0,0,0,0); qty_h.setSpacing(3)
+        self.qord_qty = QSpinBox(); self.qord_qty.setRange(1,9999); self.qord_qty.setValue(1)
+        self.qord_qty.setFixedHeight(26)
+        self.qord_qty.setStyleSheet(
+            "background:#0a0a1e;color:#fff;border:1px solid #444;font-size:14px;")
+        _QS = ("QPushButton{background:#2d2d5e;color:#ffd700;"
+               "border:1px solid #4a4a8a;border-radius:3px;font-size:13px;font-weight:bold;}"
+               "QPushButton:hover{background:#3d4d6e;}"
+               "QPushButton:pressed{background:#1d1d4e;}")
+        for lbl2,v2 in [("1",1),("5",5),("10",10)]:
+            bq=QPushButton(lbl2); bq.setFixedWidth(28); bq.setFixedHeight(26)
+            bq.setStyleSheet(_QS)
+            bq.clicked.connect(lambda _,v=v2: self.qord_qty.setValue(v))
+            qty_h.addWidget(bq)
+        qty_h.insertWidget(0, self.qord_qty)
+
+        gl.addWidget(QLabel("유형:",styleSheet=_ls),0,0); gl.addWidget(type_w,0,1)
+        gl.addWidget(QLabel("가격:",styleSheet=_ls),1,0); gl.addWidget(self.qord_price,1,1)
+        gl.addWidget(QLabel("수량:",styleSheet=_ls),2,0); gl.addWidget(qty_w,2,1)
+        root_v.addLayout(gl)
+
+        self.lbl_commission = QLabel("")
+        self.lbl_commission.setStyleSheet(
+            "color:#FFA500;font-size:13px;border:none;"
+            "background:#0d0d20;padding:2px 4px;border-radius:3px;")
+        self.lbl_commission.setAlignment(Qt.AlignRight)
+        root_v.addWidget(self.lbl_commission)
+        self.qord_qty.valueChanged.connect(self._update_commission_label)
+        self._update_commission_label(self.qord_qty.value())
+
+        tif_row = QHBoxLayout()
+        tif_row.addWidget(QLabel("TIF:",styleSheet=_ls))
+        self.qord_tif = QComboBox(); self.qord_tif.addItems(["DAY","GTC","IOC","GTD"])
+        self.qord_tif.setFixedHeight(24)
+        self.qord_tif.setStyleSheet(
+            "QComboBox{background:#0a0a1e;color:#ffd700;border:1px solid #444;"
+            "font-size:13px;padding:1px;}"
+            "QComboBox QAbstractItemView{background:#0a0a1e;color:#ffd700;font-size:13px;}"
+            "QComboBox::drop-down{border:none;}")
+        tif_row.addWidget(self.qord_tif); tif_row.addStretch()
+        root_v.addLayout(tif_row)
+
+        # ── 매수 / 매도 버튼 ─────────────────────────────────
+        _buy_s  = ("QPushButton{background:#1a5c2e;color:#00ff88;font-size:16px;"
+                   "font-weight:bold;padding:10px 4px;border-radius:4px;}"
+                   "QPushButton:pressed{background:#0a3c1e;padding-top:12px;padding-bottom:8px;}")
+        _sell_s = ("QPushButton{background:#6b1a1a;color:#ff6666;font-size:16px;"
+                   "font-weight:bold;padding:10px 4px;border-radius:4px;}"
+                   "QPushButton:pressed{background:#4b0a0a;padding-top:12px;padding-bottom:8px;}")
+        btn_row = QHBoxLayout(); btn_row.setSpacing(4)
+        self.btn_qord_buy  = QPushButton("▲ 매수");  self.btn_qord_buy.setStyleSheet(_buy_s)
+        self.btn_qord_sell = QPushButton("▼ 매도");  self.btn_qord_sell.setStyleSheet(_sell_s)
+        self.btn_qord_buy.clicked.connect(lambda _: (
+            _animate_press(self.btn_qord_buy), self._qord_place("BUY")))
+        self.btn_qord_sell.clicked.connect(lambda _: (
+            _animate_press(self.btn_qord_sell), self._qord_place("SELL")))
+        btn_row.addWidget(self.btn_qord_buy, 1); btn_row.addWidget(self.btn_qord_sell, 1)
+        root_v.addLayout(btn_row)
+
+        # ── +1호가 매수 버튼 ─────────────────────────────────
+        _p1_s = ("QPushButton{background:#1a3a5c;color:#90caf9;font-size:13px;"
+                 "font-weight:bold;padding:5px;border-radius:4px;"
+                 "border:1px solid #2a5a8c;}"
+                 "QPushButton:hover{background:#2a4a7c;}"
+                 "QPushButton:pressed{background:#0a2a4c;padding-top:7px;padding-bottom:3px;}")
+        self.btn_plus1tick = QPushButton("+1호가 매수")
+        self.btn_plus1tick.setStyleSheet(_p1_s)
+        self.btn_plus1tick.setToolTip("미체결 주문 중 최고가 매수 주문을 +$0.05 올려 정정")
+        self.btn_plus1tick.clicked.connect(lambda: (
+            _animate_press(self.btn_plus1tick), self._plus1tick_buy()))
+        root_v.addWidget(self.btn_plus1tick)
+
+        # ── 잔고 버튼 ─────────────────────────────────────────
+        _pos_s = ("QPushButton{background:#2a1a3a;color:#c084fc;font-size:13px;"
+                  "font-weight:bold;padding:5px;border-radius:4px;"
+                  "border:1px solid #5a2a7a;}"
+                  "QPushButton:hover{background:#3a2a5a;}"
+                  "QPushButton:pressed{background:#1a0a2a;padding-top:7px;padding-bottom:3px;}"
+                  "QPushButton:checked{background:#5a2a7a;color:#ffd700;"
+                  "border:2px solid #c084fc;}")
+        self.btn_pos_toggle = QPushButton("📊 잔고")
+        self.btn_pos_toggle.setCheckable(True)
+        self.btn_pos_toggle.setStyleSheet(_pos_s)
+        self.btn_pos_toggle.clicked.connect(self._on_pos_toggle)
+        root_v.addWidget(self.btn_pos_toggle)
+
+        # ── 긴급 매도 버튼들 ──────────────────────────────────
+        sep2 = QLabel(); sep2.setFixedHeight(1)
+        sep2.setStyleSheet("background:#4a1a1a;border:none;")
+        root_v.addWidget(sep2)
+
+        _emrg_all_s = ("QPushButton{background:#8b0000;color:#ff4444;font-size:13px;"
+                       "font-weight:bold;padding:6px;border-radius:4px;"
+                       "border:2px solid #ff4444;}"
+                       "QPushButton:hover{background:#aa0000;}"
+                       "QPushButton:pressed{background:#660000;padding-top:8px;padding-bottom:4px;}")
+        _emrg_pos_s = ("QPushButton{background:#5a0a0a;color:#ff8888;font-size:12px;"
+                       "font-weight:bold;padding:4px;border-radius:3px;"
+                       "border:1px solid #aa4444;}"
+                       "QPushButton:hover{background:#7a1a1a;}"
+                       "QPushButton:pressed{background:#3a0000;padding-top:6px;padding-bottom:2px;}")
+
+        self.btn_emrg_all = QPushButton("🚨 긴급매도 ALL (잔고+미체결)")
+        self.btn_emrg_all.setStyleSheet(_emrg_all_s)
+        self.btn_emrg_all.setToolTip("보유 포지션 전체 시장가 매도 + 미체결 매수 취소")
+        self.btn_emrg_all.clicked.connect(lambda: (
+            _animate_press(self.btn_emrg_all), self._emergency_sell_all()))
+        root_v.addWidget(self.btn_emrg_all)
+
+        emrg_row = QHBoxLayout(); emrg_row.setSpacing(4)
+        self.btn_emrg_pos  = QPushButton("잔고만 매도")
+        self.btn_emrg_open = QPushButton("미체결만 취소")
+        self.btn_emrg_pos.setStyleSheet(_emrg_pos_s)
+        self.btn_emrg_open.setStyleSheet(_emrg_pos_s)
+        self.btn_emrg_pos.clicked.connect(lambda: (
+            _animate_press(self.btn_emrg_pos), self._emergency_sell_positions()))
+        self.btn_emrg_open.clicked.connect(lambda: (
+            _animate_press(self.btn_emrg_open), self._emergency_cancel_orders()))
+        emrg_row.addWidget(self.btn_emrg_pos, 1); emrg_row.addWidget(self.btn_emrg_open, 1)
+        root_v.addLayout(emrg_row)
+
+        self.lbl_qord_status = QLabel("대기 중")
+        self.lbl_qord_status.setAlignment(Qt.AlignCenter)
+        self.lbl_qord_status.setStyleSheet(
+            "color:#888;font-size:13px;border:1px solid #333;border-radius:3px;padding:2px;")
+        root_v.addWidget(self.lbl_qord_status)
+        root_v.addStretch()
+        tab_w.addTab(new_w, "⚡ 신규")
+
+        # ── 정정/취소 공통 ────────────────────────────────────
+        _tbl_s = (
+            "QTableWidget{background:#05050f;color:#ccc;"
+            "gridline-color:#1a1a3a;font-size:13px;}"
+            "QHeaderView::section{background:#0a0a1e;color:#90caf9;"
+            "border:1px solid #1a1a3a;font-size:12px;}"
+            "QTableWidget::item:selected{background:#1a3a6b;color:#ffd700;}")
+        _es  = "background:#0a0a1e;color:#ffd700;border:1px solid #444;font-size:15px;"
+        _ls2 = "color:#aaa;font-size:13px;border:none;"
+        _fetch_s = ("background:#1a3a1a;color:#00ff88;font-size:13px;font-weight:bold;"
+                    "padding:5px;border-radius:3px;border:1px solid #2a6a2a;")
+
+        def _make_order_tbl(sel_color="#1a3a6b"):
+            tbl=QTableWidget(0,4)
+            tbl.setHorizontalHeaderLabels(["OID","종목","방향","가격"])
+            tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            tbl.verticalHeader().setVisible(False)
+            tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+            tbl.setMaximumHeight(110)
+            tbl.setStyleSheet(_tbl_s.replace("#1a3a6b",sel_color))
+            return tbl
+
+        # ── 탭2: 정정 ────────────────────────────────────────
+        amend_w = QWidget()
+        av = QVBoxLayout(amend_w); av.setSpacing(5); av.setContentsMargins(8,8,8,8)
+
+        # 헤더: 미체결조회 버튼 + KST 시각
+        ah = QHBoxLayout()
+        btn_fetch_a = QPushButton("📋 미체결 주문 조회")
+        btn_fetch_a.setStyleSheet(_fetch_s)
+        btn_fetch_a.clicked.connect(lambda: (
+            _animate_press(btn_fetch_a), self._fetch_open_orders()))
+        ah.addWidget(btn_fetch_a, 1)
+        self.lbl_amend_time = QLabel(_kst_now())
+        self.lbl_amend_time.setStyleSheet("color:#5dade2;font-size:13px;font-weight:bold;border:none;")
+        ah.addWidget(self.lbl_amend_time)
+        av.addLayout(ah)
+
+        self.tbl_open_orders_a = _make_order_tbl("#1a3a6b")
+        self.tbl_open_orders_a.cellClicked.connect(lambda r,c: self._fill_amend_from_table(r))
+        av.addWidget(self.tbl_open_orders_a)
+        av.addWidget(QLabel("주문 ID:",styleSheet=_ls2))
+        self.amend_oid = QLineEdit(); self.amend_oid.setPlaceholderText("위 목록 클릭 or 직접 입력")
+        self.amend_oid.setStyleSheet(_es); self.amend_oid.setFixedHeight(26); av.addWidget(self.amend_oid)
+        av.addWidget(QLabel("새 가격:",styleSheet=_ls2))
+        self.amend_price = QLineEdit(); self.amend_price.setPlaceholderText("새 지정가")
+        self.amend_price.setStyleSheet(_es); self.amend_price.setFixedHeight(26); av.addWidget(self.amend_price)
+        av.addWidget(QLabel("새 수량:",styleSheet=_ls2))
+        self.amend_qty = QSpinBox(); self.amend_qty.setRange(1,9999); self.amend_qty.setValue(1)
+        self.amend_qty.setFixedHeight(26)
+        self.amend_qty.setStyleSheet("background:#0a0a1e;color:#fff;border:1px solid #444;font-size:15px;")
+        av.addWidget(self.amend_qty)
+        btn_amend = QPushButton("✏ 정정 전송")
+        btn_amend.setStyleSheet(
+            "QPushButton{background:#1a4a6b;color:#90caf9;font-size:15px;"
+            "font-weight:bold;padding:8px;border-radius:4px;}"
+            "QPushButton:pressed{background:#0a2a4b;padding-top:10px;padding-bottom:6px;}")
+        btn_amend.clicked.connect(lambda: (_animate_press(btn_amend), self._amend_order()))
+        av.addWidget(btn_amend)
+        self.lbl_amend_status = QLabel("대기 중"); self.lbl_amend_status.setAlignment(Qt.AlignCenter)
+        self.lbl_amend_status.setStyleSheet(
+            "color:#888;font-size:13px;border:1px solid #333;border-radius:3px;padding:2px;")
+        av.addWidget(self.lbl_amend_status); av.addStretch()
+        tab_w.addTab(amend_w, "✏ 정정")
+
+        # ── 탭3: 취소 ────────────────────────────────────────
+        cancel_w = QWidget()
+        cv = QVBoxLayout(cancel_w); cv.setSpacing(5); cv.setContentsMargins(8,8,8,8)
+
+        ch = QHBoxLayout()
+        btn_fetch_c = QPushButton("📋 미체결 주문 조회")
+        btn_fetch_c.setStyleSheet(_fetch_s)
+        btn_fetch_c.clicked.connect(lambda: (
+            _animate_press(btn_fetch_c), self._fetch_open_orders()))
+        ch.addWidget(btn_fetch_c, 1)
+        self.lbl_cancel_time = QLabel(_kst_now())
+        self.lbl_cancel_time.setStyleSheet("color:#5dade2;font-size:13px;font-weight:bold;border:none;")
+        ch.addWidget(self.lbl_cancel_time)
+        cv.addLayout(ch)
+
+        self.tbl_open_orders_c = _make_order_tbl("#3a1a1a")
+        self.tbl_open_orders_c.setStyleSheet(
+            _tbl_s+"QTableWidget::item:selected{background:#3a1a1a;color:#ff6666;}")
+        self.tbl_open_orders_c.cellClicked.connect(lambda r,c: self._fill_cancel_from_table(r))
+        cv.addWidget(self.tbl_open_orders_c)
+        cv.addWidget(QLabel("주문 ID:",styleSheet=_ls2))
+        self.cancel_oid = QLineEdit(); self.cancel_oid.setPlaceholderText("위 목록 클릭 or 직접 입력")
+        self.cancel_oid.setStyleSheet(_es); self.cancel_oid.setFixedHeight(26); cv.addWidget(self.cancel_oid)
+        btn_cancel = QPushButton("✕ 취소 전송")
+        btn_cancel.setStyleSheet(
+            "QPushButton{background:#6b1a1a;color:#ff6666;font-size:15px;"
+            "font-weight:bold;padding:10px;border-radius:4px;}"
+            "QPushButton:pressed{background:#4b0a0a;padding-top:12px;padding-bottom:8px;}")
+        btn_cancel.clicked.connect(lambda: (_animate_press(btn_cancel), self._cancel_order()))
+        cv.addWidget(btn_cancel)
+        self.lbl_cancel_status = QLabel("대기 중"); self.lbl_cancel_status.setAlignment(Qt.AlignCenter)
+        self.lbl_cancel_status.setStyleSheet(
+            "color:#888;font-size:13px;border:1px solid #333;border-radius:3px;padding:2px;")
+        cv.addWidget(self.lbl_cancel_status)
+
+        sep_gc = QLabel(); sep_gc.setFixedHeight(1)
+        sep_gc.setStyleSheet("background:#5a2a2a;border:none;margin-top:4px;")
+        cv.addWidget(sep_gc)
+
+        btn_global_cancel = QPushButton("🚨 전체 주문 강제 취소 (reqGlobalCancel)")
+        btn_global_cancel.setFixedHeight(38)
+        btn_global_cancel.setStyleSheet(
+            "QPushButton{background:#8B0000;color:#ffffff;font-size:13px;"
+            "font-weight:bold;border-radius:4px;border:1px solid #cc2222;}"
+            "QPushButton:hover{background:#aa0000;}"
+            "QPushButton:pressed{background:#660000;}")
+        btn_global_cancel.setToolTip(
+            "현재 API 세션의 모든 미체결 주문을 즉시 취소합니다.\n"
+            "TWS UI 상태와 무관하게 서버에 직접 전달됩니다.")
+        btn_global_cancel.clicked.connect(self._on_global_cancel)
+        cv.addWidget(btn_global_cancel)
+
+        cv.addStretch()
+        tab_w.addTab(cancel_w, "✕ 취소")
+
+        # ── 탭4: 빠른매도 ─────────────────────────────────────
+        sell_w = QWidget()
+        sv = QVBoxLayout(sell_w); sv.setSpacing(5); sv.setContentsMargins(8,8,8,8)
+
+        sv.addWidget(QLabel("📊 잔고 행 클릭 → 수량·가격 자동입력",
+            styleSheet="color:#ff8800;font-size:12px;font-weight:bold;border:none;"))
+
+        sep_s1 = QLabel(); sep_s1.setFixedHeight(1)
+        sep_s1.setStyleSheet("background:#3a1a1a;border:none;")
+        sv.addWidget(sep_s1)
+
+        sell_gl = QGridLayout(); sell_gl.setSpacing(4)
+
+        self.sell_price = QLineEdit()
+        self.sell_price.setPlaceholderText("매도가격")
+        self.sell_price.setStyleSheet(
+            "color:#ff9999;font-weight:bold;font-size:15px;"
+            "background:#0a0a1e;border:1px solid #6a2a2a;")
+
+        sell_qty_w2 = QWidget(); sell_qty_h2 = QHBoxLayout(sell_qty_w2)
+        sell_qty_h2.setContentsMargins(0,0,0,0); sell_qty_h2.setSpacing(3)
+        self.sell_qty = QSpinBox()
+        self.sell_qty.setRange(1, 9999); self.sell_qty.setValue(1)
+        self.sell_qty.setFixedHeight(26)
+        self.sell_qty.setStyleSheet(
+            "background:#0a0a1e;color:#fff;border:1px solid #6a2a2a;font-size:14px;")
+        sell_qty_h2.addWidget(self.sell_qty)
+
+        sell_gl.addWidget(QLabel("매도가격:", styleSheet=_ls2), 0, 0)
+        sell_gl.addWidget(self.sell_price, 0, 1)
+        sell_gl.addWidget(QLabel("수량:", styleSheet=_ls2), 1, 0)
+        sell_gl.addWidget(sell_qty_w2, 1, 1)
+        sv.addLayout(sell_gl)
+
+        sep_s2 = QLabel(); sep_s2.setFixedHeight(1)
+        sep_s2.setStyleSheet("background:#3a1a1a;border:none;")
+        sv.addWidget(sep_s2)
+
+        # bump 버튼
+        sv.addWidget(QLabel("빠른 매도 가격 조정 (전체 미체결 일괄)",
+            styleSheet="color:#aaa;font-size:11px;border:none;"))
+        _sell_up = ("QPushButton{background:#1a3a1a;color:#00cc66;font-size:12px;"
+                    "font-weight:bold;border:1px solid #2a6a2a;border-radius:3px;}"
+                    "QPushButton:hover{background:#2a5a2a;}")
+        _sell_dn = ("QPushButton{background:#3a1a1a;color:#ff6666;font-size:12px;"
+                    "font-weight:bold;border:1px solid #6a2a2a;border-radius:3px;}"
+                    "QPushButton:hover{background:#5a2a2a;}")
+        bump_row2 = QHBoxLayout(); bump_row2.setSpacing(3)
+        for lbl3, delta, st2 in [("+0.05",+0.05,_sell_dn),("+0.10",+0.10,_sell_dn),
+                                  ("-0.05",-0.05,_sell_up),("-0.10",-0.10,_sell_up)]:
+            b2 = QPushButton(lbl3); b2.setFixedHeight(26); b2.setStyleSheet(st2)
+            b2.clicked.connect(lambda _, d=delta: self._bump_sell_price(d))
+            bump_row2.addWidget(b2)
+        sv.addLayout(bump_row2)
+
+        btn_sell_now = QPushButton("▼ 선택 주문 즉시 매도 전송")
+        btn_sell_now.setFixedHeight(40)
+        btn_sell_now.setStyleSheet(
+            "QPushButton{background:#6b1a1a;color:#ff6666;font-size:15px;"
+            "font-weight:bold;border-radius:4px;border:1px solid #9a2a2a;}"
+            "QPushButton:hover{background:#8b2a2a;}"
+            "QPushButton:pressed{background:#4b0a0a;}")
+        btn_sell_now.clicked.connect(self._sell_selected_order)
+        sv.addWidget(btn_sell_now)
+
+        self.lbl_sell_status = QLabel("잔고 행 클릭 → 수량·가격 자동입력 후 매도")
+        self.lbl_sell_status.setAlignment(Qt.AlignCenter)
+        self.lbl_sell_status.setStyleSheet(
+            "color:#888;font-size:12px;border:1px solid #333;border-radius:3px;padding:2px;")
+        sv.addWidget(self.lbl_sell_status)
+        sv.addStretch()
+        tab_w.addTab(sell_w, "▼ 빠른매도")
+
+        gb_v.addWidget(tab_w)
+
+        # ── 잔고 매도 패널 (하단 슬라이드) ──────────────────────
+        self._pos_sell_panel = QWidget()
+        self._pos_sell_panel.setVisible(False)
+        self._pos_sell_panel.setStyleSheet(
+            "background:#1a0a0a;border:1px solid #6b1a1a;border-radius:4px;")
+        ps_v = QVBoxLayout(self._pos_sell_panel)
+        ps_v.setContentsMargins(6,5,6,5); ps_v.setSpacing(4)
+        ps_hdr = QHBoxLayout()
+        self._ps_lbl_title = QLabel("▼ 잔고 청산 매도")
+        self._ps_lbl_title.setStyleSheet("color:#ff6666;font-weight:bold;font-size:13px;border:none;")
+        ps_hdr.addWidget(self._ps_lbl_title); ps_hdr.addStretch()
+        ps_v.addLayout(ps_hdr)
+        ps_info = QHBoxLayout()
+        self._ps_lbl_sym = QLabel("―")
+        self._ps_lbl_sym.setStyleSheet("color:#ffd700;font-size:13px;font-weight:bold;border:none;")
+        ps_info.addWidget(QLabel("종목:",styleSheet="color:#aaa;font-size:12px;border:none;"))
+        ps_info.addWidget(self._ps_lbl_sym); ps_info.addStretch()
+        ps_v.addLayout(ps_info)
+        ps_qty_row = QHBoxLayout()
+        self._ps_qty = QSpinBox(); self._ps_qty.setRange(1,9999); self._ps_qty.setValue(1)
+        self._ps_qty.setFixedHeight(24)
+        self._ps_qty.setStyleSheet("background:#0a0a1e;color:#fff;border:1px solid #6b1a1a;font-size:13px;")
+        ps_qty_row.addWidget(QLabel("수량:",styleSheet="color:#aaa;font-size:12px;border:none;"))
+        ps_qty_row.addWidget(self._ps_qty); ps_qty_row.addStretch()
+        ps_v.addLayout(ps_qty_row)
+        ps_price_row = QHBoxLayout()
+        self._ps_price = QLineEdit(); self._ps_price.setPlaceholderText("지정가 (비워두면 시장가)")
+        self._ps_price.setFixedHeight(24)
+        self._ps_price.setStyleSheet("color:#ffd700;font-size:13px;background:#0a0a1e;border:1px solid #6b1a1a;")
+        ps_price_row.addWidget(QLabel("가격:",styleSheet="color:#aaa;font-size:12px;border:none;"))
+        ps_price_row.addWidget(self._ps_price)
+        ps_v.addLayout(ps_price_row)
+        ps_btn = QPushButton("▼ 매도 주문 전송")
+        ps_btn.setStyleSheet(
+            "QPushButton{background:#6b1a1a;color:#ff6666;font-size:14px;"
+            "font-weight:bold;padding:8px;border-radius:4px;}"
+            "QPushButton:pressed{background:#4b0a0a;padding-top:10px;padding-bottom:6px;}")
+        ps_btn.clicked.connect(lambda: (_animate_press(ps_btn), self._pos_sell_execute()))
+        ps_v.addWidget(ps_btn)
+        gb_v.addWidget(self._pos_sell_panel)
+
+        # ── KST 시각 타이머 (1초) ────────────────────────────
+        self._kst_timer = QTimer(self)
+        self._kst_timer.setInterval(1000)
+        self._kst_timer.timeout.connect(self._update_kst_labels)
+        self._kst_timer.start()
+
         return gb
+
+    # ── KST 시각 갱신 ───────────────────────────────────────
+    def _update_kst_labels(self):
+        t = _kst_now()
+        if hasattr(self, 'lbl_amend_time'):  self.lbl_amend_time.setText(t)
+        if hasattr(self, 'lbl_cancel_time'): self.lbl_cancel_time.setText(t)
+
+    # ── 수수료 표시 ─────────────────────────────────────────
+    def _update_commission_label(self, qty=1):
+        fee = max(qty*0.65, 1.00)
+        self.lbl_commission.setText(f"예상 수수료: ${fee:.2f}  ({qty}계약 × $0.65)")
+
+    # ── 유형 토글 ────────────────────────────────────────────
+    def _on_qord_type_toggle(self):
+        is_lmt = self.qord_lmt.isChecked()
+        self.qord_price.setEnabled(is_lmt)
+        self.qord_price.setStyleSheet(
+            "color:#ffd700;font-weight:bold;font-size:15px;"
+            "background:#0a0a1e;border:1px solid #444;" if is_lmt else
+            "color:#555;font-weight:bold;font-size:15px;"
+            "background:#070710;border:1px solid #222;")
+
+    # ── 미체결 조회 ──────────────────────────────────────────
+    def _fetch_open_orders(self):
+        from PyQt5.QtWidgets import QMessageBox
+        if not self.mw.connected:
+            QMessageBox.warning(self,"미연결","TWS에 먼저 연결하세요."); return
+        self._open_orders_buf = []; ib = self.mw.ib
+
+        def _on_open_order(orderId, contract, order, orderState):
+            self._open_orders_buf.append({
+                "oid": orderId,
+                "symbol": getattr(contract,"localSymbol","") or getattr(contract,"symbol",""),
+                "action": getattr(order,"action",""),
+                "price":  getattr(order,"lmtPrice",0.0),
+                "qty":    getattr(order,"totalQuantity",0),
+                "type":   getattr(order,"orderType",""),
+                "tif":    getattr(order,"tif","DAY"),
+                "contract": contract,
+            })
+        def _on_open_order_end():
+            QTimer.singleShot(0, self._populate_open_order_tables)
+
+        ib._orig_openOrder    = getattr(ib,'openOrder',    lambda *a: None)
+        ib._orig_openOrderEnd = getattr(ib,'openOrderEnd', lambda: None)
+        ib.openOrder    = _on_open_order
+        ib.openOrderEnd = _on_open_order_end
+        try: ib.reqOpenOrders(); self._log("📋 미체결 주문 조회 요청...")
+        except Exception as e: self._log(f"❌ 주문 조회 오류: {e}")
+        QTimer.singleShot(2000, lambda: (
+            setattr(ib,'openOrder',    ib._orig_openOrder),
+            setattr(ib,'openOrderEnd', ib._orig_openOrderEnd)))
+
+    def _populate_open_order_tables(self):
+        from tab_options import _mk
+        orders = getattr(self,'_open_orders_buf',[])
+        for tbl in (self.tbl_open_orders_a, self.tbl_open_orders_c):
+            tbl.setRowCount(0)
+            for o in orders:
+                r=tbl.rowCount(); tbl.insertRow(r)
+                price_str=f"{o['price']:.2f}" if o['price'] else o['type']
+                col="#00ff88" if o['action']=="BUY" else "#ff6666"
+                tbl.setItem(r,0,_mk(str(o['oid']),"#ffd700"))
+                tbl.setItem(r,1,_mk(o['symbol'],"#ccc"))
+                tbl.setItem(r,2,_mk(f"{o['action']} {o['qty']}",col))
+                tbl.setItem(r,3,_mk(price_str,"#90caf9"))
+        self._log(f"📋 미체결 주문 {len(orders)}건 수신")
+
+    def _fill_amend_from_table(self, row):
+        tbl=self.tbl_open_orders_a
+        oid_item=tbl.item(row,0); prc_item=tbl.item(row,3); dir_item=tbl.item(row,2)
+        if oid_item: self.amend_oid.setText(oid_item.text())
+        if prc_item:
+            try: self.amend_price.setText(f"{float(prc_item.text()):.2f}")
+            except ValueError: pass
+        if dir_item:
+            parts=dir_item.text().split()
+            if len(parts)>=2:
+                try: self.amend_qty.setValue(int(parts[1]))
+                except ValueError: pass
+
+    def _fill_cancel_from_table(self, row):
+        oid_item=self.tbl_open_orders_c.item(row,0)
+        if oid_item: self.cancel_oid.setText(oid_item.text())
+
+    # ── 잔고 플로팅창 토글 ───────────────────────────────────
+    def _on_pos_toggle(self):
+        if hasattr(self, '_pos_float_win'):
+            if self._pos_float_win.isVisible():
+                self._pos_float_win.hide()
+                self.btn_pos_toggle.setChecked(False)
+            else:
+                self._pos_float_win.show()
+                self._pos_float_win.raise_()
+                self.btn_pos_toggle.setChecked(True)
+            return
+        # 최초 생성
+        self._pos_float_win = self._create_pos_float_win()
+        self._pos_float_win.show()
+        self.btn_pos_toggle.setChecked(True)
+        # 포지션 즉시 조회
+        QTimer.singleShot(200, self._refresh_positions)
+
+    def _create_pos_float_win(self):
+        """항상 위(WindowStaysOnTopHint) 플로팅 잔고창 생성. X버튼 없음."""
+        win = QWidget(None,
+            Qt.Window |
+            Qt.WindowStaysOnTopHint |
+            Qt.CustomizeWindowHint |
+            Qt.WindowTitleHint)
+        win.setWindowTitle("📊 잔고")
+        win.resize(560, 340)
+        win.move(10, 10)
+        win.setStyleSheet(
+            "QWidget{background:#05050f;color:#ccc;font-size:13px;}"
+            "QGroupBox{border:1px solid #3a2a5a;border-radius:4px;"
+            "color:#c084fc;font-weight:bold;font-size:12px;"
+            "margin-top:8px;padding-top:6px;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:8px;}")
+
+        v = QVBoxLayout(win); v.setContentsMargins(8,8,8,8); v.setSpacing(4)
+
+        # 헤더 행
+        hdr = QHBoxLayout()
+        lbl_title = QLabel("📊 보유 포지션")
+        lbl_title.setStyleSheet("color:#c084fc;font-size:14px;font-weight:bold;border:none;")
+        hdr.addWidget(lbl_title); hdr.addStretch()
+
+        btn_ref = QPushButton("🔄 갱신")
+        btn_ref.setFixedHeight(24)
+        btn_ref.setStyleSheet(
+            "QPushButton{background:#2a1a3a;color:#c084fc;font-size:12px;"
+            "font-weight:bold;border:1px solid #5a2a7a;border-radius:3px;}"
+            "QPushButton:pressed{background:#1a0a2a;}")
+        btn_ref.clicked.connect(self._refresh_positions)
+        hdr.addWidget(btn_ref)
+        v.addLayout(hdr)
+
+        # 포지션 테이블
+        _ts = (
+            "QTableWidget{background:#07070f;color:#ddd;"
+            "gridline-color:#2a1a3a;font-size:13px;border:1px solid #3a2a5a;}"
+            "QHeaderView::section{background:#0a0514;color:#c084fc;"
+            "border:1px solid #2a1a3a;font-size:12px;padding:3px;}"
+            "QTableWidget::item{padding:3px;}"
+            "QTableWidget::item:selected{background:#3a2a5a;color:#ffd700;}"
+            "QTableWidget::item:hover{background:#1a0a2a;}")
+        cols = ["C/P","심볼","행사가","매수가","수량","현재가","평가손익","만기"]
+        self._pos_tbl = QTableWidget(0, len(cols))
+        self._pos_tbl.setHorizontalHeaderLabels(cols)
+        self._pos_tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._pos_tbl.verticalHeader().setVisible(False)
+        self._pos_tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._pos_tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._pos_tbl.setStyleSheet(_ts)
+        self._pos_tbl.cellClicked.connect(self._on_pos_tbl_click)
+        v.addWidget(self._pos_tbl, 1)
+
+        # PnL 요약
+        self._pos_lbl_pnl = QLabel("총 평가손익: ―")
+        self._pos_lbl_pnl.setStyleSheet(
+            "color:#ffd700;font-size:14px;font-weight:bold;border:none;")
+        v.addWidget(self._pos_lbl_pnl)
+
+        # 힌트
+        v.addWidget(QLabel("↑ 행 클릭 → 매도 주문창 자동 입력",
+            alignment=Qt.AlignCenter,
+            styleSheet="color:#444;font-size:10px;border:none;"))
+        return win
+
+    def _on_pos_tbl_click(self, row, col):
+        """잔고창 행 클릭 → 매도 패널 자동 입력."""
+        tbl = self._pos_tbl
+        cp_item     = tbl.item(row, 0)
+        strike_item = tbl.item(row, 2)
+        qty_item    = tbl.item(row, 4)
+        price_item  = tbl.item(row, 3)
+        if not cp_item or not strike_item: return
+        side   = "C" if "C" in cp_item.text() else "P"
+        strike = strike_item.text().strip()
+        try:    qty=abs(int(qty_item.text())) if qty_item else 1
+        except: qty=1
+        try:    price=float(price_item.text()) if price_item else None
+        except: price=None
+        self._show_pos_sell_panel(side, strike, qty=qty, price=price)
+
+    # ── 잔고 매도 패널 ───────────────────────────────────────
+    def _show_pos_sell_panel(self, side, strike, qty=1, price=None):
+        label="CALL" if side=="C" else "PUT"
+        self._ps_lbl_title.setText(f"▼ 잔고 청산 매도  [{label}]")
+        self._ps_lbl_sym.setText(f"{label}  {strike}")
+        self._ps_qty.setValue(max(1, qty))
+        self._ps_price.setText(f"{price:.2f}" if price else "")
+        self._ps_side=side; self._ps_strike=strike
+        self._pos_sell_panel.setVisible(True)
+        # 빠른매도 탭(idx=3)으로 자동 전환 + 가격·수량 자동입력
+        tab_w = getattr(self, '_qord_tab_widget', None)
+        if tab_w:
+            tab_w.setCurrentIndex(3)
+        sell_price_w = getattr(self, 'sell_price', None)
+        sell_qty_w   = getattr(self, 'sell_qty', None)
+        if sell_price_w and price:
+            sell_price_w.setText(f"{price:.2f}")
+        if sell_qty_w:
+            sell_qty_w.setValue(max(1, qty))
+        lbl = getattr(self, 'lbl_sell_status', None)
+        if lbl:
+            lbl.setText(f"✅ {label} {strike} — 가격·수량 확인 후 매도")
+
+    def _pos_sell_execute(self):
+        side=getattr(self,'_ps_side',None); strike=getattr(self,'_ps_strike',None)
+        if not side or not strike:
+            self._log("⚠ 매도 대상 없음"); return
+        price_txt=self._ps_price.text().strip()
+        self._qord_fill(side, strike,
+                        float(price_txt) if price_txt else None,
+                        source="← 잔고 청산")
+        self.qord_qty.setValue(self._ps_qty.value())
+        self._pos_sell_panel.setVisible(False)
+        self._qord_place("SELL")
+
+    # ── +1호가 매수 ──────────────────────────────────────────
+    def _plus1tick_buy(self):
+        """미체결 BUY 주문 중 가장 최근 것을 +$0.05 올려 정정."""
+        if not self.mw.connected:
+            self._log("⚠ +1호가: 미연결"); return
+        orders = getattr(self, '_open_orders_buf', [])
+        buy_orders = [o for o in orders if o.get('action') == 'BUY' and o.get('price',0) > 0]
+        if not buy_orders:
+            self._log("⚠ +1호가: 미체결 BUY 주문 없음 (먼저 [미체결 조회] 클릭)"); return
+        # 가장 최근 BUY 주문 (OID 최대값)
+        target = max(buy_orders, key=lambda o: o['oid'])
+        new_price = round(target['price'] + 0.05, 2)
+        self._log(f"+1호가 매수 정정: OID={target['oid']}  {target['price']:.2f} → {new_price:.2f}")
+        try:
+            from ibapi.order import Order as IBOrder
+            order = IBOrder()
+            order.action       = "BUY"
+            order.orderType    = "LMT"
+            order.totalQuantity = target['qty']
+            order.lmtPrice     = new_price
+            order.tif          = target.get('tif','DAY')
+            order.eTradeOnly   = False
+            order.firmQuoteOnly= False
+            self.mw.ib.placeOrder(target['oid'], target['contract'], order)
+            self._log(f"✅ +1호가 정정 전송: {new_price:.2f}")
+            if hasattr(self, 'lbl_amend_status'):
+                self.lbl_amend_status.setText(f"+1호가 정정 → {new_price:.2f}")
+        except Exception as e:
+            self._log(f"❌ +1호가 정정 오류: {e}")
+
+    # ── 빠른매도 탭 로직 ─────────────────────────────────────
+    def _sell_selected_order(self):
+        """빠른매도: sell_price·sell_qty 필드 값으로 선택 OID 매도."""
+        oid = getattr(self, '_sell_selected_oid', None)
+        buf = getattr(self, '_open_orders_buf', [])
+        lbl = getattr(self, 'lbl_sell_status', None)
+        if oid is None:
+            if lbl: lbl.setText("⚠ 잔고 행을 먼저 클릭하세요")
+            return
+        matched = next((o for o in buf if o["oid"] == oid), None)
+        sell_price_w = getattr(self, 'sell_price', None)
+        sell_qty_w   = getattr(self, 'sell_qty', None)
+        try:
+            price = float(sell_price_w.text().strip()) if sell_price_w else (matched["price"] if matched else 0)
+        except (ValueError, AttributeError):
+            price = matched["price"] if matched else 0
+        try:
+            qty = sell_qty_w.value() if sell_qty_w else (matched["qty"] if matched else 1)
+        except AttributeError:
+            qty = matched["qty"] if matched else 1
+        if not self.mw.connected:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "미연결", "TWS에 먼저 연결하세요."); return
+        try:
+            from ibapi.order import Order as IbOrder
+            from ibapi.contract import Contract
+            ibord = IbOrder()
+            ibord.action        = "SELL"
+            ibord.orderType     = "LMT"
+            ibord.totalQuantity = qty
+            ibord.lmtPrice      = price
+            ibord.tif           = matched.get("tif","DAY") if matched else "DAY"
+            ibord.eTradeOnly    = False
+            ibord.firmQuoteOnly = False
+            if matched:
+                self.mw.ib.placeOrder(oid, matched["contract"], ibord)
+            msg = f"✅ 빠른매도: OID={oid}  SELL {qty} @{price:.2f}"
+            if lbl: lbl.setText(msg)
+            self._log(msg)
+        except Exception as e:
+            if lbl: lbl.setText(f"❌ 빠른매도 오류: {e}")
+
+    def _bump_sell_price(self, delta: float):
+        """빠른매도 탭: 전체 미체결 주문 가격에 delta 일괄 적용."""
+        buf = getattr(self, '_open_orders_buf', [])
+        lbl = getattr(self, 'lbl_sell_status', None)
+        if not buf:
+            if lbl: lbl.setText("⚠ 미체결 주문 없음 — 먼저 조회하세요"); return
+        if not self.mw.connected:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "미연결", "TWS에 먼저 연결하세요."); return
+        sign_str = f"+{delta:.2f}" if delta > 0 else f"{delta:.2f}"
+        success, fail = 0, 0
+        for o in buf:
+            new_price = round(o["price"] + delta, 2)
+            if new_price <= 0: fail += 1; continue
+            try:
+                from ibapi.order import Order as IbOrder
+                ibord = IbOrder()
+                ibord.action        = "SELL"
+                ibord.orderType     = "LMT"
+                ibord.totalQuantity = o["qty"]
+                ibord.lmtPrice      = new_price
+                ibord.tif           = o.get("tif","DAY")
+                ibord.eTradeOnly    = False
+                ibord.firmQuoteOnly = False
+                self.mw.ib.placeOrder(o["oid"], o["contract"], ibord)
+                o["price"] = new_price
+                if o["oid"] == getattr(self, '_sell_selected_oid', None):
+                    sell_price_w = getattr(self, 'sell_price', None)
+                    if sell_price_w: sell_price_w.setText(f"{new_price:.2f}")
+                success += 1
+            except Exception as e:
+                self._log(f"❌ OID={o['oid']} bump 오류: {e}"); fail += 1
+        msg = f"✅ 전체 bump({sign_str}): {success}건 성공"
+        if fail: msg += f" / {fail}건 실패"
+        if lbl: lbl.setText(msg)
+        self._log(msg)
+
+    def _on_global_cancel(self):
+        """취소 탭: 전체 미체결 주문 강제 취소 (reqGlobalCancel)."""
+        from PyQt5.QtWidgets import QMessageBox
+        ret = QMessageBox.warning(
+            self, "⚠ 전체 취소 확인",
+            "현재 API 세션의 모든 미체결 주문을 즉시 취소합니다.\n"
+            "이 작업은 되돌릴 수 없습니다. 계속하시겠습니까?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if ret != QMessageBox.Yes:
+            return
+        if not self.mw.connected:
+            QMessageBox.warning(self, "미연결", "TWS에 먼저 연결하세요.")
+            return
+        try:
+            self.mw.ib.reqGlobalCancel()
+            if hasattr(self, 'lbl_cancel_status'):
+                self.lbl_cancel_status.setText("✅ reqGlobalCancel 전송 완료 — 전체 주문 취소 요청됨")
+            self._log("🚨 reqGlobalCancel 전송 완료")
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"reqGlobalCancel 실패: {e}")
+            self._log(f"❌ reqGlobalCancel 오류: {e}")
+
+    def _emergency_sell_all(self):
+        """잔고 전체 시장가 매도 + 미체결 매수 전부 취소."""
+        self._emergency_sell_positions()
+        self._emergency_cancel_orders()
+
+    def _emergency_sell_positions(self):
+        """IBKR 포지션 전체를 시장가(MKT)로 즉시 매도."""
+        if not self.mw.connected:
+            self._log("🚨 긴급매도: 미연결"); return
+        ib = self.mw.ib
+        _pos_buf = []
+
+        def _on_pos(account, contract, pos, avg_cost):
+            if getattr(contract,'secType','') == 'OPT' and int(pos) > 0:
+                _pos_buf.append((contract, int(pos)))
+
+        def _on_pos_end():
+            if not _pos_buf:
+                self._log("🚨 긴급매도: 보유 포지션 없음"); return
+            from ibapi.order import Order as IBOrder
+            for contract, qty in _pos_buf:
+                order = IBOrder()
+                order.action        = "SELL"
+                order.orderType     = "MKT"
+                order.totalQuantity = qty
+                order.tif           = "DAY"
+                order.eTradeOnly    = False
+                order.firmQuoteOnly = False
+                try:
+                    oid = ib.nextOrderId if hasattr(ib,'nextOrderId') else 0
+                    ib.placeOrder(oid, contract, order)
+                    sym = getattr(contract,'localSymbol','') or getattr(contract,'symbol','')
+                    self._log(f"🚨 긴급매도 전송: {sym} {qty}계약 시장가")
+                except Exception as e:
+                    self._log(f"❌ 긴급매도 오류: {e}")
+
+        ib._orig_pos    = getattr(ib,'position',    lambda *a:None)
+        ib._orig_posEnd = getattr(ib,'positionEnd', lambda:None)
+        ib.position    = _on_pos
+        ib.positionEnd = _on_pos_end
+        try: ib.reqPositions()
+        except Exception as e: self._log(f"❌ 긴급매도 포지션조회 오류: {e}")
+        QTimer.singleShot(3000, lambda: (
+            setattr(ib,'position',    ib._orig_pos),
+            setattr(ib,'positionEnd', ib._orig_posEnd)))
+
+    def _emergency_cancel_orders(self):
+        """미체결 매수 주문 전부 취소."""
+        if not self.mw.connected:
+            self._log("🚨 미체결취소: 미연결"); return
+        orders = getattr(self,'_open_orders_buf',[])
+        buy_orders = [o for o in orders if o.get('action')=='BUY']
+        if not buy_orders:
+            self._log("🚨 미체결취소: 미체결 BUY 없음 (먼저 [미체결 조회] 클릭)"); return
+        for o in buy_orders:
+            try:
+                self.mw.ib.cancelOrder(o['oid'])
+                self._log(f"🚨 취소 전송: OID={o['oid']} {o['symbol']}")
+            except Exception as e:
+                self._log(f"❌ 취소 오류 OID={o['oid']}: {e}")

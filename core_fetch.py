@@ -1,14 +1,13 @@
 """
-core_fetch.py — 조회·기초자산·테이블클릭·관심종목 로직  v6.5
+core_fetch.py — 조회·기초자산·테이블클릭·관심종목 로직  v6.4
 ════════════════════════════════════════════════════════
+수정 대상: 조회 동작, 기초자산 요청, 테이블 클릭 동작
 포함 메서드:
   _req_und() / _refresh_und()
   _fetch() / _init_tbl()
   _tbl_click() / _tbl_dbl()
   _on_watch_dbl() / _on_watch_single_click()
-  _w_add() / _w_del() / _notify_sniper_sync()
-포지션 관련(_refresh_positions/_apply_positions) →
-  core_fetch_pos.py (CoreFetchPosMixin)
+  _w_add() / _w_del()
 ════════════════════════════════════════════════════════
 """
 
@@ -21,59 +20,36 @@ try:
 except ImportError:
     PG = False
 
-from core_fetch_pos import CoreFetchPosMixin
 from core import (
-    SYMBOL_CFG, DEFAULT_CFG, INDEX_SYM,
+    SYMBOL_CFG, DEFAULT_CFG,
     REQ_UND, REQ_CALL, REQ_PUT,
     make_opt_contract, make_und_contract,
     auto_mdt, tbl_set,
 )
-
-# ── 관심종목 분류 기준 ────────────────────────────────────────
-# 지수: IND 계약 → genericTickList 없이 요청 (지수는 232 틱 미지원)
-_WATCH_INDEX = {"SPX", "SPXW", "NDX", "RUT", "VIX", "DJX", "XSP"}
-# 주식/ETF: STK 계약 → genericTickList "232" 포함 가능
-_WATCH_STOCK = {"SPY", "QQQ", "IWM", "AAPL", "TSLA", "NVDA",
-                "AMZN", "MSFT", "META", "GOOG", "GOOGL"}
-
-
-def _is_index(sym: str) -> bool:
-    """심볼이 지수인지 반환. SPXW도 SPX로 처리."""
-    return sym.upper().replace("SPXW", "SPX") in INDEX_SYM
+from core_fetch_pos import CoreFetchPosMixin
 
 
 class CoreFetchMixin(CoreFetchPosMixin):
     """조회·기초자산·테이블클릭·관심종목 로직. CallPutGrid에 mixin된다."""
 
-    def _req_und(self, sym: str):
-        """
-        기초자산 시세 구독.
-        - 지수(IND): genericTickList="" (지수는 232 틱 코드 미지원 → ERR 321 방지)
-        - 주식/ETF(STK): genericTickList="232" (52주 고저 등 추가 틱)
-        SPXW는 항상 SPX로 정규화.
-        """
+    def _req_und(self, sym):
         sym = sym.upper().replace("SPXW", "SPX")
-        if not self.mw.connected:
-            return
-        try:
-            self.mw.ib.cancelMktData(REQ_UND)
-        except Exception:
-            pass
+        if not self.mw.connected: return
+        try: self.mw.ib.cancelMktData(REQ_UND)
+        except: pass
         auto_mdt(self.mw.ib)
-        contract = make_und_contract(sym)
-        # 지수는 genericTickList 비워야 에러 없음 (ERR 321 방지)
-        generic_ticks = "" if _is_index(sym) else "232"
         self.mw.ib.reqMktData(
-            REQ_UND, contract, generic_ticks, False, False, [])
+            REQ_UND, make_und_contract(sym), "232", False, False, [])
 
     def _refresh_und(self):
-        if not self.mw.connected:
-            return
+        if not self.mw.connected: return
         from core import is_market_open
         if is_market_open():
+            # 장 중에는 이미 실시간 구독 중 → 재구독 불필요, 타이머 중단
             self._und_timer.stop()
             return
-        sym = self.edit_sym.text().strip().upper().replace("SPXW", "SPX")
+        # 장외(지연/동결 모드)일 때만 주기적으로 재구독해서 최신값 갱신
+        sym = self.edit_sym.text().strip().upper().replace("SPXW","SPX")
         self._req_und(sym)
 
     def _fetch(self):
@@ -83,28 +59,17 @@ class CoreFetchMixin(CoreFetchPosMixin):
         if getattr(self, '_fetch_busy', False):
             self._log("⚠ 구독 진행 중 — 중복 조회 요청 무시 (잠시 후 재시도)")
             return
-        # ✅ fetch 세대 카운터 — 이전 세대의 QTimer.singleShot 콜백을 무효화
-        # _on_watch_dbl / _fetch 재시도 타이머가 중복 누적되는 것을 차단
-        self._fetch_gen = getattr(self, '_fetch_gen', 0) + 1
-        _my_gen = self._fetch_gen
         if self.und_price is None:
             sym = self.edit_sym.text().strip().upper() or "SPX"
             retry = getattr(self, '_fetch_retry', 0)
             if retry >= 5:
+                # 5회 재시도 후 포기 → 루프 방지
                 self._fetch_retry = 0
                 self._log(f"⚠ 현재가 수신 실패 ({sym}) — TWS 연결 상태를 확인하세요.")
                 return
             self._fetch_retry = retry + 1
             self._log(f"현재가 수신 중… ({sym}) 잠시 후 재시도합니다. ({self._fetch_retry}/5)")
-            self._req_und(sym)
-            # ✅ 세대 캡처: 이 타이머가 발동될 때 세대가 바뀌었으면 무시
-            _gen_at_schedule = _my_gen
-            def _retry_fetch():
-                if getattr(self, '_fetch_gen', 0) != _gen_at_schedule:
-                    return   # 새 _fetch()가 이미 시작됨 → 이 재시도는 무효
-                self._fetch()
-            QTimer.singleShot(2000, _retry_fetch)
-            return
+            self._req_und(sym); QTimer.singleShot(2000, self._fetch); return
         self._fetch_retry = 0   # 성공 시 카운터 초기화
         expiry, tag = self._get_expiry()
         if not expiry: return
@@ -181,8 +146,6 @@ class CoreFetchMixin(CoreFetchPosMixin):
                     self._log(f"✅ 구독 완료: 총 {len(all_reqs)}개 계약")
                     # ✅ 스나이퍼 탭 즉시 동기화 — _fetch() 완료 후 콜-풋 데이터 반영
                     QTimer.singleShot(500, self._notify_sniper_sync)
-                    # ✅ 포지션 조회 → 잔고 컬럼 자동 갱신
-                    QTimer.singleShot(800, self._refresh_positions)
                     return
                 rid, contract = all_reqs[idx]
                 try:
@@ -204,8 +167,6 @@ class CoreFetchMixin(CoreFetchPosMixin):
         for r, s in enumerate(strikes):
             tbl.setItem(r, 0, _mk(str(int(s)), "#ffd700"))
             for c in range(1, 6): tbl.setItem(r, c, _mk("―"))
-            # 잔고 컬럼 초기값 (―)
-            tbl.setItem(r, 6, _mk("―", "#aaaaaa"))
 
     # ── 테이블 클릭 ─────────────────────────────────────────
     def _tbl_click(self, row, col, side):
@@ -243,9 +204,9 @@ class CoreFetchMixin(CoreFetchPosMixin):
         self._qord_fill(side, str(int(strikes[row])),
                         cur_price, source="← 테이블 클릭")
 
-        # ✅ 잔고 컬럼(col=6) 클릭 시 매도 패널 자동 표시
-        if col == 6 and hasattr(self, '_show_pos_sell_panel'):
-            pos_item = tbl.item(row, 6)
+        # ✅ 잔고 컬럼(col=2) 클릭 시 매도 패널 자동 표시
+        if col == 2 and hasattr(self, '_show_pos_sell_panel'):
+            pos_item = tbl.item(row, 2)
             hold_qty = 0
             if pos_item:
                 try: hold_qty = int(pos_item.text())
@@ -281,107 +242,49 @@ class CoreFetchMixin(CoreFetchPosMixin):
         self._log(f"차트 확정: {label} {int(strikes[row])}")
 
     # ── 관심종목 ────────────────────────────────────────────
-    # ※ _WATCH_INDEX / _WATCH_STOCK 는 모듈 상단에 정의
-    #   지수: IND 계약, 주식/ETF: STK 계약
-
-    @staticmethod
-    def _normalize_sym(sym: str) -> str:
-        """SPXW → SPX 정규화 + 대문자 변환."""
-        return sym.strip().upper().replace("SPXW", "SPX")
-
-    @staticmethod
-    def _sym_type_label(sym: str) -> str:
-        """UI 표시용 종목 타입 레이블 반환."""
-        s = sym.upper().replace("SPXW", "SPX")
-        if s in INDEX_SYM:
-            return "[지수]"
-        return "[주식]"
+    # 지수 심볼 목록 (현재가 패널에서 지수 가격으로 표시)
+    _INDEX_SYMS = {"SPX","NDX","RUT","VIX","DJX","XSP","NQ","ES","MES","MNQ"}
 
     def _on_watch_dbl(self, item):
         """더블클릭 → 종목 변경 + 옵션 테이블 전체 재조회."""
-        raw = item.text().strip().upper()
-        # 레이블 접두사([지수]/[주식]) 제거
-        sym = self._normalize_sym(raw.split("]")[-1].strip() if "]" in raw else raw)
-
-        if not sym:
-            return
+        sym = item.text().strip().upper().replace("SPXW","SPX")
         self.edit_sym.setText(sym)
         if not self.mw.connected:
-            QMessageBox.warning(self, "미연결", "TWS에 연결하세요.")
-            return
-        self.und_price = None
-        self.lbl_und.setText("조회 중…")
-        if hasattr(self, '_pp_switch_to_und'):
-            self._pp_switch_to_und()
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self,"미연결","TWS에 연결하세요."); return
+        self.und_price = None; self.lbl_und.setText("조회 중…")
+        # 현재가 패널 und 모드 복귀
+        if hasattr(self, '_pp_switch_to_und'): self._pp_switch_to_und()
+        # ✅ 종목에 맞게 만기 콤보 재구성
         if hasattr(self, '_refresh_expiry_list'):
             self._refresh_expiry_list()
         self._req_und(sym)
-        # ✅ 세대 카운터 증가 → 이전 pending _fetch 타이머 무효화
-        self._fetch_gen = getattr(self, '_fetch_gen', 0) + 1
-        _gen = self._fetch_gen
-        def _dbl_fetch():
-            if getattr(self, '_fetch_gen', 0) != _gen:
-                return
-            self._fetch()
-        QTimer.singleShot(1000, _dbl_fetch)
-        self._log(f"관심종목 더블클릭: {sym} ({self._sym_type_label(sym)}) → 옵션 재조회")
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(1000, self._fetch)
 
     def _on_watch_single_click(self, item):
         """단일클릭 → 종목 세팅 + 기초자산 구독 + 히스토리 차트 즉시 조회."""
-        raw = item.text().strip().upper()
-        sym = self._normalize_sym(raw.split("]")[-1].strip() if "]" in raw else raw)
-
-        if not sym:
-            return
-
-        # ── 중복 클릭 방어: 300ms 내 재클릭 무시 ────────────────
-        last_sym = getattr(self, '_watch_last_sym', None)
-        last_t   = getattr(self, '_watch_last_t', 0)
-        import time as _time
-        now = _time.monotonic()
-        if sym == last_sym and (now - last_t) < 0.3:
-            return
-        self._watch_last_sym = sym
-        self._watch_last_t   = now
-
-        # ── 진행 중인 히스토리 요청 취소 ────────────────────────
-        # _hist_router 슬롯을 모두 done=True로 마킹 → 폴링 타이머가 즉시 정리
-        if hasattr(self, '_hist_router'):
-            for slot in self._hist_router.values():
-                slot["done"] = True   # 타이머 폴링이 다음 틱에 정리
-            # IBKR에도 취소 신호 (무시해도 무방)
-            for req_id in list(self._hist_router.keys()):
-                try:
-                    self.mw.ib.cancelHistoricalData(req_id)
-                except Exception:
-                    pass
-
-        is_idx = _is_index(sym)
+        sym = item.text().strip().upper().replace("SPXW", "SPX")
 
         # ① edit_sym 동기화
         if hasattr(self, 'edit_sym'):
             self.edit_sym.setText(sym)
 
-        # ② 현재가 패널 초기화
+        # ② 현재가 패널 und 모드로 복귀 + 종목명 즉시 갱신
         if hasattr(self, '_pp_switch_to_und'):
             self._pp_switch_to_und()
         if hasattr(self, '_pp_lbl_sym'):
             self._pp_lbl_sym.setText(sym)
-        if hasattr(self, '_pp_bid'):
-            self._pp_bid = None
-        if hasattr(self, '_pp_ask'):
-            self._pp_ask = None
+        if hasattr(self, '_pp_bid'):  self._pp_bid = None
+        if hasattr(self, '_pp_ask'):  self._pp_ask = None
         if hasattr(self, '_pp_lbl_price'):
             self._pp_lbl_price.setText("조회 중…")
         if hasattr(self, '_pp_tbl_quote'):
-            try:
-                from tab_options import _mk
-                self._pp_tbl_quote.setItem(0, 1, _mk("―", "#ff6666"))
-                self._pp_tbl_quote.setItem(1, 1, _mk("―", "#33aaff"))
-            except Exception:
-                pass
+            from tab_options import _mk
+            self._pp_tbl_quote.setItem(0, 1, _mk("―", "#ff6666"))
+            self._pp_tbl_quote.setItem(1, 1, _mk("―", "#33aaff"))
 
-        # ③ 기초자산 시세 재구독 (지수/주식 자동 분기)
+        # ③ 기초자산 시세 재구독
         self._req_und(sym)
 
         # ④ 실시간 차트 버퍼 초기화
@@ -390,49 +293,25 @@ class CoreFetchMixin(CoreFetchPosMixin):
             if hasattr(self, '_c_und'):
                 self._c_und.setData([])
 
-        # ⑤ 히스토리 차트 조회 — 장중/장외 모두 분봉 탭 우선
-        # edit_sym 업데이트가 Qt 이벤트 루프에 반영된 후 조회해야 함 → 150ms 딜레이
-        if hasattr(self, '_chart_tabs'):
-            self._chart_tabs.setCurrentIndex(2)   # 먼저 분봉 탭으로 전환
-
-        def _do_fetch():
-            if hasattr(self, '_fetch_intraday'):
-                self._fetch_intraday()
-            if hasattr(self, '_fetch_daily'):
-                self._fetch_daily()
-
-        QTimer.singleShot(150, _do_fetch)
-
+        # ⑤ 히스토리 차트 조회
+        #    - 분봉: 장중/장외 모두 허용 (1분봉은 장중에도 유효)
+        #    - 일봉: 장외에만 조회
         from core import is_market_open
         market_open = is_market_open()
-        self._log(
-            f"관심종목 선택: {sym} {self._sym_type_label(sym)}"
-            f"  ({'장 중' if market_open else '장 외'} — 분봉 즉시 조회)")
 
-    def _w_add(self):
-        """관심종목 추가 — 지수/주식 자동 판별 후 레이블 붙여 표시."""
-        t, ok = QInputDialog.getText(self, "추가", "심볼 입력 (예: SPX, AAPL):")
-        if not ok or not t.strip():
-            return
-        sym = self._normalize_sym(t)
-        if not sym:
-            return
-        label = f"{self._sym_type_label(sym)} {sym}"
-        # 중복 체크
-        for i in range(self.watchlist.count()):
-            if self.watchlist.item(i).text().upper() == label.upper():
-                self._log(f"관심종목 중복: {sym}")
-                return
-        self.watchlist.addItem(label)
-        self._log(f"관심종목 추가: {label}")
-
-    def _w_del(self):
-        """선택된 관심종목 삭제."""
-        r = self.watchlist.currentRow()
-        if r >= 0:
-            removed = self.watchlist.item(r).text()
-            self.watchlist.takeItem(r)
-            self._log(f"관심종목 삭제: {removed}")
+        if market_open:
+            # 장 중 — 분봉만 조회, 분봉 탭으로 전환
+            if hasattr(self, '_fetch_intraday'):
+                self._fetch_intraday()
+            if hasattr(self, '_chart_tabs'):
+                self._chart_tabs.setCurrentIndex(2)   # 분봉 탭(index=2)
+            self._log(f"관심종목 선택: {sym}  (장 중 — 분봉 차트 조회)")
+        else:
+            # 장 외 — 일봉+분봉 모두 조회, 일봉 탭으로 전환
+            if hasattr(self, '_fetch_daily'):    self._fetch_daily()
+            if hasattr(self, '_fetch_intraday'): self._fetch_intraday()
+            if hasattr(self, '_chart_tabs'):     self._chart_tabs.setCurrentIndex(1)  # 일봉 탭
+            self._log(f"관심종목 선택: {sym}  (장 외 — 일봉+분봉 차트 조회)")
 
     def _notify_sniper_sync(self):
         """_fetch() 완료 후 스나이퍼 탭에 즉시 동기화 요청."""
@@ -442,3 +321,12 @@ class CoreFetchMixin(CoreFetchPosMixin):
                 sniper._sync_from_cp(self, silent=True)
         except Exception:
             pass
+
+    def _w_add(self):
+        t, ok = QInputDialog.getText(self, "추가", "심볼:")
+        if ok and t.strip():
+            self.watchlist.addItem(t.strip().upper())
+
+    def _w_del(self):
+        r = self.watchlist.currentRow()
+        if r >= 0: self.watchlist.takeItem(r)

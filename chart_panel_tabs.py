@@ -69,7 +69,7 @@ def _build_intraday_tab(host):
 
     host.spin_intra_bars = QSpinBox()
     host.spin_intra_bars.setRange(10, 9999)
-    host.spin_intra_bars.setValue(399)
+    host.spin_intra_bars.setValue(300)
     host.spin_intra_bars.setFixedWidth(60)
     host.spin_intra_bars.setFixedHeight(22)
     host.spin_intra_bars.setStyleSheet(_SB_STYLE)
@@ -79,9 +79,9 @@ def _build_intraday_tab(host):
     btn_3d = QPushButton("3일"); btn_3d.setFixedHeight(22); btn_3d.setFixedWidth(30)
     for b in (btn_1d, btn_2d, btn_3d):
         b.setStyleSheet(_BTN_STYLE)
-    btn_1d.clicked.connect(lambda: (host.spin_intra_bars.setValue(399),  host._fetch_intraday()))
-    btn_2d.clicked.connect(lambda: (host.spin_intra_bars.setValue(798),  host._fetch_intraday()))
-    btn_3d.clicked.connect(lambda: (host.spin_intra_bars.setValue(1197), host._fetch_intraday()))
+    btn_1d.clicked.connect(lambda: (host.spin_intra_bars.setValue(300),  host._fetch_intraday()))
+    btn_2d.clicked.connect(lambda: (host.spin_intra_bars.setValue(600),  host._fetch_intraday()))
+    btn_3d.clicked.connect(lambda: (host.spin_intra_bars.setValue(900),  host._fetch_intraday()))
 
     host.chk_intra_ext = QCheckBox("시간외")
     host.chk_intra_ext.setStyleSheet("color:#90caf9;font-size:11px;")
@@ -140,6 +140,23 @@ def _build_intraday_tab(host):
         "QPushButton:hover{background:#5a2a2a;}")
     btn_vline_clear.clicked.connect(host._on_clear_all_vlines)
 
+    # KST toggle checkbox
+    host.chk_kst = QCheckBox("한국시간")
+    host.chk_kst.setStyleSheet("color:#80deea;font-size:11px;")
+    host.chk_kst.setChecked(False)
+    host.chk_kst.stateChanged.connect(lambda: host._redraw_intraday_cache())
+
+    # Volume threshold input
+    host.spin_vol_threshold = QSpinBox()
+    host.spin_vol_threshold.setRange(0, 99999)
+    host.spin_vol_threshold.setValue(100)
+    host.spin_vol_threshold.setSuffix("만주")
+    host.spin_vol_threshold.setFixedWidth(82)
+    host.spin_vol_threshold.setFixedHeight(22)
+    host.spin_vol_threshold.setStyleSheet(_SB_STYLE)
+    host.spin_vol_threshold.setToolTip("이 수량 이상의 거래량 봉을 굵게 강조 표시 (단위: 만주)")
+    host.spin_vol_threshold.valueChanged.connect(lambda: host._redraw_intraday_cache())
+
     host.lbl_intra_status = QLabel("▶ 조회")
     host.lbl_intra_status.setStyleSheet("color:#666;font-size:10px;border:none;")
 
@@ -152,6 +169,9 @@ def _build_intraday_tab(host):
               _lbl("📅"), host.intra_date_edit,
               _lbl("⏱"), host.intra_time_input,
               btn_vline, btn_vline_clear,
+              _vsep(),
+              host.chk_kst,
+              _lbl("📊"), host.spin_vol_threshold,
               host.lbl_intra_status):
         i_ctrl.addWidget(w)
     i_ctrl.addStretch()
