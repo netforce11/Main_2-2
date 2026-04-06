@@ -44,18 +44,21 @@ def draw_ohlc_candles(pw, items_list: list, bars: list,
     half = bar_width_sec * 0.45
     xs, ys_close, y_all = [], [], []
 
-    for b in bars:
+    for i, b in enumerate(bars):
         t = b["t"]
         o, h, l, c = b["o"], b["h"], b["l"], b["c"]
         color = "#00e676" if c >= o else "#ff5252"
+        is_last = (i == len(bars) - 1)
 
-        wick = pg.PlotDataItem(x=[t, t], y=[l, h], pen=pg.mkPen(color, width=1))
+        wick_width = 3 if is_last else 1
+        wick = pg.PlotDataItem(x=[t, t], y=[l, h], pen=pg.mkPen(color, width=wick_width))
         pw.addItem(wick); items_list.append(wick)
 
         body_h = abs(c - o) or max((h - l) * 0.05, 0.01)
         rect = pg.QtWidgets.QGraphicsRectItem(t - half, min(o, c), half * 2, body_h)
         rect.setBrush(pg.mkBrush(color))
-        rect.setPen(pg.mkPen(color, width=0.5))
+        body_pen_width = 2.5 if is_last else 0.5
+        rect.setPen(pg.mkPen("#ffffff" if is_last else color, width=body_pen_width))
         pw.addItem(rect); items_list.append(rect)
 
         xs.append(t); ys_close.append(c); y_all += [l, h]

@@ -12,7 +12,8 @@ from PyQt5.QtWidgets import (
     QRadioButton, QButtonGroup, QCheckBox, QComboBox,
     QTabWidget, QPushButton,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QFont
 
 try:
     import pyqtgraph as pg
@@ -81,10 +82,16 @@ def _build_realtime_tab(host):
 
         host._pw1 = pg.PlotWidget()
         host._pw1.showGrid(x=True, y=True, alpha=0.2)
-        host._pw1.setLabel('left', '프리미엄 ($)')
         host._pw1.getPlotItem().setContentsMargins(0, 0, 0, 0)
         host._x_axis_line = pg.DateAxisItem(orientation='bottom')
         host._pw1.setAxisItems({'bottom': host._x_axis_line})
+        # Y축 좌우 교체
+        host._pw1.showAxis('right')
+        host._pw1.showAxis('left')
+        host._pw1.getAxis('right').setStyle(showValues=True)
+        host._pw1.getAxis('left').setStyle(showValues=False)
+        host._pw1.setLabel('right', '프리미엄 ($)')
+
         host._c_p   = host._pw1.plot(pen=pg.mkPen('#ffd700', width=2), name="Price")
         host._c_ma  = host._pw1.plot(
             pen=pg.mkPen('#ff8800', width=1, style=Qt.DashLine), name="MA10")
@@ -97,10 +104,15 @@ def _build_realtime_tab(host):
 
         host._pw_candle = pg.PlotWidget()
         host._pw_candle.showGrid(x=True, y=True, alpha=0.2)
-        host._pw_candle.setLabel('left', '프리미엄 ($)')
         host._pw_candle.getPlotItem().setContentsMargins(0, 0, 0, 0)
         host._x_axis_candle = pg.DateAxisItem(orientation='bottom')
         host._pw_candle.setAxisItems({'bottom': host._x_axis_candle})
+        # Y축 좌우 교체
+        host._pw_candle.showAxis('right')
+        host._pw_candle.showAxis('left')
+        host._pw_candle.getAxis('right').setStyle(showValues=True)
+        host._pw_candle.getAxis('left').setStyle(showValues=False)
+        host._pw_candle.setLabel('right', '프리미엄 ($)')
         host._candle_bars  = {}
         host._candle_items = []
         host._pw_candle.setVisible(False)
@@ -149,8 +161,13 @@ def _build_daily_tab(host):
     if PG:
         host._pw_daily = pg.PlotWidget()
         host._pw_daily.showGrid(x=True, y=True, alpha=0.2)
-        host._pw_daily.setLabel('left', '가격')
         host._pw_daily.getPlotItem().setContentsMargins(0, 0, 0, 0)
+        # Y축 좌우 교체
+        host._pw_daily.showAxis('right')
+        host._pw_daily.showAxis('left')
+        host._pw_daily.getAxis('right').setStyle(showValues=True)
+        host._pw_daily.getAxis('left').setStyle(showValues=False)
+        host._pw_daily.setLabel('right', '가격')
         host._daily_items = []
         daily_v.addWidget(host._pw_daily, 1)
     else:
@@ -174,13 +191,56 @@ def build_chart_panel(host):
         "차트: ―  (옵션체인 클릭 → 차트선택 / 기초자산 클릭 → 히스토리)")
     host.chart_lbl.setStyleSheet(
         "color:#5dade2;font-weight:bold;font-size:11px;border:none;")
+
+    # Price 라벨 (폰트 16)
     host.lbl_pv = QLabel("Price: ―")
+    host.lbl_pv.setFont(QFont("Arial", 16, QFont.Bold))
     host.lbl_pv.setStyleSheet(
-        "color:#ffd700;font-weight:bold;font-size:11px;padding:0 4px;border:none;")
+        "color:#ffd700;padding:0 4px;border:none;")
+
+    # 현재 시간 라벨 (차트 시간대 기준)
+    host.lbl_chart_time = QLabel("―")
+    host.lbl_chart_time.setFont(QFont("Arial", 12))
+    host.lbl_chart_time.setStyleSheet(
+        "color:#aaaaaa;padding:0 4px;border:none;")
+
+    # 우측 상단 Price + 시간 세로 배치
+    rhs = QVBoxLayout()
+    rhs.setSpacing(0)
+    rhs.setContentsMargins(0, 0, 0, 0)
+    rhs.addWidget(host.lbl_pv)
+    rhs.addWidget(host.lbl_chart_time)
+
     hdr.addWidget(host.chart_lbl)
     hdr.addStretch()
-    hdr.addWidget(host.lbl_pv)
+    hdr.addLayout(rhs)
     v.addLayout(hdr)
+
+    # 1초마다 시간 갱신
+    def _update_time():
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            try:
+                from backports.zoneinfo import ZoneInfo
+            except ImportError:
+                import pytz as _pytz
+                class ZoneInfo:
+                    def __new__(cls, key): return _pytz.timezone(key)
+        from datetime import datetime as _dt
+        use_kst = getattr(host, 'chk_kst', None) and host.chk_kst.isChecked()
+        if use_kst:
+            now = _dt.now(ZoneInfo("Asia/Seoul"))
+            host.lbl_chart_time.setText(now.strftime("%H:%M:%S KST"))
+        else:
+            now = _dt.now(ZoneInfo("America/New_York"))
+            host.lbl_chart_time.setText(now.strftime("%H:%M:%S ET"))
+
+    host._chart_time_timer = QTimer()
+    host._chart_time_timer.setInterval(1000)
+    host._chart_time_timer.timeout.connect(_update_time)
+    host._chart_time_timer.start()
+    _update_time()  # 즉시 한 번 실행
 
     host._chart_tabs = QTabWidget()
     host._chart_tabs.setStyleSheet(_TAB_STYLE)

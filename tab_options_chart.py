@@ -41,17 +41,24 @@ class ChartMixin(HistoryMixin):
     # 기초자산 클릭 → 일봉/분봉 자동 조회
     # ─────────────────────────────────────────────────────────
     def _on_und_label_clicked(self):
-        from core import is_market_open
-        if is_market_open():
-            # 장 중에는 실시간 탭만 사용 → 히스토리 조회 차단
-            self._log("⚡ 장 운영 중 — 히스토리 차트는 장외 시간에만 조회됩니다.")
-            if hasattr(self, '_chart_tabs'):
-                self._chart_tabs.setCurrentIndex(0)   # 실시간 탭 유지
+        # [S10] 실시간 체크박스 상태로 판단 (is_market_open 제거)
+        live_checked = (getattr(self, 'chk_live', None) is not None
+                        and self.chk_live.isChecked())
+        cur_tab = self._chart_tabs.currentIndex() if hasattr(self, '_chart_tabs') else 1
+
+        if live_checked:
+            if cur_tab == 2:
+                self._fetch_intraday()
+            else:
+                self._log("⚡ 실시간 모드 — 분봉 탭으로 전환합니다.")
+                if hasattr(self, '_chart_tabs'):
+                    self._chart_tabs.setCurrentIndex(2)
             return
-        cur_tab = self._chart_tabs.currentIndex() if hasattr(self,'_chart_tabs') else 1
-        if cur_tab == 2:   # 분봉 탭이 선택된 상태면 분봉만 조회
+
+        # 실시간 미체크 → 과거 조회
+        if cur_tab == 2:
             self._fetch_intraday()
-        else:              # 일봉 탭(또는 실시간) → 일봉+분봉 조회 후 일봉 탭 고정
+        else:
             self._fetch_daily()
             self._fetch_intraday()
             if hasattr(self, '_chart_tabs'):

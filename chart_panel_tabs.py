@@ -87,6 +87,10 @@ def _build_intraday_tab(host):
     host.chk_intra_ext.setStyleSheet("color:#90caf9;font-size:11px;")
     host.chk_intra_ext.setChecked(False)
 
+    # [S10] 실시간 체크박스 — 체크 시 분봉 조회가 keepUpToDate=True 로 동작
+    host.chk_live = QCheckBox("🔴실시간")
+    host.chk_live.setStyleSheet("color:#ff6b6b;font-size:11px;font-weight:bold;")
+
     host.combo_intra_chart_mode = QComboBox()
     host.combo_intra_chart_mode.addItems(["캔들", "라인"])
     host.combo_intra_chart_mode.setFixedWidth(46)
@@ -164,6 +168,7 @@ def _build_intraday_tab(host):
               _lbl("개수:"), host.spin_intra_bars,
               btn_1d, btn_2d, btn_3d,
               host.chk_intra_ext,
+              host.chk_live,
               host.combo_intra_chart_mode, btn_intra,
               _vsep(),
               _lbl("📅"), host.intra_date_edit,

@@ -105,10 +105,11 @@ class CoreConnMixin:
             self.lbl_und.setText("조회 중…")
 
         # ✅ Step1: MDT 설정 먼저 (reqMarketDataType은 비동기 → 300ms 후 구독 시작)
-        self._apply_mdt()
+        # _apply_mdt()를 즉시 호출하면 TWS 핸드셰이크 전이라 씹힘 → step2로 이동
 
         def _step2_req_und():
             # Step2: MDT 반영 후 현재가 구독
+            self._apply_mdt()          # 여기서 호출해야 reqMarketDataType이 반영됨
             self._req_und(self.edit_sym.text().upper())
             from core import is_market_open
             if not is_market_open():
@@ -165,8 +166,15 @@ class CoreConnMixin:
     def _apply_mdt_manual(self):
         if not self.mw.connected: return
         mdt = 1 if self.radio_live.isChecked() else 3
-        try: self.mw.ib.reqMarketDataType(mdt)
-        except Exception as e: self._log(f"MDT 전환 실패: {e}")
+        try:
+            self.mw.ib.reqMarketDataType(mdt)
+            self._log(f"시세모드 전환: {'실시간(1)' if mdt==1 else '지연(3)'}")
+        except Exception as e:
+            self._log(f"MDT 전환 실패: {e}")
+            return
+        # MDT 변경 후 현재가 재구독 (300ms 딜레이로 반영 대기)
+        from PyQt5.QtCore import QTimer as _QT
+        _QT.singleShot(300, lambda: self._req_und(self.edit_sym.text().upper()))
 
     # ── SPXW 0DTE 콤보 ──────────────────────────────────────
     def _build_spxw_combo(self):

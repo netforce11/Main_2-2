@@ -76,6 +76,8 @@ STRATEGIES = [
     "프로텍티브 풋 (주식매수 + 풋매수)",
     "콜 스프레드 (콜매수 + 콜매도)",
     "풋 스프레드 (풋매수 + 풋매도)",
+    "콜 백 스프레드 (콜매도 ATM + 콜매수 OTM×2)",
+    "풋 백 스프레드 (풋매도 ATM + 풋매수 OTM×2)",
     "스트래들 (콜매수 + 풋매수 / ATM)",
     "스트랭글 (콜매수 + 풋매수 / OTM)",
     "아이언 콘도르 (4레그)",
@@ -443,7 +445,10 @@ class ComboStrategyGrid(QWidget):
         gb_spread.setMinimumHeight(160)
         self._right_vsplit.addWidget(gb_spread)
 
-        self._right_vsplit.setSizes([260, 300, 220])
+        # ── Cost Optimizer ────────────────────────────────────
+        self._right_vsplit.addWidget(self._build_optimizer_panel())
+
+        self._right_vsplit.setSizes([260, 300, 200, 220])
         self._main_hsplit.addWidget(self._right_vsplit)
 
         self._main_hsplit.setSizes([380, 900])
@@ -543,7 +548,18 @@ class ComboStrategyGrid(QWidget):
         sym       = cp.edit_sym.text().strip().upper()
         und_price = cp.und_price
 
+        # 콜-풋 탭 만기 동기화
+        self._synced_expiry = ""
+        try:
+            idx = cp.combo_exp.currentIndex()
+            if 0 <= idx < len(cp._expiry_list):
+                self._synced_expiry = cp._expiry_list[idx][0]
+        except Exception:
+            pass
+
         header = f"종목: {sym}  |  현재가: {und_price:,.2f}" if und_price else f"종목: {sym}"
+        if self._synced_expiry:
+            header += f"  |  만기: {self._synced_expiry}"
         self.lbl_chain_sym.setText(header)
 
         if und_price:
@@ -581,7 +597,8 @@ class ComboStrategyGrid(QWidget):
             self.tbl_chain_put.setItem(r, 2, _mk("―"))
 
         if not silent:
-            self._log(f"체인 동기화: {sym}  C{len(cp.call_strikes)} / P{len(cp.put_strikes)}")
+            self._log(f"체인 동기화: {sym}  C{len(cp.call_strikes)} / P{len(cp.put_strikes)}"
+                      + (f"  만기={self._synced_expiry}" if self._synced_expiry else ""))
 
     # ─────────────────────────────────────────────────────────
     # 체인 클릭 → 레그 자동 입력
@@ -604,11 +621,14 @@ class ComboStrategyGrid(QWidget):
         if leg_row >= self.tbl_legs.rowCount():
             return
 
-        # C/P 칼럼(2), 행사가(3), 프리미엄(4) 자동 입력
+        # C/P 칼럼(2), 행사가(3), 프리미엄(4), 만기(6) 자동 입력
         self.tbl_legs.item(leg_row, 2).setText(side)
         self.tbl_legs.item(leg_row, 3).setText(str(int(strike)))
         if price:
             self.tbl_legs.item(leg_row, 4).setText(f"{price:.2f}")
+        expiry = getattr(self, '_synced_expiry', "")
+        if expiry and self.tbl_legs.item(leg_row, 6):
+            self.tbl_legs.item(leg_row, 6).setText(expiry)
 
         # ✅ Fix: price가 None일 때 ValueError 방지
         price_str = f"{price:.2f}" if price else "0.00"
@@ -664,6 +684,16 @@ class ComboStrategyGrid(QWidget):
             return [
                 {**base, "leg":"레그1", "dir":"BUY",  "cp":"P", "strike":"", "prem":""},
                 {**base, "leg":"레그2", "dir":"SELL", "cp":"P", "strike":"", "prem":""},
+            ]
+        elif "콜 백 스프레드" in strat:
+            return [
+                {**base, "leg":"레그1(매도)", "dir":"SELL", "cp":"C", "strike":"", "prem":"", "qty":"1"},
+                {**base, "leg":"레그2(매수)", "dir":"BUY",  "cp":"C", "strike":"", "prem":"", "qty":"2"},
+            ]
+        elif "풋 백 스프레드" in strat:
+            return [
+                {**base, "leg":"레그1(매도)", "dir":"SELL", "cp":"P", "strike":"", "prem":"", "qty":"1"},
+                {**base, "leg":"레그2(매수)", "dir":"BUY",  "cp":"P", "strike":"", "prem":"", "qty":"2"},
             ]
         elif "스트래들" in strat:
             return [
@@ -906,6 +936,231 @@ class ComboStrategyGrid(QWidget):
         self._log(f"손익 계산 완료 — {strat}  "
                   f"최대이익=${max_profit:,.2f}  최대손실=${max_loss:,.2f}  "
                   f"손익분기={[f'{b:.2f}' for b in breakevens]}")
+
+    # ─────────────────────────────────────────────────────────
+    # Cost Optimizer
+    # ─────────────────────────────────────────────────────────
+    def _build_optimizer_panel(self) -> QGroupBox:
+        """💰 Cost Optimizer 패널 빌드."""
+        gb = QGroupBox("💰 Cost Optimizer  —  순 비용 이하 행사가 자동 탐색")
+        gb.setStyleSheet(
+            "QGroupBox{font-size:12px;color:#c084fc;font-weight:bold;"
+            "border:1px solid #3a1a5a;border-radius:5px;"
+            "margin-top:8px;padding-top:6px;background:#08080f;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:10px;}")
+        v = QVBoxLayout(gb)
+        v.setContentsMargins(8, 10, 8, 8); v.setSpacing(6)
+
+        _S_LBL  = "color:#aaa;font-size:12px;border:none;"
+        _S_SPIN = ("background:#0c0c22;color:#ffd700;border:1px solid #4a4a8a;"
+                   "font-size:13px;font-weight:bold;border-radius:3px;padding:2px;")
+        _S_COMBO = ("QComboBox{background:#0c0c22;color:#ffd700;border:1px solid #4a4a8a;"
+                    "font-size:12px;padding:2px 6px;border-radius:3px;}"
+                    "QComboBox QAbstractItemView{background:#0c0c22;color:#ffd700;font-size:12px;}"
+                    "QComboBox::drop-down{border:none;width:14px;}")
+        _S_BTN  = ("QPushButton{background:#2a0a4a;color:#c084fc;font-size:12px;"
+                   "font-weight:bold;border:1px solid #5a2a8a;border-radius:4px;padding:5px 14px;}"
+                   "QPushButton:hover{background:#3a1a6a;}"
+                   "QPushButton:pressed{background:#1a0a2a;}")
+
+        # 입력 행
+        ctrl = QHBoxLayout(); ctrl.setSpacing(10)
+        ctrl.addWidget(QLabel("최대 순 비용 $", styleSheet=_S_LBL))
+        self._opt_max_cost = QSpinBox()
+        self._opt_max_cost.setRange(0, 99999); self._opt_max_cost.setValue(700)
+        self._opt_max_cost.setSingleStep(50); self._opt_max_cost.setFixedHeight(28)
+        self._opt_max_cost.setFixedWidth(90); self._opt_max_cost.setStyleSheet(_S_SPIN)
+        ctrl.addWidget(self._opt_max_cost)
+
+        ctrl.addWidget(QLabel("전략", styleSheet=_S_LBL))
+        self._opt_strat_combo = QComboBox()
+        self._opt_strat_combo.addItems([
+            "콜 백 스프레드 (1×2)", "풋 백 스프레드 (1×2)",
+            "콜 백 스프레드 (1×1.5)", "풋 백 스프레드 (1×1.5)",
+            "콜 스프레드", "풋 스프레드",
+        ])
+        self._opt_strat_combo.setFixedHeight(28)
+        self._opt_strat_combo.setStyleSheet(_S_COMBO)
+        ctrl.addWidget(self._opt_strat_combo, 1)
+
+        btn_run = QPushButton("🔍 탐색")
+        btn_run.setFixedHeight(28); btn_run.setStyleSheet(_S_BTN)
+        btn_run.clicked.connect(self._run_optimizer)
+        ctrl.addWidget(btn_run)
+        v.addLayout(ctrl)
+
+        # 결과 테이블
+        self._opt_tbl = QTableWidget(0, 6)
+        self._opt_tbl.setHorizontalHeaderLabels([
+            "매도 행사가", "매수 행사가", "순 비용 $", "BEP ①", "BEP ②", "전략 요약"])
+        self._opt_tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._opt_tbl.verticalHeader().setVisible(False)
+        self._opt_tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._opt_tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._opt_tbl.setAlternatingRowColors(True)
+        self._opt_tbl.setMinimumHeight(120)
+        self._opt_tbl.setStyleSheet(
+            "QTableWidget{background:#07070f;alternate-background-color:#0d0d20;"
+            "color:#ccc;gridline-color:#1a1a3a;}"
+            "QHeaderView::section{background:#0a0a1e;color:#c084fc;"
+            "border:1px solid #1a1a3a;font-weight:bold;font-size:11px;}"
+            "QTableWidget::item:selected{background:#2a1a4a;color:#fff;}")
+        self._opt_tbl.cellClicked.connect(self._on_optimizer_row_click)
+        v.addWidget(self._opt_tbl, 1)
+
+        # 선택 행 요약 레이블
+        self._opt_summary = QLabel("← 행 클릭 시 레그 테이블에 자동 입력")
+        self._opt_summary.setStyleSheet(
+            "color:#888;font-size:11px;border:none;font-style:italic;")
+        v.addWidget(self._opt_summary)
+        return gb
+
+    def _run_optimizer(self):
+        """체인 데이터에서 순 비용 조건 만족하는 행사가 조합 탐색."""
+        max_cost = self._opt_max_cost.value()
+        strat    = self._opt_strat_combo.currentText()
+        mult     = 100  # 옵션 승수
+
+        is_call   = "콜" in strat
+        is_spread = "스프레드" in strat and "백" not in strat
+        ratio_b   = 2.0 if "1×2" in strat else (1.5 if "1×1.5" in strat else 1.0)
+
+        strikes = self._call_strikes if is_call else self._put_strikes
+        prices  = self._chain_call   if is_call else self._chain_put
+
+        if not strikes:
+            self._log("⚠ 체인 데이터 없음 — 먼저 콜-풋 탭에서 조회하세요.")
+            return
+
+        results = []
+        n = len(strikes)
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                ka, kb = strikes[i], strikes[j]
+                pa = prices.get(ka) or 0.0
+                pb = prices.get(kb) or 0.0
+                if pa == 0.0 and pb == 0.0:
+                    continue
+
+                if is_spread:
+                    # 일반 스프레드: 낮은 매수 + 높은 매도 (콜) / 높은 매수 + 낮은 매도 (풋)
+                    net = (pa - pb) * mult  # 콜: pa>pb → 비용, 풋: pb>pa → 비용
+                else:
+                    # 백 스프레드: ka 매도 1계약 + kb 매수 ratio_b계약
+                    net = (pb * ratio_b - pa) * mult
+
+                if net < 0:
+                    net = 0.0  # 크레딧 전략은 비용 0으로 처리
+
+                if net > max_cost:
+                    continue
+
+                # BEP 계산
+                if is_spread:
+                    if is_call:
+                        bep1 = ka + (pa - pb)
+                        bep2 = None
+                    else:
+                        bep1 = ka - (pa - pb)
+                        bep2 = None
+                else:
+                    net_per = net / mult
+                    if is_call:
+                        bep1 = ka + pa - pb * ratio_b  # 하단 BEP (손실 구간 상단)
+                        bep2 = kb + net_per            # 상단 BEP (이익 구간 진입)
+                    else:
+                        bep1 = kb - net_per            # 하단 BEP
+                        bep2 = ka - pa + pb * ratio_b  # 상단 BEP
+
+                results.append({
+                    "sell": int(ka), "buy": int(kb),
+                    "net": net, "bep1": bep1, "bep2": bep2,
+                    "ratio": ratio_b,
+                })
+
+        # 순 비용 오름차순 정렬, 최대 30개
+        results.sort(key=lambda x: x["net"])
+        results = results[:30]
+
+        self._opt_tbl.setRowCount(0)
+        for res in results:
+            r = self._opt_tbl.rowCount()
+            self._opt_tbl.insertRow(r)
+            cost_col = "#00e676" if res["net"] == 0 else "#ffd700"
+            bep2_txt = f"{res['bep2']:.1f}" if res["bep2"] else "―"
+            summary  = (f"{res['sell']}{'C' if is_call else 'P'} 매도 × 1  +  "
+                        f"{res['buy']}{'C' if is_call else 'P'} 매수 × {res['ratio']}")
+            self._opt_tbl.setItem(r, 0, _mk(str(res["sell"]), "#ff6666"))
+            self._opt_tbl.setItem(r, 1, _mk(str(res["buy"]),  "#33aaff"))
+            self._opt_tbl.setItem(r, 2, _mk(f"${res['net']:,.0f}", cost_col))
+            self._opt_tbl.setItem(r, 3, _mk(f"{res['bep1']:.1f}", "#c084fc"))
+            self._opt_tbl.setItem(r, 4, _mk(bep2_txt, "#c084fc"))
+            self._opt_tbl.setItem(r, 5, _mk(summary, "#aaa"))
+
+        self._log(f"Cost Optimizer: {strat}  최대비용=${max_cost}  "
+                  f"조합 {len(results)}개 발견")
+        if not results:
+            self._opt_summary.setText("⚠ 조건 만족 조합 없음 — 최대 비용을 높이거나 전략을 바꿔보세요.")
+        else:
+            best = results[0]
+            bep_txt = (f"BEP {best['bep1']:.1f} / {best['bep2']:.1f}"
+                       if best["bep2"] else f"BEP {best['bep1']:.1f}")
+            self._opt_summary.setText(
+                f"✅ 최저비용: {best['sell']}{'C' if is_call else 'P'} 매도 + "
+                f"{best['buy']}{'C' if is_call else 'P'} 매수  순비용 ${best['net']:,.0f}  {bep_txt}")
+
+    def _on_optimizer_row_click(self, row: int, col: int):
+        """결과 행 클릭 → 레그 테이블에 자동 입력 후 손익 계산."""
+        sell_item = self._opt_tbl.item(row, 0)
+        buy_item  = self._opt_tbl.item(row, 1)
+        if not sell_item or not buy_item:
+            return
+
+        strat    = self._opt_strat_combo.currentText()
+        is_call  = "콜" in strat
+        cp       = "C" if is_call else "P"
+        ratio_b  = 2.0 if "1×2" in strat else (1.5 if "1×1.5" in strat else 1.0)
+        sell_k   = int(sell_item.text())
+        buy_k    = int(buy_item.text())
+        prices   = self._chain_call if is_call else self._chain_put
+        sell_p   = prices.get(sell_k) or 0.0
+        buy_p    = prices.get(buy_k)  or 0.0
+        expiry   = getattr(self, '_synced_expiry', "")
+
+        is_back  = "백" in strat
+        if is_back:
+            template = [
+                {"leg": "레그1(매도)", "dir": "SELL", "cp": cp,
+                 "strike": str(sell_k), "prem": f"{sell_p:.2f}", "qty": "1",    "expiry": expiry},
+                {"leg": "레그2(매수)", "dir": "BUY",  "cp": cp,
+                 "strike": str(buy_k),  "prem": f"{buy_p:.2f}",  "qty": str(int(ratio_b)) if ratio_b == int(ratio_b) else str(ratio_b), "expiry": expiry},
+            ]
+            # 백 스프레드 전략 콤보 동기화
+            target = "콜 백 스프레드" if is_call else "풋 백 스프레드"
+        else:
+            template = [
+                {"leg": "레그1", "dir": "BUY",  "cp": cp,
+                 "strike": str(sell_k), "prem": f"{sell_p:.2f}", "qty": "1", "expiry": expiry},
+                {"leg": "레그2", "dir": "SELL", "cp": cp,
+                 "strike": str(buy_k),  "prem": f"{buy_p:.2f}",  "qty": "1", "expiry": expiry},
+            ]
+            target = "콜 스프레드" if is_call else "풋 스프레드"
+
+        # 전략 콤보 동기화
+        for i in range(self.combo_strat.count()):
+            if target in self.combo_strat.itemText(i):
+                self.combo_strat.blockSignals(True)
+                self.combo_strat.setCurrentIndex(i)
+                self.combo_strat.blockSignals(False)
+                break
+
+        self._rebuild_legs(template)
+        self.edit_stock_price.setEnabled(False)
+        self.spin_stock_qty.setEnabled(False)
+        self._log(f"Optimizer 선택: {sell_k}{cp} 매도 + {buy_k}{cp} 매수 ×{ratio_b}")
+        # 자동으로 손익 계산 실행
+        QTimer.singleShot(50, self._calc_pnl)
 
     # ─────────────────────────────────────────────────────────
     # 설정 저장/복원
