@@ -37,6 +37,7 @@ from watch_log_widget     import WatchLogMixin
 from watch_logic          import WatchLogicMixin
 from order_panel          import OrderPanelMixin
 from order_logic          import OrderLogicMixin
+from order_panel_util     import OrderUtilMixin
 from core_conn            import CoreConnMixin
 from core_fetch           import CoreFetchMixin
 from tab_options_settings import SettingsMixin
@@ -56,6 +57,7 @@ class CallPutGrid(
     WatchLogMixin,
     WatchLogicMixin,
     OrderPanelMixin,
+    OrderUtilMixin,
     OrderLogicMixin,
     CoreConnMixin,
     CoreFetchMixin,
@@ -76,7 +78,7 @@ class CallPutGrid(
         self.call_strikes: list = []
         self.put_strikes:  list = []
         self._zone          = "ATM"
-        self._n_strikes     = 20
+        self._n_strikes     = 10
         self._chart_strike  = None
         self._chart_side    = "C"
         self._alert_sound_path  = ""

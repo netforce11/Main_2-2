@@ -266,8 +266,8 @@ class PnlLogicMixin:
         self._update_chart(scenarios)
 
         # T+0 곡선 초기 그리기
-        iv_pct = self.sld_t0_iv.value()
-        dte    = self.sld_t0_dte.value()
+        iv_pct = self.sld_t0_iv.value()  if hasattr(self, "sld_t0_iv")  else 20
+        dte    = self.sld_t0_dte.value() if hasattr(self, "sld_t0_dte") else 1
         xs, ys_t0 = self._build_t0_curve(
             legs, ref_price, stock_price, stock_qty, iv_pct, dte)
         if PG and xs and hasattr(self, "_curve_t0"):

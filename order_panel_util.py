@@ -32,25 +32,33 @@ class OrderUtilMixin:
         btn_row.addWidget(btn_ref); btn_row.addStretch()
         v.addLayout(btn_row)
 
-        _ts = (
-            "QTableWidget{background:#05050f;color:#ccc;gridline-color:#2a1a0a;"
-            "font-size:11px;border:1px solid #3a2a1a;}"
-            "QHeaderView::section{background:#0a0805;color:#ffa500;"
-            "border:1px solid #2a1a0a;font-size:10px;padding:1px;}"
-            "QTableWidget::item{padding:1px;}"
-            "QTableWidget::item:selected{background:#3a2a0a;color:#ffd700;}"
-            "QTableWidget::item:hover{background:#1a1005;}")
-        self.tbl_positions = QTableWidget(0, 4)
-        self.tbl_positions.setHorizontalHeaderLabels(["C/P","행사가","수량","평균가"])
-        self.tbl_positions.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tbl_positions.verticalHeader().setVisible(False)
-        self.tbl_positions.verticalHeader().setDefaultSectionSize(22)
-        self.tbl_positions.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.tbl_positions.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.tbl_positions.setMinimumHeight(0)
-        self.tbl_positions.setMaximumHeight(120)
-        self.tbl_positions.setStyleSheet(_ts)
-        self.tbl_positions.cellClicked.connect(self._on_position_row_click)
+        # ── tbl_positions: 이미 PricePanelMixin에서 생성된 경우 재사용 ──
+        # tab_options_price.py _build_position_panel()이 먼저 실행되면
+        # self.tbl_positions가 이미 존재함 → 새로 생성하면 참조 불일치 발생
+        if not hasattr(self, 'tbl_positions'):
+            _ts = (
+                "QTableWidget{background:#05050f;color:#ccc;gridline-color:#2a1a0a;"
+                "font-size:11px;border:1px solid #3a2a1a;}"
+                "QHeaderView::section{background:#0a0805;color:#ffa500;"
+                "border:1px solid #2a1a0a;font-size:10px;padding:1px;}"
+                "QTableWidget::item{padding:1px;}"
+                "QTableWidget::item:selected{background:#3a2a0a;color:#ffd700;}"
+                "QTableWidget::item:hover{background:#1a1005;}")
+            self.tbl_positions = QTableWidget(0, 5)
+            self.tbl_positions.setHorizontalHeaderLabels(["C/P","행사가","수량","평균가","손익"])
+            self.tbl_positions.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            self.tbl_positions.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+            self.tbl_positions.verticalHeader().setVisible(False)
+            self.tbl_positions.verticalHeader().setDefaultSectionSize(22)
+            self.tbl_positions.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            self.tbl_positions.setSelectionBehavior(QAbstractItemView.SelectRows)
+            self.tbl_positions.setMinimumHeight(0)
+            self.tbl_positions.setMaximumHeight(120)
+            self.tbl_positions.setStyleSheet(_ts)
+            self.tbl_positions.cellClicked.connect(self._on_position_row_click)
+        else:
+            # 기존 테이블 높이 제한만 인라인 패널용으로 재적용
+            self.tbl_positions.setMaximumHeight(120)
         v.addWidget(self.tbl_positions)
 
         hint = QLabel("↑ 클릭 → 매도 주문창")
@@ -161,6 +169,90 @@ class OrderUtilMixin:
         self._skip_order_confirm = (chk is not None and not chk.isChecked())
         self._qord_place(action)
         self._skip_order_confirm = False
+
+    def _on_position_row_click(self, row: int, col: int = 0):
+        """
+        현재가 패널 tbl_positions 행 클릭 →
+          - _ps_side / _ps_strike 저장
+          - 빠른매도 탭 sell_price / sell_qty 자동입력
+          - 빠른매도 탭으로 자동 전환
+        """
+        tbl = getattr(self, 'tbl_positions', None)
+        if tbl is None:
+            return
+
+        def _cell(c):
+            item = tbl.item(row, c)
+            return item.text().strip() if item else ""
+
+        side   = _cell(0)   # "C" or "P"
+        strike = _cell(1)   # 행사가
+        qty    = _cell(2)   # 수량
+        avg    = _cell(3)   # 평균단가
+
+        if not side or not strike:
+            return
+
+        # _pos_snapshot에서 만기(expiry) + 실제 심볼(sym_raw) 찾기
+        # key = (normalized_sym, right, strike_int, expiry)
+        # value = {"qty":..., "avg":..., "con_id":..., "sym_raw": "NANOS"}
+        expiry = None
+        ps_sym = None
+        snapshot = getattr(self, '_pos_snapshot', {})
+        try:
+            strike_int = int(float(strike))
+            right = "C" if side == "C" else "P"
+            for key, info in snapshot.items():
+                if isinstance(key, tuple) and len(key) == 4:
+                    _, k_right, k_strike, k_expiry = key
+                    if k_right == right and int(k_strike) == strike_int:
+                        expiry = k_expiry
+                        # sym_raw: IB 원본 심볼 ("NANOS", "SPXW" 등)
+                        # _normalize_sym으로 변환된 key[0]("SPX") 대신 사용
+                        ps_sym = (info.get("sym_raw") or "").strip() or None
+                        break
+        except Exception:
+            expiry = None
+            ps_sym = None
+
+        # _ps_side / _ps_strike / _ps_expiry / _ps_sym 저장 (매도 주문에 사용)
+        self._ps_side   = side
+        self._ps_strike = strike
+        self._ps_expiry = expiry   # ex) "20260410"
+        self._ps_sym    = ps_sym   # ex) "NANOS" → make_opt_contract에 전달
+
+        # ── 디버그 로그 (원인 확인용) ──
+        self._log(f"🔎 잔고클릭 디버그: side={side} strike={strike} expiry={expiry} ps_sym={ps_sym} snapshot_size={len(snapshot)}")
+        if snapshot:
+            first_key = next(iter(snapshot))
+            first_val = snapshot[first_key]
+            self._log(f"🔎 snapshot 첫번째: key={first_key}  val={first_val}")
+
+        # 빠른매도 탭 필드 자동입력
+        sell_price_w = getattr(self, 'sell_price', None)
+        sell_qty_w   = getattr(self, 'sell_qty',   None)
+        if sell_price_w:
+            sell_price_w.setText(avg if avg else "")
+        if sell_qty_w:
+            try:    sell_qty_w.setValue(abs(int(float(qty))))
+            except: sell_qty_w.setValue(1)
+
+        # 상태 레이블 업데이트
+        lbl = getattr(self, 'lbl_sell_status', None)
+        label = "CALL" if side == "C" else "PUT"
+        if lbl:
+            lbl.setStyleSheet(
+                "color:#ffa500;font-size:12px;"
+                "border:1px solid #333;border-radius:3px;padding:2px;")
+            lbl.setText(f"선택: {label} {strike}  {qty}계약  avg@{avg}")
+
+        # 빠른매도 탭으로 자동 전환
+        tab_w = getattr(self, '_qord_tab_widget', None)
+        if tab_w:
+            for i in range(tab_w.count()):
+                if "매도" in tab_w.tabText(i):
+                    tab_w.setCurrentIndex(i)
+                    break
 
     def _show_pos_sell_panel(self, side, strike, qty=1, price=None):
         label = "CALL" if side == "C" else "PUT"

@@ -1,26 +1,39 @@
 """
-tab_combo_strategy.py — 탭4: 복합 전략  v2.1
+tab_combo_strategy.py — 탭4: 복합 전략  v2.3
 ════════════════════════════════════════════════════════════════
-변경:
-  v2.1 — Cost Optimizer 패널 추가
-           (허용 손실 + 최소 수익률 기반 행사가 탐색)
-  v2.0 — 파일 분리 (200줄 단위 기능별)
-         콜 데빗 스프레드 / 풋 데빗 스프레드 신규 추가
-         전략 선택 시 ❓ 버튼 → 설명 팝업
-         레그 테이블 "만기" 칼럼 날짜 포맷 수정 (YYYYMMDD → MM/DD)
+v2.3 변경:
+  - 관심종목 패널 제거 (combo_ui_left.py)
+  - 추세점수판(TrendScorePanel)을 우측 상단 → 좌측 하단으로 이동
+  - _build_left_with_trend() 추가: 옵션체인(상단) + 추세점수판(하단)
+  - _build_right_with_optimizer() 에서 추세점수판 제거
+
+v2.2 변경:
+  - TrendScorePanel (combo_trend_panel.py) 연결
+  - set_trend_df() 추가 → Tab7(ChartGrid)에서 DF push 가능
+
+v2.1 — Cost Optimizer 패널 추가
+v2.0 — 파일 분리 (200줄 단위 기능별)
 
 모듈 구조:
   combo_constants.py    — 상수 / 전략 목록 / 전략 설명 / 공통 유틸
-  combo_ui_left.py      — 좌측 패널 (옵션 체인 + 관심종목) Mixin
+  combo_ui_left.py      — 좌측 패널 (옵션 체인) Mixin
   combo_ui_right.py     — 우측 패널 (전략 설정 + 결과) Mixin
   combo_logic.py        — 손익 계산 로직 Mixin
   combo_optimizer.py    — Cost Optimizer 패널 + 탐색 로직 Mixin
+  combo_trend_panel.py  — 추세 점수판 UI 위젯
+  combo_second_logic.py — 추세 점수 연산 모듈
   tab_combo_strategy.py — 메인 조립 클래스 (이 파일)
 
-레이아웃:
+레이아웃 (v2.3):
   수평 스플리터
-  ├── 좌측: 옵션 체인 / 관심종목
-  └── 우측: 전략 설정 → Cost Optimizer → 손익 결과 → 차트
+  ├── 좌측 (수직 스플리터)
+  │     ├── 옵션 체인 (콜/풋)
+  │     └── 추세 점수판  ← v2.3: 우측에서 이동
+  └── 우측 (수직 스플리터)
+        ├── 전략 설정
+        ├── Cost Optimizer
+        ├── 손익 결과
+        └── 차트
 ════════════════════════════════════════════════════════════════
 """
 
@@ -31,11 +44,12 @@ from PyQt5.QtCore import Qt, QTimer
 
 from core import bridge, build_expiry_list, ts, REQ_UND
 
-from combo_constants  import SPLITTER_STYLE
-from combo_ui_left    import LeftPanelMixin
-from combo_ui_right   import RightPanelMixin
-from combo_logic      import PnlLogicMixin
-from combo_optimizer  import OptimizerPanelMixin
+from combo_constants   import SPLITTER_STYLE
+from combo_ui_left     import LeftPanelMixin
+from combo_ui_right    import RightPanelMixin
+from combo_logic       import PnlLogicMixin
+from combo_optimizer   import OptimizerPanelMixin
+from combo_trend_panel import TrendScorePanel
 
 
 # ══════════════════════════════════════════════════════════════
@@ -61,6 +75,8 @@ class ComboStrategyGrid(
         self._opt_results      = []
         self._opt_selected_row = -1
 
+        self._trend_panel: TrendScorePanel | None = None
+
         self._build()
         self._connect_signals()
 
@@ -75,7 +91,7 @@ class ComboStrategyGrid(
         self._main_hsplit.setStyleSheet(SPLITTER_STYLE)
         self._main_hsplit.setChildrenCollapsible(False)
 
-        self._main_hsplit.addWidget(self._build_left_panel())
+        self._main_hsplit.addWidget(self._build_left_with_trend())   # ← v2.3
         self._main_hsplit.addWidget(self._build_right_with_optimizer())
         self._main_hsplit.setSizes([380, 900])
         root.addWidget(self._main_hsplit, 1)
@@ -88,6 +104,25 @@ class ComboStrategyGrid(
         self._sync_timer.timeout.connect(self._auto_sync_chain)
         self._sync_timer.start()
 
+    # ── v2.3: 좌측 = 옵션 체인(상단) + 추세점수판(하단) ────────
+    def _build_left_with_trend(self) -> QSplitter:
+        """좌측 수직 스플리터: 옵션 체인 + 추세점수판."""
+        self._left_vsplit = QSplitter(Qt.Vertical)
+        self._left_vsplit.setHandleWidth(6)
+        self._left_vsplit.setStyleSheet(SPLITTER_STYLE)
+        self._left_vsplit.setChildrenCollapsible(False)
+
+        # 상단: 옵션 체인
+        self._left_vsplit.addWidget(self._build_left_panel())
+
+        # 하단: 추세 점수판
+        self._trend_panel = TrendScorePanel(self.mw)
+        self._left_vsplit.addWidget(self._trend_panel)
+
+        self._left_vsplit.setSizes([540, 160])
+        return self._left_vsplit
+
+    # ── v2.3: 우측 = 추세점수판 제거, 4분할 ────────────────────
     def _build_right_with_optimizer(self) -> QSplitter:
         """전략설정 | Optimizer | 결과 | 차트 — 4분할."""
         self._right_vsplit = QSplitter(Qt.Vertical)
@@ -99,9 +134,30 @@ class ComboStrategyGrid(
         self._right_vsplit.addWidget(self._build_optimizer_panel())
         self._right_vsplit.addWidget(self._build_result_panel())
         self._right_vsplit.addWidget(self._build_spread_chart_panel())
+
         self._right_vsplit.setSizes([220, 260, 260, 200])
         return self._right_vsplit
 
+    # ── Tab7(ChartGrid) → DF 수신 진입점 ───────────────────────
+    def set_trend_df(self, df):
+        """
+        Tab7(ChartGrid)에서 1분봉 DF를 이 탭으로 push할 때 호출.
+
+        tab_chart.py 연결 예시
+        ─────────────────────
+        # tab_chart.py 의 _on_bar_close() 또는 _fetch_done() 안에서:
+
+            combo = getattr(self.mw, 'tab_combo', None)
+            if combo and hasattr(combo, 'set_trend_df'):
+                combo.set_trend_df(self._df_1min)
+
+        DF 컬럼 (소문자 통일):
+            open, high, low, close, volume
+        """
+        if self._trend_panel:
+            self._trend_panel.set_df(df)
+
+    # ──────────────────────────────────────────────────────────
     def _build_log_panel(self) -> QGroupBox:
         gb = QGroupBox("로그")
         from PyQt5.QtWidgets import QVBoxLayout as VL

@@ -1,7 +1,18 @@
 """
-core_conn.py — 연결·MDT·SPXW·Zone·만기 로직  v6.4
+core_conn.py — 연결·MDT·SPXW·Zone·만기 로직  v6.5
 ════════════════════════════════════════════════════════
-수정 대상: 연결 동작, SPXW 0DTE 콤보, Zone/만기 처리
+v6.5 개선 사항:
+  [1] 데이터 생존 감시 (_watch_dog)
+      - _last_tick_time 타임스탬프 기록
+      - 3초 이상: 황색 "● 지연 발생" 경고
+      - 10초 이상: 적색 "● 데이터 멈춤!" 경고
+  [2] 체결 이벤트 중복 방지 (execId 체크)
+      - 최근 20개 execId 캐시로 Race Condition 차단
+  [3] MDT 전환 후 틱타입 검증
+      - 첫 틱 수신 시 실시간/지연 구분 → "권한 없음" 알림
+  [4] 자동 재연결 흐름 (_reconnect_flow)
+      - ERR 1100/100 발생 시 전체 구독 해지 → 재연결 → 재구독
+
 포함 메서드:
   _connect_signals() / _log()
   _on_connected() / _auto_fetch_spxw_today()
@@ -10,10 +21,13 @@ core_conn.py — 연결·MDT·SPXW·Zone·만기 로직  v6.4
   _on_zone_change() / _on_exp_change()
   _open_calendar() / _on_date_edit_changed() / _get_expiry()
   _strikes_for_zone()
+  _watch_dog()            ← NEW v6.5
+  _reconnect_flow()       ← NEW v6.5
 ════════════════════════════════════════════════════════
 """
 
 from datetime import datetime, timedelta
+from collections import deque
 
 from PyQt5.QtCore import QDate, QTimer
 from PyQt5.QtWidgets import QMessageBox
@@ -41,9 +55,91 @@ class CoreConnMixin:
         router.register_option(REQ_CALL, REQ_CALL+self._MAX_STRIKES-1, self._on_tick_option)
         router.register_option(REQ_PUT,  REQ_PUT +self._MAX_STRIKES-1, self._on_tick_option)
         self._watch_timer.start()
+
+        # ── [v6.5-1] 데이터 생존 감시 타이머 (3초마다) ─────────────
+        self._last_tick_time  = None          # 마지막 틱 수신 시각
+        self._mdt_verify_mode = False         # MDT 검증 대기 중 플래그
+        self._exec_id_cache   = deque(maxlen=20)  # [v6.5-2] 중복 체결 방지
+
+        self._watchdog_timer = QTimer(self)
+        self._watchdog_timer.setInterval(3000)
+        self._watchdog_timer.timeout.connect(self._watch_dog)
+        self._watchdog_timer.start()
+
         # ✅ 체결 콜백 등록 (연결 후 ib 객체에 직접 패치)
         QTimer.singleShot(3000, self._hook_fill_callbacks)
 
+    # ── [v6.5-1] 데이터 생존 감시 ───────────────────────────────
+    def _watch_dog(self):
+        """3초마다 호출 — 마지막 틱 수신 시각 기준으로 상태 경고."""
+        if not self.mw.connected: return
+        if self._last_tick_time is None: return   # 아직 틱 미수신
+
+        elapsed = (datetime.now() - self._last_tick_time).total_seconds()
+
+        if elapsed > 10:
+            self.lbl_status.setText("● 데이터 멈춤!")
+            self.lbl_status.setStyleSheet(
+                "color:#ff4444;font-weight:bold;border:none;")
+        elif elapsed > 3:
+            self.lbl_status.setText("● 지연 발생")
+            self.lbl_status.setStyleSheet(
+                "color:#ffbb00;font-weight:bold;border:none;")
+        else:
+            # 정상 — 연결됨 표시 복원
+            cur = self.lbl_status.text()
+            if cur in ("● 데이터 멈춤!", "● 지연 발생"):
+                self.lbl_status.setText("● 연결됨")
+                self.lbl_status.setStyleSheet(
+                    "color:#00ff88;font-weight:bold;border:none;")
+
+    # ── [v6.5-4] 자동 재연결 흐름 ───────────────────────────────
+    def _reconnect_flow(self):
+        """
+        ERR 1100/100 발생 시 호출.
+        전체 구독 해지 → 5초 후 재연결 → 3초 후 재구독.
+        """
+        self._log("🔄 재연결 흐름 시작: 전체 구독 해지 중…")
+        self.lbl_status.setText("● 재연결 중…")
+        self.lbl_status.setStyleSheet(
+            "color:#ff9800;font-weight:bold;border:none;")
+
+        # ① 전체 구독 해지
+        try:
+            if self.mw.ib:
+                self.mw.ib.cancelMktData(REQ_UND)
+                for i in range(getattr(self, '_MAX_STRIKES', 20)):
+                    self.mw.ib.cancelMktData(REQ_CALL + i)
+                    self.mw.ib.cancelMktData(REQ_PUT  + i)
+        except Exception as e:
+            self._log(f"구독 해지 오류 (무시): {e}")
+
+        # ② 5초 후 재연결 시도
+        def _do_reconnect():
+            self._log("🔄 TWS 재연결 시도…")
+            try:
+                self.mw.disconnect_ibkr()
+            except Exception:
+                pass
+            QTimer.singleShot(2000, lambda: self.mw.connect_ibkr(silent=True))
+
+        # ③ 재연결 후 3초 뒤 재구독
+        def _do_resubscribe():
+            if not self.mw.connected:
+                self._log("⚠ 재연결 실패 — 수동으로 연결 버튼을 눌러주세요.")
+                return
+            self._log("🔄 재구독 시작…")
+            sym = self.edit_sym.text().strip().upper() or "SPX"
+            self._req_und(sym)
+            QTimer.singleShot(1000, self._fetch)
+            # [v1.1] 재연결 후 잔고 자동 재조회
+            if hasattr(self, '_on_pos_reconnect_hook'):
+                QTimer.singleShot(1500, self._on_pos_reconnect_hook)
+
+        QTimer.singleShot(5000,  _do_reconnect)
+        QTimer.singleShot(10000, _do_resubscribe)
+
+    # ── 체결 콜백 등록 ───────────────────────────────────────────
     def _hook_fill_callbacks(self):
         """체결(execDetails) 및 주문상태(orderStatus) 콜백을 ib 객체에 패치."""
         if not self.mw.connected or not self.mw.ib: return
@@ -53,6 +149,14 @@ class CoreConnMixin:
         def _on_exec(reqId, contract, execution):
             try: _orig_exec(reqId, contract, execution)
             except: pass
+
+            # ── [v6.5-2] execId 중복 체크 ──────────────────────
+            exec_id = getattr(execution, 'execId', None)
+            if exec_id and exec_id in self._exec_id_cache:
+                return   # 중복 체결 이벤트 무시
+            if exec_id:
+                self._exec_id_cache.append(exec_id)
+
             sym  = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
             qty  = getattr(execution, 'shares', 0)
             side = getattr(execution, 'side', '')
@@ -77,14 +181,13 @@ class CoreConnMixin:
         """체결 이벤트 공통 처리: 로그 출력 + 잔고창 자동 팝업 + 포지션 갱신."""
         side_str = f" {side}" if side else ""
         self._log(f"✅ 체결 완료: {sym}{side_str} {qty}계약  @{price:.2f}")
-        # 잔고창 자동 팝업 (항상 위로)
         if hasattr(self, 'btn_pos_toggle'):
             if not getattr(self, '_pos_float_win', None) or \
                not self._pos_float_win.isVisible():
                 self.btn_pos_toggle.setChecked(True)
                 self._on_pos_toggle()
-            # 잔고 갱신
-            from PyQt5.QtCore import QTimer
+        # 체결 후 잔고 갱신 (기존 500ms 딜레이 유지)
+        if hasattr(self, '_refresh_positions'):
             QTimer.singleShot(500, self._refresh_positions)
 
     def _log(self, msg):
@@ -93,38 +196,63 @@ class CoreConnMixin:
         if len(lines) > 200:
             self.log.setPlainText("\n".join(lines[-150:]))
 
+    # ── [v6.5-1] 틱 수신 시 타임스탬프 갱신 ────────────────────
+    def _on_tick_price(self, reqId, tickType, price, attrib=None):
+        """
+        기존 _on_tick_price 앞단에 타임스탬프 갱신 삽입.
+        실제 틱 처리는 super() 또는 CallPutGrid의 동일 메서드로 위임.
+        ※ CallPutGrid._on_tick_price 가 이 메서드를 오버라이드하므로,
+          CallPutGrid._on_tick_price 첫 줄에 아래 한 줄 추가해도 동일:
+          self._last_tick_time = datetime.now()
+        """
+        self._last_tick_time = datetime.now()
+
+        # ── [v6.5-3] MDT 검증: 첫 틱 타입으로 실시간/지연 확인 ─
+        if self._mdt_verify_mode and reqId == REQ_UND:
+            self._mdt_verify_mode = False
+            # 실시간 틱: 1~21 / 지연 틱: 66~76
+            is_live_tick = tickType < 66
+            requested_live = getattr(self, '_requested_live', False)
+            if requested_live and not is_live_tick:
+                self._log(
+                    "⚠ 실시간 시세 권한 없음 — 지연 데이터로 수신 중입니다. "
+                    "TWS에서 시세 구독 권한을 확인하세요.")
+                self.lbl_status.setText("● 권한 없음(지연)")
+                self.lbl_status.setStyleSheet(
+                    "color:#ff9800;font-weight:bold;border:none;")
+            elif is_live_tick:
+                self._log("✅ 실시간 시세 정상 수신")
+
     def _on_connected(self):
         self.lbl_status.setText("● 연결됨")
         self.lbl_status.setStyleSheet("color:#00ff88;font-weight:bold;border:none;")
         self._log("TWS 연결 성공 ✓")
 
-        # ✅ 이전 세션 잔류값 초기화 — ATM 오계산 방지
+        # ✅ 이전 세션 잔류값 초기화
         self.und_price = None
         self.und_prev  = None
+        self._last_tick_time = None   # [v6.5-1] 타임스탬프 리셋
         if hasattr(self, 'lbl_und'):
             self.lbl_und.setText("조회 중…")
 
-        # ✅ Step1: MDT 설정 먼저 (reqMarketDataType은 비동기 → 300ms 후 구독 시작)
-        # _apply_mdt()를 즉시 호출하면 TWS 핸드셰이크 전이라 씹힘 → step2로 이동
-
         def _step2_req_und():
-            # Step2: MDT 반영 후 현재가 구독
-            self._apply_mdt()          # 여기서 호출해야 reqMarketDataType이 반영됨
+            self._apply_mdt()
             self._req_und(self.edit_sym.text().upper())
             from core import is_market_open
             if not is_market_open():
                 self._und_timer.start()
 
         def _step3_setup():
-            # Step3: SPXW 콤보 선택만 설정 (테이블 자동 조회는 하지 않음)
-            # 사용자가 직접 조회 버튼을 눌러야 _fetch() 실행됨
             self._auto_fetch_spxw_today()
+            # [v1.1] 초기 연결 시 잔고 자동 조회
+            if hasattr(self, '_on_pos_reconnect_hook'):
+                QTimer.singleShot(1500, self._on_pos_reconnect_hook)
 
-        QTimer.singleShot(300,  _step2_req_und)   # 300ms: MDT 반영 대기
-        QTimer.singleShot(2500, _step3_setup)      # 2.5초 후 SPXW 콤보만 셋업
+        QTimer.singleShot(300,  _step2_req_und)
+        QTimer.singleShot(2500, _step3_setup)
 
     def _auto_fetch_spxw_today(self):
-        """연결 후 SPXW 0DTE 콤보만 자동 선택. 테이블 조회는 사용자가 직접 버튼 클릭."""
+        """연결 후 SPXW 0DTE 콤보만 자동 선택."""
         today = datetime.today().date()
         if not is_trading_day(today):
             self._log("오늘은 거래일이 아닙니다. SPXW 자동 선택 건너뜀."); return
@@ -141,11 +269,8 @@ class CoreConnMixin:
         self._log(f"🔄 SPXW 0DTE 자동 선택: {today_str}  ← 조회 버튼을 눌러 체인을 로드하세요.")
 
     def _on_error(self, rid, code, msg):
-        # 정상 알림 / 타이밍 이슈로 발생하는 무해한 에러 무시
+        # 정상 알림 / 무해한 에러 무시
         if code in (2104,2106,2108,2158,2119,2176,300,10167): return
-        # ERR 354: reqMarketDataType 반영 전 타이밍 or 옵션체인 일부 드랍
-        # 구독권이 있고 데이터가 정상 수신되면 무시해도 됨
-        # 로그 스팸 방지를 위해 카운터로 첫 3회만 출력
         if code == 354:
             cnt = getattr(self, '_err354_count', 0) + 1
             self._err354_count = cnt
@@ -153,6 +278,13 @@ class CoreConnMixin:
                 self._log(f"ERR 354 ({cnt}/3): MDT 타이밍 이슈 — 데이터 수신 중이면 무시")
             return
         self._err354_count = 0
+
+        # ── [v6.5-4] 치명적 에러 → 자동 재연결 흐름 ────────────
+        if code in (1100, 100):
+            self._log(f"🚨 ERR {code}: {msg} — 자동 재연결 시작")
+            QTimer.singleShot(1000, self._reconnect_flow)
+            return
+
         self._log(f"ERR {code}: {msg}")
 
     def _apply_mdt(self):
@@ -164,19 +296,25 @@ class CoreConnMixin:
         self.radio_delay.blockSignals(False); self.radio_live.blockSignals(False)
 
     def _apply_mdt_manual(self):
+        """
+        수동 MDT 전환.
+        [v6.5-3] 전환 후 첫 틱 타입으로 실제 실시간/지연 여부 검증.
+        """
         if not self.mw.connected: return
         mdt = 1 if self.radio_live.isChecked() else 3
+        self._requested_live  = (mdt == 1)   # [v6.5-3] 검증용 플래그
+        self._mdt_verify_mode = True          # [v6.5-3] 다음 틱에서 검증
         try:
             self.mw.ib.reqMarketDataType(mdt)
-            self._log(f"시세모드 전환: {'실시간(1)' if mdt==1 else '지연(3)'}")
+            self._log(f"시세모드 전환: {'실시간(1)' if mdt==1 else '지연(3)'} — 첫 틱 수신 후 검증")
         except Exception as e:
             self._log(f"MDT 전환 실패: {e}")
+            self._mdt_verify_mode = False
             return
-        # MDT 변경 후 현재가 재구독 (300ms 딜레이로 반영 대기)
         from PyQt5.QtCore import QTimer as _QT
         _QT.singleShot(300, lambda: self._req_und(self.edit_sym.text().upper()))
 
-    # ── SPXW 0DTE 콤보 ──────────────────────────────────────
+    # ── SPXW 0DTE 콤보 ──────────────────────────────────────────
     def _build_spxw_combo(self):
         self.combo_spxw.blockSignals(True)
         self.combo_spxw.clear()
@@ -199,7 +337,6 @@ class CoreConnMixin:
         expiry = self.combo_spxw.itemData(idx)
         if not expiry: return
         self.edit_sym.setText("SPXW")
-        # ✅ SPXW 선택 시 만기 콤보를 SPX 기준으로 재구성 (더블클릭 잔류값 방지)
         if hasattr(self, '_refresh_expiry_list'):
             self._refresh_expiry_list()
         custom_idx = next(
@@ -217,15 +354,13 @@ class CoreConnMixin:
         self.date_edit.setVisible(True)
         self._log(f"SPXW 0DTE 선택: {expiry}")
 
-    # ── Zone / 만기 ─────────────────────────────────────────
+    # ── Zone / 만기 ─────────────────────────────────────────────
     def _on_zone_change(self, btn):
         for z, rb in self._zone_btns.items():
             if rb is btn: self._zone = z
         if self.und_price is not None: self._fetch()
 
     def _refresh_expiry_list(self):
-        """종목 변경 시 만기 콤보를 해당 종목에 맞게 재구성.
-        오늘 이후 가장 가까운 만기를 자동 선택한다."""
         sym = self.edit_sym.text().strip().upper().replace("SPXW", "SPX")
         self._expiry_list = build_expiry_list(sym)
         self.combo_exp.blockSignals(True)
@@ -237,31 +372,24 @@ class CoreConnMixin:
         if not self._expiry_list:
             return
 
-        # ✅ 가장 가까운 만기 자동 선택 (CUSTOM 제외)
-        # 오늘 날짜를 _expiry_list에서 찾지 않고, 순수하게 첫 번째 비-CUSTOM 항목 선택
-        # (build_expiry_list가 이미 오늘 이후 순서로 정렬된 목록을 반환함)
         from datetime import datetime as _dt
         today_str = _dt.today().strftime("%Y%m%d")
         best_idx = 0
         for i, (_, code, _) in enumerate(self._expiry_list):
             if code == "CUSTOM":
                 continue
-            # 첫 번째 비-CUSTOM 항목을 사용 (build_expiry_list가 미래 순으로 정렬)
             best_idx = i
             break
         self.combo_exp.setCurrentIndex(best_idx)
         _, code, best_date = self._expiry_list[best_idx]
 
-        # ✅ date_edit 항상 선택된 만기 날짜로 동기화 (잔류값 방지)
         if code == "CUSTOM":
-            # CUSTOM이면 오늘 날짜로 리셋
             today = datetime.today().date()
             self.date_edit.blockSignals(True)
             self.date_edit.setDate(QDate(today.year, today.month, today.day))
             self.date_edit.blockSignals(False)
             self.date_edit.setVisible(True)
         else:
-            # 실제 만기 날짜를 date_edit에 반영 (잔류값 덮어씌우기)
             try:
                 y,m,d = int(code[:4]),int(code[4:6]),int(code[6:8])
                 self.date_edit.blockSignals(True)
@@ -311,7 +439,8 @@ class CoreConnMixin:
         elif self._zone == "ATM":
             return ([atm + i*step for i in range(n)],
                     [atm - i*step for i in range(n)])
-        else:   # OTM
-            skip = max(1, round(100/step))
+        else:   # OTM — [v6.5] 비율 기반 동적 skip (atm의 1.5%)
+            dynamic_skip_pt = atm * 0.015
+            skip = max(1, round(dynamic_skip_pt / step))
             return ([atm + (skip+i)*step for i in range(n)],
                     [atm - (skip+i)*step for i in range(n)])

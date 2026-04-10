@@ -53,9 +53,12 @@ class BalanceGrid(GridTab):
     def __init__(self, mw):
         super().__init__()
         self.mw = mw
-        self._acct_rows = {}
+        self._acct_rows   = {}
         self._pnl_history = []
-        self._session = {"trades": [], "start_time": ts_full()}
+        self._session     = {"trades": [], "start_time": ts_full()}
+        self._pnl_acct_id = ""          # reqPnL 구독에 사용할 계좌 ID
+        self._pnl_req_id  = 9900        # reqPnL 전용 reqId
+        self._rt_pnl_active = False     # 실시간 PnL 구독 중 여부
         self._build()
         self._connect_signals()
         self._load_history()
@@ -171,6 +174,10 @@ class BalanceGrid(GridTab):
         bridge.acct_value.connect(self._on_acct)
         bridge.position_sig.connect(self._on_pos)
         bridge.open_order_sig.connect(self._on_order)
+        # ── 실시간 PnL 브릿지 연결 ─────────────────────────────
+        # bridge.pnl_sig 가 있으면 연결 (core.py SignalBridge 정의 여부 확인)
+        if hasattr(bridge, 'pnl_sig'):
+            bridge.pnl_sig.connect(self._on_rt_pnl)
 
     def _refresh(self):
         self.tbl_acct.setRowCount(0); self.tbl_pos.setRowCount(0)
@@ -183,7 +190,101 @@ class BalanceGrid(GridTab):
             except Exception as e: print(f"계좌 조회 오류: {e}")
         self.lbl_time.setText(f"마지막: {ts()}")
 
+    # ── 탭 포커스 자동 로딩 ─────────────────────────────────────
+    def on_tab_activate(self):
+        """
+        main.py _on_tab_changed() 에서 Tab2 포커스 시 자동 호출.
+        연결 상태면 즉시 새로고침 + 실시간 PnL 구독 시작.
+        """
+        if self.mw.connected:
+            self._refresh()
+            self._start_rt_pnl()
+
+    def on_tab_deactivate(self):
+        """Tab2 에서 벗어날 때 호출 — 실시간 PnL 구독 해지."""
+        self._stop_rt_pnl()
+
+    # ── 실시간 PnL 구독 (reqPnL) ────────────────────────────────
+    def _start_rt_pnl(self):
+        """
+        IBKR reqPnL() 로 실시간 미실현/실현 PnL 구독 시작.
+        계좌 ID는 reqAccountSummary 응답에서 자동 추출.
+        """
+        if self._rt_pnl_active: return
+        if not self.mw.connected or not self.mw.ib: return
+        acct = self._pnl_acct_id
+        if not acct:
+            # 계좌 ID 아직 미수신 → 2초 후 재시도
+            QTimer.singleShot(2000, self._start_rt_pnl)
+            return
+        try:
+            self.mw.ib.reqPnL(self._pnl_req_id, acct, "")
+            self._rt_pnl_active = True
+            # IBapi.pnl 콜백을 직접 패치 (bridge.pnl_sig 없는 환경 대응)
+            self._hook_pnl_callback()
+        except Exception as e:
+            print(f"[BalanceGrid] reqPnL 오류: {e}")
+
+    def _stop_rt_pnl(self):
+        """탭 비활성 시 실시간 PnL 구독 해지."""
+        if not self._rt_pnl_active: return
+        try:
+            if self.mw.ib:
+                self.mw.ib.cancelPnL(self._pnl_req_id)
+        except Exception:
+            pass
+        self._rt_pnl_active = False
+
+    def _hook_pnl_callback(self):
+        """
+        IBapi.pnl 콜백을 직접 패치해 실시간 PnL 수신.
+        bridge.pnl_sig 가 없는 환경에서도 동작.
+        """
+        if not self.mw.ib: return
+        ib = self.mw.ib
+        _orig_pnl = getattr(ib, 'pnl', lambda *a: None)
+
+        def _on_pnl(reqId, dailyPnL, unrealizedPnL, realizedPnL):
+            try: _orig_pnl(reqId, dailyPnL, unrealizedPnL, realizedPnL)
+            except: pass
+            if reqId != self._pnl_req_id: return
+            from PyQt5.QtCore import QTimer as _QT
+            _QT.singleShot(0, lambda: self._apply_rt_pnl(
+                dailyPnL, unrealizedPnL, realizedPnL))
+
+        ib.pnl = _on_pnl
+
+    def _apply_rt_pnl(self, daily_pnl, unrealized, realized):
+        """실시간 PnL 수신 → UI 즉시 갱신."""
+        try:
+            # 미실현 PnL (대형 라벨)
+            sign = "+" if unrealized >= 0 else ""
+            col  = "#00ff88" if unrealized >= 0 else "#ff4444"
+            self.lbl_pnl.setText(f"미실현 PnL: {sign}${unrealized:,.2f}")
+            self.lbl_pnl.setStyleSheet(
+                f"color:{col};background:#0a0a1a;border-radius:10px;"
+                "font-size:42px;font-weight:bold;border:none;")
+
+            # 실현 PnL (주요 지표)
+            rcol = "#00ff88" if realized >= 0 else "#ff4444"
+            self.lbl_rpnl._val.setText(f"${realized:,.2f}")
+            self.lbl_rpnl._val.setStyleSheet(f"color:{rcol};border:none;")
+
+            # 마지막 업데이트 시각
+            self.lbl_time.setText(f"실시간: {ts()}")
+            self._record_pnl(0.0, unrealized)
+        except Exception as e:
+            print(f"[BalanceGrid] _apply_rt_pnl 오류: {e}")
+
+    def _on_rt_pnl(self, req_id, daily_pnl, unrealized, realized):
+        """bridge.pnl_sig 연결용 슬롯 (core.py 에 pnl_sig 있을 때)."""
+        if req_id != self._pnl_req_id: return
+        self._apply_rt_pnl(daily_pnl, unrealized, realized)
+
     def _on_acct(self, tag, val, cur, acct):
+        # ── 계좌 ID 자동 추출 (reqPnL 구독용) ──────────────────
+        if acct and not self._pnl_acct_id:
+            self._pnl_acct_id = acct
         if tag not in self._acct_rows:
             r = self.tbl_acct.rowCount(); self.tbl_acct.insertRow(r)
             self._acct_rows[tag] = r; tbl_set(self.tbl_acct, r, 0, tag)

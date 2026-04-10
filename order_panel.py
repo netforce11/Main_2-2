@@ -41,6 +41,24 @@ def _animate_press(btn):
     btn._anim = anim   # GC 방지
 
 
+# ── SPX trading class 판별 헬퍼 ─────────────────────────────
+def _spx_tag(sym: str, expiry: str) -> str:
+    """sym/expiry 기반으로 tradingClass(tag) 결정.
+    core_contract.make_opt_contract 가 NANOS/SPX/SPXW 분기를 내부 처리하므로
+    여기서는 tag 힌트만 반환하면 됨.
+    """
+    s = (sym or "").upper()
+    if s == "NANOS":
+        return "SPXW"   # make_opt_contract 내부에서 NANOS 전용 분기로 처리됨
+    if s in ("SPX", "SPXW"):
+        try:
+            from core_contract import _resolve_spx_trading_class
+            return _resolve_spx_trading_class(s, expiry)
+        except Exception:
+            pass
+    return "SPXW"
+
+
 class OrderPanelMixin:
     """빠른 주문 패널 UI. CallPutGrid에 mixin된다."""
 
@@ -193,20 +211,6 @@ class OrderPanelMixin:
         self.btn_plus1tick.clicked.connect(lambda: (
             _animate_press(self.btn_plus1tick), self._plus1tick_buy()))
         root_v.addWidget(self.btn_plus1tick)
-
-        # ── 잔고 버튼 ─────────────────────────────────────────
-        _pos_s = ("QPushButton{background:#2a1a3a;color:#c084fc;font-size:13px;"
-                  "font-weight:bold;padding:5px;border-radius:4px;"
-                  "border:1px solid #5a2a7a;}"
-                  "QPushButton:hover{background:#3a2a5a;}"
-                  "QPushButton:pressed{background:#1a0a2a;padding-top:7px;padding-bottom:3px;}"
-                  "QPushButton:checked{background:#5a2a7a;color:#ffd700;"
-                  "border:2px solid #c084fc;}")
-        self.btn_pos_toggle = QPushButton("📊 잔고")
-        self.btn_pos_toggle.setCheckable(True)
-        self.btn_pos_toggle.setStyleSheet(_pos_s)
-        self.btn_pos_toggle.clicked.connect(self._on_pos_toggle)
-        root_v.addWidget(self.btn_pos_toggle)
 
         # ── 긴급 매도 버튼들 ──────────────────────────────────
         sep2 = QLabel(); sep2.setFixedHeight(1)
@@ -374,15 +378,28 @@ class OrderPanelMixin:
 
         # ── 탭4: 빠른매도 ─────────────────────────────────────
         sell_w = QWidget()
-        sv = QVBoxLayout(sell_w); sv.setSpacing(5); sv.setContentsMargins(8,8,8,8)
+        sv = QVBoxLayout(sell_w); sv.setSpacing(4); sv.setContentsMargins(8,2,8,8)
 
-        sv.addWidget(QLabel("📊 잔고 행 클릭 → 수량·가격 자동입력",
-            styleSheet="color:#ff8800;font-size:12px;font-weight:bold;border:none;"))
+        # ── bump 버튼 (상단) ─────────────────────────────────
+        _sell_up = ("QPushButton{background:#1a3a1a;color:#00cc66;font-size:12px;"
+                    "font-weight:bold;border:1px solid #2a6a2a;border-radius:3px;}"
+                    "QPushButton:hover{background:#2a5a2a;}")
+        _sell_dn = ("QPushButton{background:#3a1a1a;color:#ff6666;font-size:12px;"
+                    "font-weight:bold;border:1px solid #6a2a2a;border-radius:3px;}"
+                    "QPushButton:hover{background:#5a2a2a;}")
+        bump_row2 = QHBoxLayout(); bump_row2.setSpacing(3)
+        for lbl3, delta, st2 in [("+0.05",+0.05,_sell_dn),("+0.10",+0.10,_sell_dn),
+                                  ("-0.05",-0.05,_sell_up),("-0.10",-0.10,_sell_up)]:
+            b2 = QPushButton(lbl3); b2.setFixedHeight(26); b2.setStyleSheet(st2)
+            b2.clicked.connect(lambda _, d=delta: self._bump_sell_price(d))
+            bump_row2.addWidget(b2)
+        sv.addLayout(bump_row2)
 
         sep_s1 = QLabel(); sep_s1.setFixedHeight(1)
         sep_s1.setStyleSheet("background:#3a1a1a;border:none;")
         sv.addWidget(sep_s1)
 
+        # ── 가격 / 수량 ───────────────────────────────────────
         sell_gl = QGridLayout(); sell_gl.setSpacing(4)
 
         self.sell_price = QLineEdit()
@@ -406,52 +423,47 @@ class OrderPanelMixin:
         sell_gl.addWidget(sell_qty_w2, 1, 1)
         sv.addLayout(sell_gl)
 
-        sep_s2 = QLabel(); sep_s2.setFixedHeight(1)
-        sep_s2.setStyleSheet("background:#3a1a1a;border:none;")
-        sv.addWidget(sep_s2)
+        # ── 매도 버튼 2개 (가격/수량 바로 아래 붙여서) ──────────
+        btn_sell_mkt = QPushButton("▼ Bid가 즉시 매도 (LMT)")
+        btn_sell_mkt.setFixedHeight(40)
+        btn_sell_mkt.setMaximumHeight(40)
+        btn_sell_mkt.setStyleSheet(
+            "QPushButton{background:#8b0000;color:#ff4444;font-size:15px;"
+            "font-weight:bold;border-radius:4px;border:2px solid #ff4444;}"
+            "QPushButton:hover{background:#aa1a1a;}"
+            "QPushButton:pressed{background:#5a0000;}")
+        btn_sell_mkt.clicked.connect(self._sell_selected_order)
+        sv.addWidget(btn_sell_mkt)
 
-        # bump 버튼
-        sv.addWidget(QLabel("빠른 매도 가격 조정 (전체 미체결 일괄)",
-            styleSheet="color:#aaa;font-size:11px;border:none;"))
-        _sell_up = ("QPushButton{background:#1a3a1a;color:#00cc66;font-size:12px;"
-                    "font-weight:bold;border:1px solid #2a6a2a;border-radius:3px;}"
-                    "QPushButton:hover{background:#2a5a2a;}")
-        _sell_dn = ("QPushButton{background:#3a1a1a;color:#ff6666;font-size:12px;"
-                    "font-weight:bold;border:1px solid #6a2a2a;border-radius:3px;}"
-                    "QPushButton:hover{background:#5a2a2a;}")
-        bump_row2 = QHBoxLayout(); bump_row2.setSpacing(3)
-        for lbl3, delta, st2 in [("+0.05",+0.05,_sell_dn),("+0.10",+0.10,_sell_dn),
-                                  ("-0.05",-0.05,_sell_up),("-0.10",-0.10,_sell_up)]:
-            b2 = QPushButton(lbl3); b2.setFixedHeight(26); b2.setStyleSheet(st2)
-            b2.clicked.connect(lambda _, d=delta: self._bump_sell_price(d))
-            bump_row2.addWidget(b2)
-        sv.addLayout(bump_row2)
-
-        btn_sell_now = QPushButton("▼ 선택 주문 즉시 매도 전송")
-        btn_sell_now.setFixedHeight(40)
-        btn_sell_now.setStyleSheet(
-            "QPushButton{background:#6b1a1a;color:#ff6666;font-size:15px;"
+        btn_sell_lmt = QPushButton("▼ 지정가 매도 전송")
+        btn_sell_lmt.setFixedHeight(36)
+        btn_sell_lmt.setMaximumHeight(36)
+        btn_sell_lmt.setStyleSheet(
+            "QPushButton{background:#6b1a1a;color:#ff9999;font-size:14px;"
             "font-weight:bold;border-radius:4px;border:1px solid #9a2a2a;}"
             "QPushButton:hover{background:#8b2a2a;}"
             "QPushButton:pressed{background:#4b0a0a;}")
-        btn_sell_now.clicked.connect(self._sell_selected_order)
-        sv.addWidget(btn_sell_now)
+        btn_sell_lmt.clicked.connect(self._sell_limit_order)
+        sv.addWidget(btn_sell_lmt)
 
-        self.lbl_sell_status = QLabel("잔고 행 클릭 → 수량·가격 자동입력 후 매도")
+        self.lbl_sell_status = QLabel("잔고창(📊 잔고) 행 클릭 → 자동입력 후 매도")
         self.lbl_sell_status.setAlignment(Qt.AlignCenter)
         self.lbl_sell_status.setStyleSheet(
             "color:#888;font-size:12px;border:1px solid #333;border-radius:3px;padding:2px;")
         sv.addWidget(self.lbl_sell_status)
+
         sv.addStretch()
         tab_w.addTab(sell_w, "▼ 빠른매도")
 
         gb_v.addWidget(tab_w)
+        gb_v.setSpacing(0)   # tab_w ↔ pos_sell_panel 간격 제거 → 패널 위로 올라옴
 
         # ── 잔고 매도 패널 (하단 슬라이드) ──────────────────────
         self._pos_sell_panel = QWidget()
         self._pos_sell_panel.setVisible(False)
         self._pos_sell_panel.setStyleSheet(
-            "background:#1a0a0a;border:1px solid #6b1a1a;border-radius:4px;")
+            "background:#1a0a0a;border:1px solid #6b1a1a;border-radius:4px;"
+            "margin-top:-20px;")   # ← 2cm 위로 끌어올림
         ps_v = QVBoxLayout(self._pos_sell_panel)
         ps_v.setContentsMargins(6,5,6,5); ps_v.setSpacing(4)
         ps_hdr = QHBoxLayout()
@@ -580,129 +592,35 @@ class OrderPanelMixin:
         oid_item=self.tbl_open_orders_c.item(row,0)
         if oid_item: self.cancel_oid.setText(oid_item.text())
 
-    # ── 잔고 플로팅창 토글 ───────────────────────────────────
-    def _on_pos_toggle(self):
-        if hasattr(self, '_pos_float_win'):
-            if self._pos_float_win.isVisible():
-                self._pos_float_win.hide()
-                self.btn_pos_toggle.setChecked(False)
-            else:
-                self._pos_float_win.show()
-                self._pos_float_win.raise_()
-                self.btn_pos_toggle.setChecked(True)
-            return
-        # 최초 생성
-        self._pos_float_win = self._create_pos_float_win()
-        self._pos_float_win.show()
-        self.btn_pos_toggle.setChecked(True)
-        # 포지션 즉시 조회
-        QTimer.singleShot(200, self._refresh_positions)
-
-    def _create_pos_float_win(self):
-        """항상 위(WindowStaysOnTopHint) 플로팅 잔고창 생성. X버튼 없음."""
-        win = QWidget(None,
-            Qt.Window |
-            Qt.WindowStaysOnTopHint |
-            Qt.CustomizeWindowHint |
-            Qt.WindowTitleHint)
-        win.setWindowTitle("📊 잔고")
-        win.resize(560, 340)
-        win.move(10, 10)
-        win.setStyleSheet(
-            "QWidget{background:#05050f;color:#ccc;font-size:13px;}"
-            "QGroupBox{border:1px solid #3a2a5a;border-radius:4px;"
-            "color:#c084fc;font-weight:bold;font-size:12px;"
-            "margin-top:8px;padding-top:6px;}"
-            "QGroupBox::title{subcontrol-origin:margin;left:8px;}")
-
-        v = QVBoxLayout(win); v.setContentsMargins(8,8,8,8); v.setSpacing(4)
-
-        # 헤더 행
-        hdr = QHBoxLayout()
-        lbl_title = QLabel("📊 보유 포지션")
-        lbl_title.setStyleSheet("color:#c084fc;font-size:14px;font-weight:bold;border:none;")
-        hdr.addWidget(lbl_title); hdr.addStretch()
-
-        btn_ref = QPushButton("🔄 갱신")
-        btn_ref.setFixedHeight(24)
-        btn_ref.setStyleSheet(
-            "QPushButton{background:#2a1a3a;color:#c084fc;font-size:12px;"
-            "font-weight:bold;border:1px solid #5a2a7a;border-radius:3px;}"
-            "QPushButton:pressed{background:#1a0a2a;}")
-        btn_ref.clicked.connect(self._refresh_positions)
-        hdr.addWidget(btn_ref)
-        v.addLayout(hdr)
-
-        # 포지션 테이블
-        _ts = (
-            "QTableWidget{background:#07070f;color:#ddd;"
-            "gridline-color:#2a1a3a;font-size:13px;border:1px solid #3a2a5a;}"
-            "QHeaderView::section{background:#0a0514;color:#c084fc;"
-            "border:1px solid #2a1a3a;font-size:12px;padding:3px;}"
-            "QTableWidget::item{padding:3px;}"
-            "QTableWidget::item:selected{background:#3a2a5a;color:#ffd700;}"
-            "QTableWidget::item:hover{background:#1a0a2a;}")
-        cols = ["C/P","심볼","행사가","매수가","수량","현재가","평가손익","만기"]
-        self._pos_tbl = QTableWidget(0, len(cols))
-        self._pos_tbl.setHorizontalHeaderLabels(cols)
-        self._pos_tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self._pos_tbl.verticalHeader().setVisible(False)
-        self._pos_tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._pos_tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._pos_tbl.setStyleSheet(_ts)
-        self._pos_tbl.cellClicked.connect(self._on_pos_tbl_click)
-        v.addWidget(self._pos_tbl, 1)
-
-        # PnL 요약
-        self._pos_lbl_pnl = QLabel("총 평가손익: ―")
-        self._pos_lbl_pnl.setStyleSheet(
-            "color:#ffd700;font-size:14px;font-weight:bold;border:none;")
-        v.addWidget(self._pos_lbl_pnl)
-
-        # 힌트
-        v.addWidget(QLabel("↑ 행 클릭 → 매도 주문창 자동 입력",
-            alignment=Qt.AlignCenter,
-            styleSheet="color:#444;font-size:10px;border:none;"))
-        return win
-
-    def _on_pos_tbl_click(self, row, col):
-        """잔고창 행 클릭 → 매도 패널 자동 입력."""
-        tbl = self._pos_tbl
-        cp_item     = tbl.item(row, 0)
-        strike_item = tbl.item(row, 2)
-        qty_item    = tbl.item(row, 4)
-        price_item  = tbl.item(row, 3)
-        if not cp_item or not strike_item: return
-        side   = "C" if "C" in cp_item.text() else "P"
-        strike = strike_item.text().strip()
-        try:    qty=abs(int(qty_item.text())) if qty_item else 1
-        except: qty=1
-        try:    price=float(price_item.text()) if price_item else None
-        except: price=None
-        self._show_pos_sell_panel(side, strike, qty=qty, price=price)
-
     # ── 잔고 매도 패널 ───────────────────────────────────────
     def _show_pos_sell_panel(self, side, strike, qty=1, price=None):
-        label="CALL" if side=="C" else "PUT"
+        label = "CALL" if side == "C" else "PUT"
         self._ps_lbl_title.setText(f"▼ 잔고 청산 매도  [{label}]")
         self._ps_lbl_sym.setText(f"{label}  {strike}")
         self._ps_qty.setValue(max(1, qty))
         self._ps_price.setText(f"{price:.2f}" if price else "")
-        self._ps_side=side; self._ps_strike=strike
+        self._ps_side   = side
+        self._ps_strike = strike
         self._pos_sell_panel.setVisible(True)
-        # 빠른매도 탭(idx=3)으로 자동 전환 + 가격·수량 자동입력
+        # 빠른매도 탭으로 자동 전환 + 가격·수량 자동입력
         tab_w = getattr(self, '_qord_tab_widget', None)
         if tab_w:
-            tab_w.setCurrentIndex(3)
+            for i in range(tab_w.count()):
+                if "매도" in tab_w.tabText(i):
+                    tab_w.setCurrentIndex(i)
+                    break
         sell_price_w = getattr(self, 'sell_price', None)
-        sell_qty_w   = getattr(self, 'sell_qty', None)
+        sell_qty_w   = getattr(self, 'sell_qty',   None)
         if sell_price_w and price:
             sell_price_w.setText(f"{price:.2f}")
         if sell_qty_w:
             sell_qty_w.setValue(max(1, qty))
         lbl = getattr(self, 'lbl_sell_status', None)
         if lbl:
-            lbl.setText(f"✅ {label} {strike} — 가격·수량 확인 후 매도")
+            lbl.setStyleSheet(
+                "color:#ffa500;font-size:12px;"
+                "border:1px solid #333;border-radius:3px;padding:2px;")
+            lbl.setText(f"선택: {label} {strike}  {qty}계약  — 가격 확인 후 매도")
 
     def _pos_sell_execute(self):
         side=getattr(self,'_ps_side',None); strike=getattr(self,'_ps_strike',None)
@@ -748,45 +666,197 @@ class OrderPanelMixin:
 
     # ── 빠른매도 탭 로직 ─────────────────────────────────────
     def _sell_selected_order(self):
-        """빠른매도: sell_price·sell_qty 필드 값으로 선택 OID 매도."""
-        oid = getattr(self, '_sell_selected_oid', None)
-        buf = getattr(self, '_open_orders_buf', [])
-        lbl = getattr(self, 'lbl_sell_status', None)
-        if oid is None:
+        """빠른매도: Bid 가격 기준 LMT SELL 주문.
+        IBKR은 옵션 MKT 주문을 reject하므로 현재 Bid로 LMT 전송.
+        Bid 없으면 sell_price 입력값 → 그것도 없으면 차단."""
+        side       = getattr(self, '_ps_side',   None)
+        strike_txt = getattr(self, '_ps_strike', None)
+        lbl        = getattr(self, 'lbl_sell_status', None)
+        sell_qty_w = getattr(self, 'sell_qty', None)
+
+        self._log(f"📤 빠른매도 버튼 클릭: _ps_side={side} _ps_strike={strike_txt} "
+                  f"_ps_sym={getattr(self,'_ps_sym',None)} _ps_expiry={getattr(self,'_ps_expiry',None)}")
+
+        if not side or not strike_txt:
             if lbl: lbl.setText("⚠ 잔고 행을 먼저 클릭하세요")
+            self._log("⚠ 빠른매도: _ps_side/_ps_strike 없음 — 잔고 행 클릭 필요")
             return
-        matched = next((o for o in buf if o["oid"] == oid), None)
-        sell_price_w = getattr(self, 'sell_price', None)
-        sell_qty_w   = getattr(self, 'sell_qty', None)
-        try:
-            price = float(sell_price_w.text().strip()) if sell_price_w else (matched["price"] if matched else 0)
-        except (ValueError, AttributeError):
-            price = matched["price"] if matched else 0
-        try:
-            qty = sell_qty_w.value() if sell_qty_w else (matched["qty"] if matched else 1)
-        except AttributeError:
-            qty = matched["qty"] if matched else 1
+
+        qty = sell_qty_w.value() if sell_qty_w else 1
+
         if not self.mw.connected:
             from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "미연결", "TWS에 먼저 연결하세요."); return
+            QMessageBox.warning(self, "미연결", "TWS에 먼저 연결하세요.")
+            return
+
+        # ── Bid 가격 결정 ─────────────────────────────────────
+        # 1순위: 현재가 패널에 표시 중인 옵션 Bid (_pp_opt_bid)
+        # 2순위: sell_price 입력 필드
+        # 3순위: 차단
+        bid_price = getattr(self, '_pp_opt_bid', None)
+        if bid_price and bid_price > 0:
+            price = round(float(bid_price), 2)
+            price_src = f"Bid ${price:.2f}"
+        else:
+            sell_price_w = getattr(self, 'sell_price', None)
+            price_txt = sell_price_w.text().strip() if sell_price_w else ""
+            if price_txt:
+                try:
+                    price = round(float(price_txt), 2)
+                    if price <= 0: raise ValueError
+                    price_src = f"입력가 ${price:.2f}"
+                except ValueError:
+                    if lbl: lbl.setText("⚠ 유효한 가격을 입력하거나 체인을 클릭하세요")
+                    return
+            else:
+                if lbl: lbl.setText("⚠ Bid 가격 없음 — 체인 행 클릭 or 가격 직접 입력")
+                self._log("⚠ 빠른매도: _pp_opt_bid 없고 sell_price 비어있음")
+                return
+
+        sym   = getattr(self, '_ps_sym', None) or (
+                self.edit_sym.text().strip().upper() if hasattr(self, 'edit_sym') else "")
+        label = "CALL" if side == "C" else "PUT"
+        msg   = f"매도 LMT  {sym} {label} {strike_txt}  {qty}계약  {price_src}"
+
         try:
             from ibapi.order import Order as IbOrder
-            from ibapi.contract import Contract
+            from core import make_opt_contract
+
+            expiry = getattr(self, '_ps_expiry', None)
+            if not expiry:
+                expiry, tag = self._get_expiry()
+                if expiry is None:
+                    if lbl: lbl.setText("❌ 만기일을 확인할 수 없습니다")
+                    return
+            else:
+                tag = _spx_tag(sym, expiry)
+
+            contract = make_opt_contract(sym, float(strike_txt), side, expiry, tag)
+
+            ibord = IbOrder()
+            ibord.action        = "SELL"
+            ibord.orderType     = "LMT"   # ← Bid 기준 지정가 (IBKR 옵션 MKT reject 회피)
+            ibord.totalQuantity = qty
+            ibord.lmtPrice      = price
+            ibord.tif           = "DAY"
+            ibord.eTradeOnly    = False
+            ibord.firmQuoteOnly = False
+
+            oid = self.mw.ib.get_next_id()
+            if oid is None:
+                if lbl: lbl.setText("❌ 주문 ID 없음")
+                return
+
+            _orig_err = getattr(self.mw.ib, 'error', None)
+            def _catch_err(reqId, errorCode, errorString, *a):
+                self._log(f"‼ IB ERROR  reqId={reqId}  code={errorCode}  msg={errorString}")
+                if _orig_err:
+                    try: _orig_err(reqId, errorCode, errorString, *a)
+                    except Exception: pass
+            self.mw.ib.error = _catch_err
+
+            self.mw.ib.placeOrder(oid, contract, ibord)
+            result_msg = f"✅ 빠른매도: {msg}  (OID={oid})"
+            if lbl:
+                lbl.setStyleSheet(
+                    "color:#ff6666;font-size:11px;"
+                    "border:1px solid #333;border-radius:3px;padding:2px;")
+                lbl.setText(result_msg)
+            self._log(f"📤 {result_msg}")
+            QTimer.singleShot(1500, self._fetch_open_orders)
+
+        except Exception as e:
+            if lbl: lbl.setText(f"❌ 오류: {e}")
+            self._log(f"❌ 빠른매도 오류: {e}")
+
+    def _sell_limit_order(self):
+        """빠른매도: sell_price 입력값으로 LMT SELL 주문 전송."""
+        side       = getattr(self, '_ps_side',   None)
+        strike_txt = getattr(self, '_ps_strike', None)
+        lbl        = getattr(self, 'lbl_sell_status', None)
+        sell_price_w = getattr(self, 'sell_price', None)
+        sell_qty_w   = getattr(self, 'sell_qty',   None)
+
+        self._log(f"📤 지정가매도 버튼: _ps_side={side} _ps_strike={strike_txt} "
+                  f"_ps_sym={getattr(self,'_ps_sym',None)} _ps_expiry={getattr(self,'_ps_expiry',None)}")
+
+        if not side or not strike_txt:
+            if lbl: lbl.setText("⚠ 잔고 행을 먼저 클릭하세요")
+            return
+
+        price_txt = sell_price_w.text().strip() if sell_price_w else ""
+        qty       = sell_qty_w.value()           if sell_qty_w   else 1
+
+        if not price_txt:
+            if lbl: lbl.setText("⚠ 매도 가격을 입력하세요")
+            return
+        try:
+            price = float(price_txt)
+            if price <= 0: raise ValueError
+        except ValueError:
+            if lbl: lbl.setText("⚠ 유효한 가격을 입력하세요")
+            return
+
+        if not self.mw.connected:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "미연결", "TWS에 먼저 연결하세요.")
+            return
+
+        sym   = getattr(self, '_ps_sym', None) or (
+                self.edit_sym.text().strip().upper() if hasattr(self, 'edit_sym') else "")
+        label = "CALL" if side == "C" else "PUT"
+        msg   = f"매도 LMT  {sym} {label} {strike_txt}  {qty}계약  ${price:.2f}"
+
+        try:
+            from ibapi.order import Order as IbOrder
+            from core import make_opt_contract
+
+            expiry = getattr(self, '_ps_expiry', None)
+            if not expiry:
+                expiry, tag = self._get_expiry()
+                if expiry is None:
+                    if lbl: lbl.setText("❌ 만기일을 확인할 수 없습니다")
+                    return
+            else:
+                tag = _spx_tag(sym, expiry)
+
+            contract = make_opt_contract(sym, float(strike_txt), side, expiry, tag)
+
             ibord = IbOrder()
             ibord.action        = "SELL"
             ibord.orderType     = "LMT"
             ibord.totalQuantity = qty
             ibord.lmtPrice      = price
-            ibord.tif           = matched.get("tif","DAY") if matched else "DAY"
+            ibord.tif           = "DAY"
             ibord.eTradeOnly    = False
             ibord.firmQuoteOnly = False
-            if matched:
-                self.mw.ib.placeOrder(oid, matched["contract"], ibord)
-            msg = f"✅ 빠른매도: OID={oid}  SELL {qty} @{price:.2f}"
-            if lbl: lbl.setText(msg)
-            self._log(msg)
+
+            oid = self.mw.ib.get_next_id()
+            if oid is None:
+                if lbl: lbl.setText("❌ 주문 ID 없음")
+                return
+
+            _orig_err = getattr(self.mw.ib, 'error', None)
+            def _catch_err(reqId, errorCode, errorString, *a):
+                self._log(f"‼ IB ERROR  reqId={reqId}  code={errorCode}  msg={errorString}")
+                if _orig_err:
+                    try: _orig_err(reqId, errorCode, errorString, *a)
+                    except Exception: pass
+            self.mw.ib.error = _catch_err
+
+            self.mw.ib.placeOrder(oid, contract, ibord)
+            result_msg = f"✅ 지정가매도: {msg}  (OID={oid})"
+            if lbl:
+                lbl.setStyleSheet(
+                    "color:#ff9999;font-size:11px;"
+                    "border:1px solid #333;border-radius:3px;padding:2px;")
+                lbl.setText(result_msg)
+            self._log(f"📤 {result_msg}")
+            QTimer.singleShot(1500, self._fetch_open_orders)
+
         except Exception as e:
-            if lbl: lbl.setText(f"❌ 빠른매도 오류: {e}")
+            if lbl: lbl.setText(f"❌ 오류: {e}")
+            self._log(f"❌ 지정가매도 오류: {e}")
 
     def _bump_sell_price(self, delta: float):
         """빠른매도 탭: 전체 미체결 주문 가격에 delta 일괄 적용."""
@@ -891,9 +961,12 @@ class OrderPanelMixin:
         ib.positionEnd = _on_pos_end
         try: ib.reqPositions()
         except Exception as e: self._log(f"❌ 긴급매도 포지션조회 오류: {e}")
-        QTimer.singleShot(3000, lambda: (
-            setattr(ib,'position',    ib._orig_pos),
-            setattr(ib,'positionEnd', ib._orig_posEnd)))
+
+        # [v1.2] 튜플 반환 람다 → def 교체 (sipBadCatcherResult 방지)
+        def _restore_emrg_handlers():
+            ib.position    = ib._orig_pos
+            ib.positionEnd = ib._orig_posEnd
+        QTimer.singleShot(3000, _restore_emrg_handlers)
 
     def _emergency_cancel_orders(self):
         """미체결 매수 주문 전부 취소."""

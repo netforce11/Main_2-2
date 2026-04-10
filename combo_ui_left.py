@@ -2,51 +2,77 @@
 combo_ui_left.py — 복합 전략 탭: 좌측 패널
 ════════════════════════════════════════════════════════════════
 포함:
-  - LeftPanelMixin : 옵션 체인 (콜·풋) + 관심종목 패널 빌드
+  - LeftPanelMixin : 옵션 체인 (콜·풋) 패널 빌드
   - 체인 동기화 (_sync_chain, _auto_sync_chain, _sync_chain_from_cp)
-  - 관심종목 CRUD (_w_add, _w_del, _on_watchlist_click, _req_sym_price)
+  - 현재가 조회 (_req_sym_price)
   - 체인 클릭 → 레그 자동 입력 (_on_chain_click)
+
+v2.3 변경:
+  - 관심종목 패널 제거 (공간 확보 → 추세점수판으로 대체)
+  - edit_sym_combo / lbl_sym_price / ▶현재가조회 버튼을
+    _build_chain_panel() 헤더 행으로 이동
 ════════════════════════════════════════════════════════════════
 """
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit,
-    QGroupBox, QListWidget, QMessageBox,
+    QGroupBox, QMessageBox,
     QTableWidget, QHeaderView, QAbstractItemView,
-    QSplitter, QInputDialog,
+    QSplitter,
 )
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 
 from combo_constants import SPLITTER_STYLE, mk_item
 from core import REQ_CALL, REQ_PUT
 
 
 class LeftPanelMixin:
-    """좌측 패널(옵션 체인 + 관심종목) 빌드·로직 Mixin."""
+    """좌측 패널(옵션 체인) 빌드·로직 Mixin."""
 
     # ──────────────────────────────────────────────────────────
     # 빌드
     # ──────────────────────────────────────────────────────────
-    def _build_left_panel(self) -> QSplitter:
-        """좌측 수직 스플리터를 생성하여 반환."""
-        self._left_vsplit = QSplitter(Qt.Vertical)
-        self._left_vsplit.setHandleWidth(6)
-        self._left_vsplit.setStyleSheet(SPLITTER_STYLE)
-        self._left_vsplit.setChildrenCollapsible(False)
-
-        self._left_vsplit.addWidget(self._build_chain_panel())
-        self._left_vsplit.addWidget(self._build_watchlist_panel())
-        self._left_vsplit.setSizes([500, 200])
-        return self._left_vsplit
+    def _build_left_panel(self) -> QGroupBox:
+        """좌측: 옵션 체인 패널만 반환 (관심종목 제거)."""
+        return self._build_chain_panel()
 
     # ── 옵션 체인 패널 ─────────────────────────────────────────
     def _build_chain_panel(self) -> QGroupBox:
         gb = QGroupBox("📊 옵션 체인  (콜-풋 탭 3초 동기화)")
         v  = QVBoxLayout(gb)
-        v.setSpacing(2); v.setContentsMargins(4, 4, 4, 4)
+        v.setSpacing(3); v.setContentsMargins(4, 6, 4, 4)
 
-        # 헤더 행
+        # ── 헤더 행 1: 종목 입력 + 현재가 조회 (관심종목에서 이동) ──
+        sym_row = QHBoxLayout()
+        sym_row.setSpacing(6)
+
+        sym_row.addWidget(QLabel("종목:"))
+
+        self.edit_sym_combo = QLineEdit("SPX")
+        self.edit_sym_combo.setFixedHeight(24)
+        self.edit_sym_combo.setStyleSheet(
+            "background:#0a0a1e;color:#ffd700;border:1px solid #3a3a6a;"
+            "border-radius:3px;font-weight:bold;")
+        sym_row.addWidget(self.edit_sym_combo)
+
+        btn_req = QPushButton("▶ 현재가 조회")
+        btn_req.setFixedHeight(24)
+        btn_req.setStyleSheet(
+            "background:#1a5c2e;color:#00ff88;font-weight:bold;padding:3px 8px;")
+        btn_req.clicked.connect(self._req_sym_price)
+        sym_row.addWidget(btn_req)
+
+        self.lbl_sym_price = QLabel("현재가: ―")
+        self.lbl_sym_price.setFont(QFont("Arial", 12, QFont.Bold))
+        self.lbl_sym_price.setStyleSheet("color:#ffd700;border:none;")
+        sym_row.addWidget(self.lbl_sym_price)
+        sym_row.addStretch()
+
+        v.addLayout(sym_row)
+
+        # ── 헤더 행 2: 체인 심볼 표시 + 즉시 동기화 버튼 ──
         hdr = QHBoxLayout()
         self.lbl_chain_sym = QLabel("종목: ―  |  현재가: ―")
         self.lbl_chain_sym.setStyleSheet(
@@ -59,7 +85,7 @@ class LeftPanelMixin:
         hdr.addWidget(btn_sync)
         v.addLayout(hdr)
 
-        # 내부 좌우 분할 (CALL | PUT)
+        # ── 콜/풋 체인 테이블 ──
         inner = QSplitter(Qt.Horizontal)
         inner.setHandleWidth(4)
         inner.setStyleSheet(SPLITTER_STYLE)
@@ -121,70 +147,11 @@ class LeftPanelMixin:
             f"QHeaderView::section{{background:#0a0a1e;color:{hdr_color};"
             "border:1px solid #1a1a3a;font-weight:bold;}")
 
-    # ── 관심종목 패널 ──────────────────────────────────────────
-    def _build_watchlist_panel(self) -> QGroupBox:
-        gb = QGroupBox("관심종목")
-        v  = QVBoxLayout(gb)
-        v.setSpacing(3); v.setContentsMargins(4, 4, 4, 4)
-
-        sym_row = QHBoxLayout()
-        self.edit_sym_combo = QLineEdit("SPX")
-        self.edit_sym_combo.setFixedHeight(24)
-        self.edit_sym_combo.setStyleSheet(
-            "background:#0a0a1e;color:#ffd700;border:1px solid #3a3a6a;"
-            "border-radius:3px;font-weight:bold;")
-        btn_req = QPushButton("▶ 현재가 조회")
-        btn_req.setStyleSheet(
-            "background:#1a5c2e;color:#00ff88;font-weight:bold;padding:3px 8px;")
-        btn_req.clicked.connect(self._req_sym_price)
-
-        from PyQt5.QtGui import QFont
-        self.lbl_sym_price = QLabel("현재가: ―")
-        self.lbl_sym_price.setFont(QFont("Arial", 14, QFont.Bold))
-        self.lbl_sym_price.setStyleSheet("color:#ffd700;border:none;")
-
-        sym_row.addWidget(QLabel("종목:"))
-        sym_row.addWidget(self.edit_sym_combo)
-        sym_row.addWidget(btn_req)
-        v.addLayout(sym_row)
-        v.addWidget(self.lbl_sym_price)
-
-        self.watchlist_combo = QListWidget()
-        self.watchlist_combo.addItems([
-            "SPX", "SPXW", "NDX", "QQQ", "SPY", "AAPL", "TSLA", "NVDA"])
-        self.watchlist_combo.itemClicked.connect(self._on_watchlist_click)
-        v.addWidget(self.watchlist_combo, 1)
-
-        wa = QHBoxLayout()
-        ba = QPushButton("추가"); bd = QPushButton("삭제")
-        ba.setFixedHeight(22); bd.setFixedHeight(22)
-        ba.clicked.connect(self._w_add)
-        bd.clicked.connect(self._w_del)
-        wa.addWidget(ba); wa.addWidget(bd)
-        v.addLayout(wa)
-
-        gb.setMinimumHeight(120)
-        return gb
-
     # ──────────────────────────────────────────────────────────
-    # 관심종목 로직
+    # 현재가 조회
     # ──────────────────────────────────────────────────────────
-    def _on_watchlist_click(self, item):
-        self.edit_sym_combo.setText(item.text().strip())
-        self._req_sym_price()
-
-    def _w_add(self):
-        t, ok = QInputDialog.getText(self, "추가", "심볼:")
-        if ok and t.strip():
-            self.watchlist_combo.addItem(t.strip().upper())
-
-    def _w_del(self):
-        r = self.watchlist_combo.currentRow()
-        if r >= 0:
-            self.watchlist_combo.takeItem(r)
-
     def _req_sym_price(self):
-        """관심종목 클릭 → 현재가 조회."""
+        """종목 입력 → 현재가 조회."""
         sym = self.edit_sym_combo.text().strip().upper()
         if not sym:
             return

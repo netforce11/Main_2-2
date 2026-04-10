@@ -111,5 +111,21 @@
       373,
       274
     ]
+  },
+  "6": {
+    "dark": false,
+    "font": 21,
+    "h_split": [
+      1154,
+      742
+    ],
+    "chart_vsplit": [
+      455,
+      304
+    ],
+    "delta_filter": 5,
+    "sym": "SPX",
+    "exp_idx": 0,
+    "autosave": true
   }
 }

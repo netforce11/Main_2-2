@@ -137,7 +137,7 @@ class PanelsMixin(PricePanelMixin, StrategyPanelMixin):
         g6, h6 = _gb_w("조회")
         h6.addWidget(QLabel("행:", styleSheet="color:#aaa;font-size:11px;border:none;"))
         self.spin_n = QSpinBox()
-        self.spin_n.setRange(1, self._MAX_STRIKES); self.spin_n.setValue(20)
+        self.spin_n.setRange(1, self._MAX_STRIKES); self.spin_n.setValue(10)
         self.spin_n.setFixedWidth(50); self.spin_n.setFixedHeight(24)
         self.spin_n.setStyleSheet(
             "background:#0a0a18;color:#ffd700;border:1px solid #2e3060;font-size:12px;")

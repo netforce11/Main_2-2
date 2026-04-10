@@ -1,5 +1,6 @@
 """tab_options_price.py — PricePanelMixin: price + position panels [S9]
-변경: _on_position_row_click → 빠른매도 탭(idx=3) 전환 + sell_qty 자동입력
+변경: _on_position_row_click → order_panel_util.py(OrderUtilMixin)로 일원화
+      (중복 정의 제거 — MRO 충돌 및 _ps_expiry 미세팅 문제 해소)
       _build_tbl_panel 에서 price/position을 QSplitter로 분리 (panels.py에서 호출)
       _update_price_panel_opt → 전략 패널 _strat_on_chain_click 연동 [S9]
 """
@@ -121,6 +122,7 @@ class PricePanelMixin:
         self._pp_mode = "und"
         self._pp_opt_side = ""; self._pp_opt_strike = ""
         self._pp_opt_bid = None; self._pp_opt_ask = None
+        self._pp_is_nanos = False   # ✅ NANOS 호가 ×10 보정 플래그
         return gb
 
     # ── Position panel ─────────────────────────────────────────
@@ -157,16 +159,19 @@ class PricePanelMixin:
             "QTableWidget::item{padding:1px;}"
             "QTableWidget::item:selected{background:#3a2a0a;color:#ffd700;}"
             "QTableWidget::item:hover{background:#1a1005;cursor:pointer;}")
-        self.tbl_positions = QTableWidget(0, 4)
-        self.tbl_positions.setHorizontalHeaderLabels(["C/P", "행사가", "수량", "평균가"])
+        self.tbl_positions = QTableWidget(0, 5)
+        self.tbl_positions.setHorizontalHeaderLabels(["C/P", "행사가", "수량", "평균가", "평가손익"])
         self.tbl_positions.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tbl_positions.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.tbl_positions.verticalHeader().setVisible(False)
         self.tbl_positions.verticalHeader().setDefaultSectionSize(22)
         self.tbl_positions.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl_positions.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl_positions.setMinimumHeight(0)
         self.tbl_positions.setStyleSheet(_tbl_s)
-        self.tbl_positions.cellClicked.connect(self._on_position_row_click)
+        # _on_position_row_click은 OrderUtilMixin에 정의 — 런타임에 바인딩
+        self.tbl_positions.cellClicked.connect(
+            lambda r, c: self._on_position_row_click(r, c))
         v.addWidget(self.tbl_positions, 1)
 
         hint = QLabel("↑ 클릭 → 빠른매도 탭으로 이동")
@@ -221,13 +226,25 @@ class PricePanelMixin:
         self._pp_mode = "opt"; self._pp_opt_side = side
         self._pp_opt_strike = strike; self._pp_opt_bid = bid; self._pp_opt_ask = ask
         label = "CALL" if side == "C" else "PUT"
-        col   = "#33aaff" if side == "C" else "#ff6666"
+        # ✅ CALL=빨강, PUT=파랑 — 한국형 HTS 표준
+        col   = "#ff6666" if side == "C" else "#33aaff"
         sym   = self.edit_sym.text().strip().upper() if hasattr(self, 'edit_sym') else ""
         self._pp_lbl_sym.setText(f"{sym}  {label}")
         self._pp_lbl_sym.setStyleSheet(f"color:{col};font-size:14px;font-weight:bold;border:none;")
-        self._pp_lbl_price.setText(
-            f"{(bid+ask)/2:.2f}" if bid and ask else (f"{ask:.2f}" if ask else "―"))
-        self._pp_lbl_chg.setText(f"행사가  {strike}")
+        mid_price = (bid+ask)/2 if bid and ask else (ask if ask else None)
+        self._pp_lbl_price.setText(f"{mid_price:.2f}" if mid_price else "―")
+        # ✅ 기초자산 급등락 ≥5% 시 Bold 강조
+        und_price = getattr(self, 'und_price', None)
+        und_prev  = getattr(self, 'und_prev',  None)
+        if und_price and und_prev and und_prev > 0:
+            pct = abs((und_price - und_prev) / und_prev * 100)
+            bold = "font-weight:bold;" if pct >= 5.0 else ""
+        else:
+            bold = ""
+        self._pp_lbl_price.setStyleSheet(
+            f"color:#ffd700;font-size:20px;{bold}border:1px solid #2a2a5a;"
+            "border-radius:3px;background:#08080f;padding:2px 4px;")
+        self._pp_lbl_chg.setText(f"행사가  {self._safe_strike_int(strike)}")
         self._pp_lbl_chg.setStyleSheet(f"color:{col};font-size:11px;border:none;font-weight:bold;")
         self._pp_set_quote(ask, bid)
         self._pp_lbl_opt_info.setText(f"Δ {delta:+.4f}" if delta is not None else "")
@@ -235,7 +252,7 @@ class PricePanelMixin:
 
         # [S9] 전략 패널 연동
         if hasattr(self, '_strat_on_chain_click'):
-            self._strat_on_chain_click(side, float(strike), bid or 0.0, ask or 0.0)
+            self._strat_on_chain_click(side, float(strike) if strike else 0.0, bid or 0.0, ask or 0.0)
 
     def _pp_switch_to_und(self):
         self._pp_mode = "und"
@@ -245,51 +262,25 @@ class PricePanelMixin:
         self._update_price_panel()
 
     # ── Click handlers ─────────────────────────────────────────
-    def _on_position_row_click(self, row: int, col: int):
-        """잔고 행 클릭 → 빠른매도 탭(idx=3) 전환 + sell_qty 자동입력."""
-        tbl = self.tbl_positions
-        cp_item     = tbl.item(row, 0)
-        strike_item = tbl.item(row, 1)
-        qty_item    = tbl.item(row, 2)
-        price_item  = tbl.item(row, 3)
-        if not cp_item or not strike_item: return
-
-        side   = "C" if "C" in cp_item.text() else "P"
-        strike = strike_item.text().strip()
-        try:    qty = abs(int(qty_item.text())) if qty_item else 1
-        except Exception: qty = 1
-        try:    price = float(price_item.text()) if price_item else None
-        except Exception: price = None
-
-        # 빠른주문 패널 탭 → 빠른매도(idx=3) 전환
-        tab_w = getattr(self, '_qord_tab_widget', None)
-        if tab_w:
-            tab_w.setCurrentIndex(3)
-
-        # sell_qty / sell_price 필드 채움
-        sell_qty_w   = getattr(self, 'sell_qty', None)
-        sell_price_w = getattr(self, 'sell_price', None)
-        if sell_qty_w:
-            sell_qty_w.setValue(qty)
-        if sell_price_w and price:
-            sell_price_w.setText(f"{price:.2f}")
-
-        # 상태 메시지
-        lbl = getattr(self, 'lbl_sell_status', None)
-        if lbl:
-            label = "CALL" if side == "C" else "PUT"
-            lbl.setText(f"📊 잔고 {label} {strike}  수량:{qty} → 가격·수량 확인 후 매도")
-
-        # 기존 pos_sell 슬라이드업도 유지
-        if hasattr(self, '_show_pos_sell_panel'):
-            self._show_pos_sell_panel(side, strike, qty=qty, price=price)
+    def _safe_strike_int(self, strike) -> str:
+        """빈 문자열/None strike 안전 변환."""
+        try:
+            if strike is None or str(strike).strip() == "": return ""
+            return str(int(float(strike)))
+        except Exception:
+            return str(strike)
 
     def _on_pp_quote_click(self, row: int, col: int):
         """Ask(row=0) or Bid(row=1) → fill quick-order price."""
         if not hasattr(self, 'qord_price'): return
         mode = getattr(self, '_pp_mode', 'und')
-        val = (self._pp_opt_ask if row == 0 else self._pp_opt_bid) if mode == 'opt' \
-              else (self._pp_ask  if row == 0 else self._pp_bid)
+        if mode == 'opt':
+            # ✅ getattr 방어코드 — AttributeError 완전 차단
+            raw = getattr(self, '_pp_opt_ask', None) if row == 0 else getattr(self, '_pp_opt_bid', None)
+            # ✅ NANOS 호가 ×10 보정
+            val = raw * 10 if raw and getattr(self, '_pp_is_nanos', False) else raw
+        else:
+            val = getattr(self, '_pp_ask', None) if row == 0 else getattr(self, '_pp_bid', None)
         if val:
             self.qord_price.setText(f"{val:.2f}")
             src = "Ask" if row == 0 else "Bid"

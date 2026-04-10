@@ -220,6 +220,22 @@ def make_opt_contract(symbol: str, strike: float, right: str,
                       expiry: str, tag: str = "") -> "Contract":
     sym_up = symbol.upper()
 
+    # ── NANOS 전용 분기 (최우선) ─────────────────────────────
+    # IBKR NANOS 옵션: symbol="SPX", tradingClass="NANOS", exchange="CBOE", multiplier="1"
+    if sym_up == "NANOS":
+        _, _, mult, _ = SYMBOL_CFG.get("NANOS", ("OPT", "CBOE", "1", ""))
+        c = Contract()
+        c.symbol       = "SPX"
+        c.tradingClass = "NANOS"
+        c.secType      = "OPT"
+        c.exchange     = "CBOE"
+        c.currency     = "USD"
+        c.strike       = float(strike)
+        c.right        = "C" if right.upper() in ("C", "CALL") else "P"
+        c.multiplier   = mult if mult else "1"
+        c.lastTradeDateOrContractMonth = expiry
+        return c
+
     if sym_up in ("SPX", "SPXW"):
         sec, exch, mult, _ = SYMBOL_CFG.get("SPX", DEFAULT_CFG)
         tc = _resolve_spx_trading_class(sym_up, expiry, tag)

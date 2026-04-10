@@ -1062,6 +1062,7 @@ class ChartGrid(QWidget):
         self.status_lbl.setText(f"📅 {num_days}일 연속 (ET, 정규장)")
         self._update_display(force_regular=True)
         if PG: self.p1.autoRange()
+        self._push_trend_df()              # ← [v6.3 추가] Tab4 push
 
     def _fetch_ibkr_history(self, symbol, tgt):
         if not self.mw.connected: QMessageBox.warning(self,"미연결","TWS에 연결하세요."); return
@@ -1088,6 +1089,13 @@ class ChartGrid(QWidget):
         try: bridge.hist_end.disconnect(self._on_ibkr_hist_end)
         except: pass
         self._update_display()
+        # ── [v6.3 추가] IBKR 수신 완료 후 Tab4 push ──────────────
+        if PANDAS and self.df_raw:
+            try:
+                self.df = pd.DataFrame(self.df_raw)
+            except Exception:
+                pass
+        self._push_trend_df()
 
     # ── [v9.1 이식] 데이터 로드 — pickle → CSV → API 삼단 fallback ──
     def _load_day_df(self, symbol: str, tgt) -> "pd.DataFrame | None":
@@ -1164,6 +1172,25 @@ class ChartGrid(QWidget):
         except Exception as e:
             print(f"[ChartTab] _download_day: {e}")
 
+    # ── [v6.3 추가] Tab4 추세판으로 DF push ──────────────────────
+    def _push_trend_df(self):
+        """
+        현재 self.df (1분봉 DataFrame)를 Tab4 TrendScorePanel로 전달.
+        df 컬럼: t(ms timestamp), o, h, l, c, v
+                 → TrendAnalyzer 내부에서 소문자 컬럼으로 rename됨
+        """
+        if not PANDAS or self.df is None or self.df.empty:
+            return
+        try:
+            combo = getattr(self.mw, 'tab_combo', None)
+            if combo and hasattr(combo, 'set_trend_df'):
+                # Polygon/IBKR 컬럼명 통일 (o→open 등)
+                col_map = {'o':'open','h':'high','l':'low','c':'close','v':'volume'}
+                df_out = self.df.rename(columns=col_map)
+                combo.set_trend_df(df_out)
+        except Exception as e:
+            print(f"[ChartGrid] _push_trend_df 오류: {e}")
+
     def _fetch_polygon_history(self, symbol, tgt):
         """캘린더 클릭 → _load_day_df 삼단 fallback 사용"""
         df = self._load_day_df(symbol, tgt)
@@ -1173,6 +1200,7 @@ class ChartGrid(QWidget):
             self.status_lbl.setText(f"📅 {tgt} 복기 (ET)")
             self._update_display()
             self.p1.autoRange()
+            self._push_trend_df()          # ← [v6.3 추가] Tab4 push
         else:
             QMessageBox.warning(self, "데이터 없음",
                                 f"{tgt} 데이터가 없습니다.\n(휴장일 또는 API 오류)")

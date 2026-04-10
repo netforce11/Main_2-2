@@ -72,7 +72,8 @@ from tab_options import CallPutGrid
 from tab_sniper  import SniperGrid
 from tab_oi      import OITrackerGrid
 from tab_combo_strategy import ComboStrategyGrid
-from tab_account import BalanceGrid, MultiPriceGrid, GreeksGrid
+from tab_account import BalanceGrid, MultiPriceGrid
+from tab_greeks  import GreeksGrid          # ← tab_account.py 에서 분리된 신규 파일
 from tab_chart   import ChartGrid
 from tab_trading import TradingGrid
 from tab_kr_futures  import KRFuturesGrid
@@ -111,6 +112,7 @@ class TradingDashboard(QMainWindow):
         self.ib        = IBapi()
         self.ib_thread = None
         self.connected = False
+        self.account_id = ""   # ← managedAccounts 콜백에서 자동 설정
 
         # 탭 인스턴스 (다른 탭에서 참조 가능하도록 속성으로 저장)
         self.tab_callput  = None
@@ -146,7 +148,7 @@ class TradingDashboard(QMainWindow):
         self.tab_callput = add(CallPutGrid,   "1. 콜-풋 (Main)", self)
         self.tab_balance = add(BalanceGrid,   "2. 잔고/PnL",     self)
         self.tab_sniper  = add(SniperGrid,    "3. 스나이퍼",     self)
-        add(ComboStrategyGrid,                "4. 복합 전략",    self)
+        self.tab_combo = add(ComboStrategyGrid, "4. 복합 전략",    self)
         add(MultiPriceGrid,                   "5. 복수 현재가",  self)
         self.tab_greeks  = add(GreeksGrid,    "6. Greeks Matrix",self)
         add(ChartGrid,                        "7. 1분봉 차트",   self)
@@ -217,6 +219,20 @@ class TradingDashboard(QMainWindow):
         try:
             self.ib = IBapi()
             self.ib.connect(TWS_HOST, TWS_PORT, CLIENT_ID)
+
+            # ── 계좌번호 자동 저장 (managedAccounts 콜백) ──────────
+            _mw = self
+            _orig_managed = getattr(self.ib, 'managedAccounts', lambda accts: None)
+            def _on_managed_accounts(accountsList: str):
+                try: _orig_managed(accountsList)
+                except Exception: pass
+                if accountsList:
+                    acct = accountsList.strip().split(',')[0].strip()
+                    if acct:
+                        _mw.account_id = acct
+                        print(f"[Dashboard] account_id 설정: {acct}")
+            self.ib.managedAccounts = _on_managed_accounts
+
             self.ib_thread = threading.Thread(target=self.ib.run, daemon=True)
             self.ib_thread.start()
         except Exception as e:
