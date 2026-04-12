@@ -71,8 +71,12 @@ class PnlLogicMixin:
     # 차트 패널 빌드 (combo_ui_right.py 의 기본 구현을 오버라이드)
     # ──────────────────────────────────────────────────────────
     def _build_spread_chart_panel(self) -> QGroupBox:
-        """만기 손익 곡선 + T+0 곡선 + IV/DTE 슬라이더."""
-        gb = QGroupBox("📈 손익 곡선")
+        """
+        ★ v2.3: 손익 곡선 전용 패널 (우측).
+        스프레드 계산 수치는 _build_result_panel 내부로 이동.
+        슬라이더(IV / DTE) + pyqtgraph 차트만 포함.
+        """
+        gb = QGroupBox("📉 손익 곡선")
         v  = QVBoxLayout(gb)
         v.setContentsMargins(4, 6, 4, 4)
         v.setSpacing(4)
@@ -90,21 +94,18 @@ class PnlLogicMixin:
                 pen=pg.mkPen("#00e676", width=2),
                 name="만기 손익")
 
-            # ★ T+0 이론가 손익 (오렌지 파선)
+            # T+0 이론가 손익 (오렌지 파선)
             self._curve_t0 = pw.plot(
-                pen=pg.mkPen("#ff9800", width=2,
-                             style=Qt.DashLine),
+                pen=pg.mkPen("#ff9800", width=2, style=Qt.DashLine),
                 name="T+0 (현재)")
 
             # 손익분기 수직선 (빨간 점선)
             self._curve_be = pw.plot(
-                pen=pg.mkPen("#ff5252", width=1,
-                             style=Qt.DotLine))
+                pen=pg.mkPen("#ff5252", width=1, style=Qt.DotLine))
 
-            # ★ 현재가 수직선 (흰 점선)
+            # 현재가 수직선 (흰 점선)
             self._curve_und = pw.plot(
-                pen=pg.mkPen("#ffffff", width=1,
-                             style=Qt.DotLine),
+                pen=pg.mkPen("#ffffff", width=1, style=Qt.DotLine),
                 name="현재가")
 
             # 제로 기준선
@@ -117,7 +118,7 @@ class PnlLogicMixin:
             lbl.setStyleSheet("color:#ff5252;font-size:11px;")
             v.addWidget(lbl)
 
-        # ── ★ T+0 슬라이더 영역 ────────────────────────────
+        # ── T+0 슬라이더 영역 ────────────────────────────
         slider_row = QHBoxLayout()
         slider_row.setSpacing(12)
 
@@ -125,7 +126,7 @@ class PnlLogicMixin:
         iv_lbl = QLabel("IV:")
         iv_lbl.setStyleSheet("color:#ff9800;font-size:11px;border:none;min-width:16px;")
         self.sld_t0_iv = QSlider(Qt.Horizontal)
-        self.sld_t0_iv.setRange(5, 200)     # 5% ~ 200%
+        self.sld_t0_iv.setRange(5, 200)
         self.sld_t0_iv.setValue(20)
         self.sld_t0_iv.setFixedHeight(18)
         self.sld_t0_iv.setStyleSheet(
@@ -142,7 +143,7 @@ class PnlLogicMixin:
         dte_lbl = QLabel("DTE:")
         dte_lbl.setStyleSheet("color:#64b5f6;font-size:11px;border:none;min-width:28px;")
         self.sld_t0_dte = QSlider(Qt.Horizontal)
-        self.sld_t0_dte.setRange(0, 60)    # 0DTE ~ 60일
+        self.sld_t0_dte.setRange(0, 60)
         self.sld_t0_dte.setValue(1)
         self.sld_t0_dte.setFixedHeight(18)
         self.sld_t0_dte.setStyleSheet(
@@ -163,7 +164,6 @@ class PnlLogicMixin:
         slider_row.addWidget(self.sld_t0_dte, 2)
         slider_row.addWidget(self.lbl_t0_dte)
         slider_row.addStretch()
-
         v.addLayout(slider_row)
 
         gb.setMinimumHeight(180)
@@ -284,10 +284,29 @@ class PnlLogicMixin:
     # 만기 시나리오 생성 (기존 유지)
     # ──────────────────────────────────────────────────────────
     def _build_scenarios(self, legs, ref_price, stock_price, stock_qty) -> list:
-        lo    = ref_price * 0.70
-        hi    = ref_price * 1.30
-        step  = (hi - lo) / 40
-        prices = [lo + i * step for i in range(41)]
+        # ★ 가격 범위: ref_price 기준 ±30%
+        lo = ref_price * 0.70
+        hi = ref_price * 1.30
+
+        # ★ 스텝: 레그 행사가 간격의 1/5 (최소 0.01)
+        # 예) 681·682 → 간격 1 → 스텝 0.2 → 10배 촘촘해짐
+        # 행사가 없으면 40등분 폴백
+        valid_strikes = sorted(set(
+            l["strike"] for l in legs
+            if l.get("strike") is not None
+        ))
+        if len(valid_strikes) >= 2:
+            min_gap = min(b - a for a, b in zip(valid_strikes, valid_strikes[1:]))
+            step = max(0.01, min_gap / 5)
+        elif len(valid_strikes) == 1:
+            step = max(0.01, ref_price * 0.001)
+        else:
+            step = (hi - lo) / 40   # 폴백
+
+        # 포인트 수 상한 801개 → 너무 촘촘해 느려지는 것 방지
+        n = min(801, int((hi - lo) / step) + 1)
+        step = (hi - lo) / (n - 1)
+        prices = [lo + i * step for i in range(n)]
 
         cost_basis = self._cost_basis(legs)
         scenarios  = []
@@ -372,11 +391,35 @@ class PnlLogicMixin:
         return bes
 
     # ──────────────────────────────────────────────────────────
-    # 테이블 갱신 (기존 유지)
+    # 테이블 갱신 — BEP 근처만 표시 (★ v2.3)
     # ──────────────────────────────────────────────────────────
     def _update_scenario_table(self, scenarios):
+        """
+        손익분기점(BEP) 기준 ± bep_margin % 범위의 행만 출력.
+        BEP 없는 전략(커버드콜 등)은 현재가 기준으로 폴백.
+        """
+        BEP_MARGIN_PCT = 7.0   # BEP 양쪽 몇 % 까지 보여줄지
+
+        breakevens = self._find_breakevens(scenarios)
+
+        if breakevens:
+            lo_be = min(breakevens)
+            hi_be = max(breakevens)
+        else:
+            # BEP 없으면 현재가 또는 시나리오 중간값 사용
+            prices   = [s[0] for s in scenarios]
+            mid_price = (prices[0] + prices[-1]) / 2
+            lo_be = hi_be = (self._und_price or mid_price)
+
+        span   = max(hi_be - lo_be, lo_be * 0.01)   # 최소 스팬 보장
+        margin = max(span, lo_be * (BEP_MARGIN_PCT / 100))
+        lo_cut = lo_be - margin
+        hi_cut = hi_be + margin
+
         self.tbl_scenario.setRowCount(0)
         for p, tot, tot100, pct, c_leg, p_leg in scenarios:
+            if not (lo_cut <= p <= hi_cut):
+                continue
             col = "#00ff88" if tot >= 0 else "#ff4444"
             r   = self.tbl_scenario.rowCount()
             self.tbl_scenario.insertRow(r)

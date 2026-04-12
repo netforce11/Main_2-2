@@ -67,13 +67,17 @@ from core import (
     GridTab, TabWrapper, SAVE_DIR
 )
 
+# ── Greeks 폴더 경로 등록 (Main2/Greeks/) ────────────────────
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "Greeks"))
+
 # ── 탭 모듈 ───────────────────────────────────────────────────
 from tab_options import CallPutGrid
 from tab_sniper  import SniperGrid
 from tab_oi      import OITrackerGrid
 from tab_combo_strategy import ComboStrategyGrid
 from tab_account import BalanceGrid, MultiPriceGrid
-from tab_greeks  import GreeksGrid          # ← tab_account.py 에서 분리된 신규 파일
+from tab_greeks  import GreeksGrid          # ← Main2/Greeks/tab_greeks.py
 from tab_chart   import ChartGrid
 from tab_trading import TradingGrid
 from tab_kr_futures  import KRFuturesGrid

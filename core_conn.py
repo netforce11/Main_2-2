@@ -420,15 +420,29 @@ class CoreConnMixin:
     def _on_date_edit_changed(self, qdate):
         self.edit_custom.setText(qdate.toString("yyyyMMdd"))
 
-    def _get_expiry(self):
+    def _get_expiry(self, silent: bool = False):
+        """
+        현재 선택된 만기일 (code, tag) 반환.
+        silent=True 또는 UI 초기화 중일 때는 QMessageBox 없이
+        None 반환만 하고 로그에만 기록한다 (시작 시 랙 방지).
+        """
+        if not getattr(self, '_expiry_list', None):
+            return None, ""
+
         idx = self.combo_exp.currentIndex()
+        if idx < 0 or idx >= len(self._expiry_list):
+            return None, ""
+
         _, code, tag = self._expiry_list[idx]
         if code == "CUSTOM":
             raw = (self.date_edit.date().toString("yyyyMMdd")
                    if self.date_edit.isVisible()
                    else self.edit_custom.text().strip())
-            if len(raw)==8 and raw.isdigit(): return raw, ""
-            QMessageBox.warning(self,"만기일 오류","형식: YYYYMMDD")
+            if len(raw) == 8 and raw.isdigit():
+                return raw, ""
+            # ★ QMessageBox 대신 로그만 — 초기화/자동호출 시 팝업·랙 방지
+            if not silent:
+                self._log("⚠ 만기일 형식 오류 (YYYYMMDD). 날짜를 다시 선택하세요.")
             return None, ""
         return code, tag
 

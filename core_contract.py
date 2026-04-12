@@ -74,6 +74,23 @@ if IBAPI_AVAILABLE:
                 float(order.lmtPrice if order.lmtPrice else 0),
                 str(orderState.status))
 
+            # whatIf=True 주문 결과 — 증거금 수치 emit
+            if getattr(order, 'whatIf', False):
+                def _f(v):
+                    try:
+                        f = float(v)
+                        return f if f < 1e300 else 0.0  # IB 미정의값(1.79e308) 제거
+                    except (ValueError, TypeError):
+                        return 0.0
+                bridge.whatif_sig.emit(
+                    int(orderId),
+                    _f(getattr(orderState, 'initMarginBefore',  0)),
+                    _f(getattr(orderState, 'initMarginAfter',   0)),
+                    _f(getattr(orderState, 'maintMarginBefore', 0)),
+                    _f(getattr(orderState, 'maintMarginAfter',  0)),
+                    str(getattr(orderState, 'commissionAndFees', '―')),
+                )
+
         def orderStatus(self, orderId, status, filled, remaining,
                         avgFillPrice, permId, parentId, lastFillPrice,
                         clientId, whyHeld, mktCapPrice):

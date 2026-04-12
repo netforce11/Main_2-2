@@ -125,12 +125,28 @@ class PanelsMixin(PricePanelMixin, StrategyPanelMixin):
         g5, h5 = _gb_w("Zone")
         self._zone_btns: dict = {}
         zone_grp = QButtonGroup(self)
-        for z, col in [("ITM","#ff8800"),("ATM","#ffd700"),("OTM","#00e676")]:
+        # OTM2(외가심층) → OTM1(외가) → ATM(등가) → ITM1(내가) → ITM2(내가심층)
+        zone_defs = [
+            ("OTM2", "#00b894"),   # 짙은 초록 — 외가 심층
+            ("OTM1", "#00e676"),   # 밝은 초록 — 외가
+            ("ATM",  "#ffd700"),   # 노랑       — 등가
+            ("ITM1", "#ff8800"),   # 주황       — 내가
+            ("ITM2", "#ff4444"),   # 빨강       — 내가 심층
+        ]
+        for z, col in zone_defs:
             rb = QRadioButton(z)
             rb.setStyleSheet(f"color:{col};font-size:11px;")
             if z == "ATM": rb.setChecked(True)
             zone_grp.addButton(rb)
-            rb.toggled.connect(lambda chk, b=rb: chk and self._on_zone_change(b))
+            def _on_zone_toggle(chk, b=rb, c=col, zname=z):
+                if not chk: return
+                self._on_zone_change(b)
+                # 사이드바 Zone 라벨 즉시 동기화
+                if hasattr(self, '_side_und_zone'):
+                    self._side_und_zone.setText(f"Zone: {zname}")
+                    self._side_und_zone.setStyleSheet(
+                        f"color:{c};font-size:10px;border:none;")
+            rb.toggled.connect(_on_zone_toggle)
             self._zone_btns[z] = rb; h5.addWidget(rb)
         self._ctrl_splitter.addWidget(g5)
 
@@ -141,11 +157,22 @@ class PanelsMixin(PricePanelMixin, StrategyPanelMixin):
         self.spin_n.setFixedWidth(50); self.spin_n.setFixedHeight(24)
         self.spin_n.setStyleSheet(
             "background:#0a0a18;color:#ffd700;border:1px solid #2e3060;font-size:12px;")
+        # "10 조회" 원클릭 빠른버튼
+        self.btn_fetch_10 = QPushButton("10조회"); self.btn_fetch_10.setFixedHeight(26)
+        self.btn_fetch_10.setFixedWidth(54)
+        self.btn_fetch_10.setStyleSheet(
+            "QPushButton{background:#1a3a2a;color:#00ff88;font-size:11px;"
+            "font-weight:bold;border-radius:3px;border:1px solid #2a5a3a;}"
+            "QPushButton:hover{background:#2a4a3a;}"
+            "QPushButton:pressed{background:#0a2a1a;}")
+        self.btn_fetch_10.setToolTip("행 수를 10으로 설정하고 즉시 조회")
+        self.btn_fetch_10.clicked.connect(
+            lambda: (self.spin_n.setValue(10), self.btn_fetch.click()))
         self.btn_fetch = QPushButton("🔍 조회"); self.btn_fetch.setFixedHeight(26)
         self.btn_fetch.setStyleSheet(
             "background:#1a5c2e;color:#00ff88;font-size:12px;"
             "font-weight:bold;padding:2px 10px;border-radius:4px;")
-        h6.addWidget(self.spin_n); h6.addWidget(self.btn_fetch)
+        h6.addWidget(self.spin_n); h6.addWidget(self.btn_fetch_10); h6.addWidget(self.btn_fetch)
         self._ctrl_splitter.addWidget(g6)
 
         g7, h7 = _gb_w("기초자산  (클릭→히스토리)")
@@ -161,7 +188,7 @@ class PanelsMixin(PricePanelMixin, StrategyPanelMixin):
         h7.addWidget(self.lbl_und); h7.addWidget(self.lbl_chg)
         self._ctrl_splitter.addWidget(g7)
 
-        self._ctrl_splitter.setSizes([150, 110, 165, 275, 145, 160, 210])
+        self._ctrl_splitter.setSizes([150, 110, 165, 275, 220, 160, 210])
         from PyQt5.QtWidgets import QSizePolicy as _SP
         self._ctrl_splitter.setSizePolicy(_SP.Ignored, _SP.Ignored)
         return self._ctrl_splitter

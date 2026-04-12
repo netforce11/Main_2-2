@@ -221,6 +221,38 @@ class PricePanelMixin:
         self._pp_lbl_opt_info.setText("")
         self._pp_lbl_time.setText(datetime.now().strftime("%H:%M:%S"))
 
+        # ── 사이드바 기초자산 패널 동기화 ────────────────────────
+        if hasattr(self, '_side_und_price'):
+            self._side_und_sym.setText(sym)
+            if price:
+                self._side_und_price.setText(f"{price:,.2f}")
+                if prev and prev > 0:
+                    chg = price - prev; pct = chg / prev * 100
+                    sign = "+" if chg >= 0 else ""
+                    col  = "#00e676" if chg >= 0 else "#ff5252"
+                    self._side_und_chg.setText(f"{sign}{chg:.2f} ({sign}{pct:.2f}%)")
+                    self._side_und_chg.setStyleSheet(
+                        f"color:{col};font-size:10px;border:none;")
+                else:
+                    self._side_und_chg.setText("― (―%)")
+                    self._side_und_chg.setStyleSheet("color:#aaa;font-size:10px;border:none;")
+            else:
+                self._side_und_price.setText("―")
+            # 만기 동기화
+            if hasattr(self, 'combo_exp'):
+                self._side_und_exp.setText(f"만기: {self.combo_exp.currentText()}")
+            # Zone 동기화
+            zone = getattr(self, '_zone', 'ATM')
+            zone_colors = {
+                "OTM2": "#00b894", "OTM1": "#00e676",
+                "ATM":  "#ffd700",
+                "ITM1": "#ff8800", "ITM2": "#ff4444",
+            }
+            zcol = zone_colors.get(zone, "#ffd700")
+            self._side_und_zone.setText(f"Zone: {zone}")
+            self._side_und_zone.setStyleSheet(
+                f"color:{zcol};font-size:10px;border:none;")
+
     def _update_price_panel_opt(self, side, strike, bid, ask, delta=None):
         if not hasattr(self, '_pp_lbl_price'): return
         self._pp_mode = "opt"; self._pp_opt_side = side

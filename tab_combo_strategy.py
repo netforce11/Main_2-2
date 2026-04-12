@@ -122,21 +122,47 @@ class ComboStrategyGrid(
         self._left_vsplit.setSizes([540, 160])
         return self._left_vsplit
 
-    # ── v2.3: 우측 = 추세점수판 제거, 4분할 ────────────────────
-    def _build_right_with_optimizer(self) -> QSplitter:
-        """전략설정 | Optimizer | 결과 | 차트 — 4분할."""
-        self._right_vsplit = QSplitter(Qt.Vertical)
-        self._right_vsplit.setHandleWidth(6)
-        self._right_vsplit.setStyleSheet(SPLITTER_STYLE)
-        self._right_vsplit.setChildrenCollapsible(False)
+    # ── v2.3 개선: 우측 = 전략설정 / [결과|곡선] 좌우 / Optimizer 토글 ──
+    def _build_right_with_optimizer(self) -> QWidget:
+        """
+        ★ v2.4 레이아웃:
+          [전략 설정]  ← 상단 고정 (Cost Optimiser 토글 버튼 포함)
+          [손익 결과 | 손익 곡선]  ← 좌우 대칭 QSplitter
+          [Cost Optimizer 패널]  ← 버튼 클릭 시 슬라이드 인/아웃
+        """
+        from PyQt5.QtWidgets import QWidget as _W, QVBoxLayout as _V
+        container = _W()
+        cv = _V(container)
+        cv.setSpacing(4)
+        cv.setContentsMargins(0, 0, 0, 0)
 
-        self._right_vsplit.addWidget(self._build_strategy_input_panel())
-        self._right_vsplit.addWidget(self._build_optimizer_panel())
-        self._right_vsplit.addWidget(self._build_result_panel())
-        self._right_vsplit.addWidget(self._build_spread_chart_panel())
+        # 상단: 전략 설정 (Cost Optimiser 토글 버튼 포함)
+        cv.addWidget(self._build_strategy_input_panel())
 
-        self._right_vsplit.setSizes([220, 260, 260, 200])
-        return self._right_vsplit
+        # 중간: 손익 결과(좌) | 손익 곡선(우) — 50:50
+        from PyQt5.QtWidgets import QSplitter as _S
+        from PyQt5.QtCore import Qt as _Qt
+        self._mid_hsplit = _S(_Qt.Horizontal)
+        self._mid_hsplit.setHandleWidth(6)
+        self._mid_hsplit.setStyleSheet(SPLITTER_STYLE)
+        self._mid_hsplit.setChildrenCollapsible(False)
+        self._mid_hsplit.addWidget(self._build_result_panel())
+        self._mid_hsplit.addWidget(self._build_spread_chart_panel())
+        self._mid_hsplit.setSizes([1, 1])
+        cv.addWidget(self._mid_hsplit, 1)
+
+        # 하단: Cost Optimizer 슬라이드 패널 (초기 접힘)
+        from PyQt5.QtWidgets import QWidget as _W2, QVBoxLayout as _V2
+        self._opt_wrapper = _W2()
+        self._opt_wrapper.setMaximumHeight(0)
+        self._opt_wrapper.setMinimumHeight(0)
+        ow = _V2(self._opt_wrapper)
+        ow.setContentsMargins(0, 4, 0, 0)
+        ow.setSpacing(0)
+        ow.addWidget(self._build_optimizer_panel())
+        cv.addWidget(self._opt_wrapper)
+
+        return container
 
     # ── Tab7(ChartGrid) → DF 수신 진입점 ───────────────────────
     def set_trend_df(self, df):
@@ -191,9 +217,9 @@ class ComboStrategyGrid(
     def _get_extra_settings(self) -> dict:
         d = {"strat_idx": self.combo_strat.currentIndex()}
         try:
-            d["main_hsplit"]  = list(self._main_hsplit.sizes())
-            d["left_vsplit"]  = list(self._left_vsplit.sizes())
-            d["right_vsplit"] = list(self._right_vsplit.sizes())
+            d["main_hsplit"] = list(self._main_hsplit.sizes())
+            d["left_vsplit"] = list(self._left_vsplit.sizes())
+            d["mid_hsplit"]  = list(self._mid_hsplit.sizes())
         except Exception:
             pass
         return d
@@ -212,8 +238,8 @@ class ComboStrategyGrid(
                     self._main_hsplit.setSizes(s["main_hsplit"])
                 if s.get("left_vsplit"):
                     self._left_vsplit.setSizes(s["left_vsplit"])
-                if s.get("right_vsplit"):
-                    self._right_vsplit.setSizes(s["right_vsplit"])
+                if s.get("mid_hsplit"):
+                    self._mid_hsplit.setSizes(s["mid_hsplit"])
             except Exception:
                 pass
         QTimer.singleShot(100, _restore)

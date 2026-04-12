@@ -212,16 +212,19 @@ class CallPutGrid(
         root.addWidget(self.log)
 
     # ── Watchlist sidebar ─────────────────────────────────────
-    def _build_watchlist_panel(self) -> QGroupBox:
-        gb = QGroupBox("관심종목")
-        gb.setMinimumWidth(80)
-        gb.setMaximumWidth(220)
-        gb.setStyleSheet(
+    def _build_watchlist_panel(self) -> QWidget:
+        """관심종목(상단) + 기초자산(하단) 수직 QSplitter 컨테이너."""
+
+        _gb_ss = (
             "QGroupBox{font-size:11px;color:#5dade2;font-weight:bold;"
             "border:1px solid #2a2a5a;border-radius:4px;"
             "margin-top:8px;padding-top:6px;}"
             "QGroupBox::title{subcontrol-origin:margin;left:8px;}")
-        v = QVBoxLayout(gb)
+
+        # ── 상단: 관심종목 ────────────────────────────────────
+        gb_watch = QGroupBox("관심종목")
+        gb_watch.setStyleSheet(_gb_ss)
+        v = QVBoxLayout(gb_watch)
         v.setContentsMargins(4, 6, 4, 4); v.setSpacing(3)
 
         self.watchlist = QListWidget()
@@ -248,4 +251,75 @@ class CallPutGrid(
                 "font-weight:bold;border-radius:3px;")
             b.clicked.connect(slot); btn_row.addWidget(b)
         v.addLayout(btn_row)
-        return gb
+
+        # ── 하단: 기초자산 패널 ───────────────────────────────
+        gb_und = QGroupBox("기초자산")
+        gb_und.setStyleSheet(
+            "QGroupBox{font-size:11px;color:#ffd700;font-weight:bold;"
+            "border:1px solid #2a2a4a;border-radius:4px;"
+            "margin-top:8px;padding-top:6px;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:8px;}")
+        vu = QVBoxLayout(gb_und)
+        vu.setContentsMargins(4, 8, 4, 6); vu.setSpacing(4)
+
+        # 종목명
+        self._side_und_sym = QLabel("SPX")
+        self._side_und_sym.setAlignment(Qt.AlignCenter)
+        self._side_und_sym.setStyleSheet(
+            "color:#5dade2;font-size:12px;font-weight:bold;border:none;")
+        vu.addWidget(self._side_und_sym)
+
+        # 현재가 (클릭 → 히스토리)
+        self._side_und_price = QLabel("―")
+        self._side_und_price.setAlignment(Qt.AlignCenter)
+        self._side_und_price.setStyleSheet(
+            "color:#ffd700;font-size:17px;font-weight:bold;"
+            "border:1px solid #2a2a5a;border-radius:4px;"
+            "background:#08080f;padding:2px 4px;")
+        self._side_und_price.setCursor(Qt.PointingHandCursor)
+        self._side_und_price.setToolTip("클릭 → 히스토리 조회")
+        self._side_und_price.mousePressEvent = lambda e: self._on_und_label_clicked()
+        vu.addWidget(self._side_und_price)
+
+        # 등락
+        self._side_und_chg = QLabel("― (―%)")
+        self._side_und_chg.setAlignment(Qt.AlignCenter)
+        self._side_und_chg.setStyleSheet("color:#aaa;font-size:10px;border:none;")
+        vu.addWidget(self._side_und_chg)
+
+        # 구분선
+        from PyQt5.QtWidgets import QFrame
+        sep = QFrame(); sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("border:none;background:#2a2a5a;max-height:1px;")
+        vu.addWidget(sep)
+
+        # 만기
+        self._side_und_exp = QLabel("만기: ―")
+        self._side_und_exp.setAlignment(Qt.AlignCenter)
+        self._side_und_exp.setStyleSheet("color:#90caf9;font-size:10px;border:none;")
+        vu.addWidget(self._side_und_exp)
+
+        # Zone 현황 표시
+        self._side_und_zone = QLabel("Zone: ATM")
+        self._side_und_zone.setAlignment(Qt.AlignCenter)
+        self._side_und_zone.setStyleSheet("color:#ffd700;font-size:10px;border:none;")
+        vu.addWidget(self._side_und_zone)
+
+        vu.addStretch()
+
+        # ── 수직 스플리터 조립 ────────────────────────────────
+        spl = self._spl(Qt.Vertical)
+        spl.addWidget(gb_watch)
+        spl.addWidget(gb_und)
+        spl.setSizes([300, 140])      # 관심종목 ~70% / 기초자산 ~30%
+        spl.setCollapsible(0, False)
+        spl.setCollapsible(1, False)
+
+        # 폭 제한 컨테이너
+        container = QWidget()
+        container.setMinimumWidth(80)
+        container.setMaximumWidth(220)
+        cv = QVBoxLayout(container)
+        cv.setContentsMargins(0, 0, 0, 0); cv.setSpacing(0)
+        cv.addWidget(spl)
+        return container
