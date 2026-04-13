@@ -38,6 +38,12 @@ def _fmt_expiry(raw: str) -> str:
 
 def _on_strat_change(self, idx: int):
     strat = self.combo_strat.currentText()
+    # 전략 변경 시 기존 실시간 스트림 모두 해제
+    try:
+        from combo_ui_leg_panel import cancel_all_streams
+        cancel_all_streams(self)
+    except Exception:
+        pass
     self._rebuild_legs(self._get_leg_template(strat))
     needs_stock = "커버드" in strat or "프로텍티브" in strat
     self.edit_stock_price.setEnabled(needs_stock)
@@ -96,6 +102,11 @@ def _get_leg_template(self, strat: str) -> list:
 
 def _rebuild_legs(self, legs: list):
     """레그 테이블 재구성."""
+    # 행사가(3) 변경 → Mid-price 자동 조회 훅 연결 (최초 1회)
+    if not getattr(self, '_strike_hook_connected', False):
+        self.tbl_legs.itemChanged.connect(lambda item: _on_strike_changed(self, item))
+        self._strike_hook_connected = True
+
     self.tbl_legs.setRowCount(0)
     for i, leg in enumerate(legs):
         r = self.tbl_legs.rowCount()
@@ -129,6 +140,12 @@ def _rebuild_legs(self, legs: list):
 
 def _reset_legs(self):
     """레그 + 결과 초기화."""
+    # 초기화 시 실시간 스트림 먼저 해제 (_on_strat_change 내부에서도 해제되지만 명시적으로)
+    try:
+        from combo_ui_leg_panel import cancel_all_streams
+        cancel_all_streams(self)
+    except Exception:
+        pass
     self._on_strat_change(self.combo_strat.currentIndex())
     self.tbl_scenario.setRowCount(0)
     for v in self._kpi_widgets.values():
@@ -179,3 +196,111 @@ def _manual_del_leg(self):
     if row >= 0:
         self.tbl_legs.removeRow(row)
         self._log(f"➖ 레그{row+1} 제거 (수동)")
+
+
+# ── 행사가 입력 시 Mid-price 자동 조회 ───────────────────────────
+
+def _on_strike_changed(self, item):
+    """
+    tbl_legs 행사가(컬럼 3) 변경 시 자동 호출.
+
+    흐름:
+      1. 행사가 값 파싱
+      2. reqContractDetails → conId 획득
+      3. fill_premium_from_market(row, conId) 호출
+         → Mid-price → 프리미엄 셀 자동 입력
+         → _recalc_net_price() → Net Price 라벨 갱신
+    """
+    if item.column() != 3:          # 행사가 컬럼만 처리
+        return
+    if getattr(self, '_leg_item_changing', False):
+        return
+
+    row    = item.row()
+    strike = item.text().strip()
+    if not strike or strike in ("―", ""):
+        return
+
+    try:
+        strike_f = float(strike)
+    except ValueError:
+        return
+
+    # 해당 레그의 C/P, 만기 읽기
+    def _cell(c):
+        it = self.tbl_legs.item(row, c)
+        return it.text().strip() if it else ""
+
+    cp     = _cell(2).upper() or "C"
+    expiry = _cell(6)
+
+    from combo_order_utils import _parse_expiry_display
+    raw_expiry = _parse_expiry_display(expiry)
+    if not raw_expiry:
+        return
+
+    sym_w  = getattr(self, 'edit_sym_combo', None)
+    symbol = sym_w.text().strip().upper() if sym_w else "SPX"
+
+    # conId 조회 후 fill_premium_from_market 호출
+    _fetch_conid_then_premium(self, row, symbol, strike_f, cp, raw_expiry)
+
+
+def _fetch_conid_then_premium(self, row, symbol, strike, cp, expiry):
+    """
+    reqContractDetails → conId → fill_premium_from_market(row, conId).
+    타임아웃 3초 / 실패 시 conId=0으로 폴백(fill 스킵).
+    """
+    try:
+        from core_contract import make_opt_contract
+        from combo_ui_leg_panel import fill_premium_from_market
+    except ImportError:
+        return
+
+    from PyQt5.QtCore import QTimer
+
+    ib = getattr(self, 'mw', None)
+    ib = getattr(ib, 'ib', None) if ib else None
+    if ib is None:
+        return
+
+    rid = 8850 + row   # reqContractDetails용 ID (leg_panel 8800~8815와 분리)
+    opt = make_opt_contract(symbol=symbol, strike=strike, right=cp, expiry=expiry)
+
+    _orig_cd     = getattr(ib, 'contractDetails',    lambda *a: None)
+    _orig_cd_end = getattr(ib, 'contractDetailsEnd', lambda *a: None)
+    resolved = {}
+
+    def _on_cd(req_id, cd):
+        if req_id == rid:
+            resolved['conId'] = cd.contract.conId
+
+    def _on_cd_end(req_id):
+        if req_id != rid:
+            return
+        ib.contractDetails    = _orig_cd
+        ib.contractDetailsEnd = _orig_cd_end
+        con_id = resolved.get('conId', 0)
+        if con_id > 0:
+            fill_premium_from_market(self, row, con_id)
+        else:
+            self._log(f"⚠ 레그{row+1} conId 조회 실패 — 프리미엄 수동 입력 필요")
+
+    ib.contractDetails    = _on_cd
+    ib.contractDetailsEnd = _on_cd_end
+
+    # 3초 타임아웃
+    def _timeout():
+        if ib.contractDetails is _on_cd:
+            ib.contractDetails    = _orig_cd
+            ib.contractDetailsEnd = _orig_cd_end
+            self._log(f"⚠ 레그{row+1} conId 조회 타임아웃")
+
+    QTimer.singleShot(3_000, _timeout)
+
+    try:
+        ib.reqContractDetails(rid, opt)
+    except Exception as e:
+        ib.contractDetails    = _orig_cd
+        ib.contractDetailsEnd = _orig_cd_end
+        self._log(f"❌ reqContractDetails 레그{row+1}: {e}")

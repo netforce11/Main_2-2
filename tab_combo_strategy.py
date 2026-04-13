@@ -17,7 +17,7 @@ v2.0 — 파일 분리 (200줄 단위 기능별)
 모듈 구조:
   combo_constants.py    — 상수 / 전략 목록 / 전략 설명 / 공통 유틸
   combo_ui_left.py      — 좌측 패널 (옵션 체인) Mixin
-  combo_ui_right.py     — 우측 패널 (전략 설정 + 결과) Mixin
+  combo_ui_right_panel.py — 우측 패널 (전략 설정 + 결과) Mixin
   combo_logic.py        — 손익 계산 로직 Mixin
   combo_optimizer.py    — Cost Optimizer 패널 + 탐색 로직 Mixin
   combo_trend_panel.py  — 추세 점수판 UI 위젯
@@ -46,7 +46,7 @@ from core import bridge, build_expiry_list, ts, REQ_UND
 
 from combo_constants   import SPLITTER_STYLE
 from combo_ui_left     import LeftPanelMixin
-from combo_ui_right    import RightPanelMixin
+from combo_ui_right_panel import RightPanelMixin
 from combo_logic       import PnlLogicMixin
 from combo_optimizer   import OptimizerPanelMixin
 from combo_trend_panel import TrendScorePanel

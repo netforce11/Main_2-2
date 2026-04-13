@@ -250,60 +250,49 @@ class RightPanelMixin:
         stock_row.addWidget(self.spin_stock_qty)
         right_v.addLayout(stock_row)
 
-        # 계산 / 초기화 / Optimizer / 합성주문 버튼
-        btn_row = QHBoxLayout(); btn_row.setSpacing(5)
-        btn_calc = QPushButton("📊 손익 계산")
-        btn_calc.setStyleSheet(
-            "background:#1a5c2e;color:#00ff88;font-size:12px;"
-            "font-weight:bold;padding:6px 10px;border-radius:4px;")
-        btn_calc.clicked.connect(self._calc_pnl)
+        # ── 버튼 헬퍼 ─────────────────────────────────────────
+        def _mk_btn(text, bg, fg, fn, obj_name=None):
+            b = QPushButton(text)
+            b.setFixedHeight(28)
+            if obj_name:
+                b.setObjectName(obj_name)
+                b.setStyleSheet(
+                    f"QPushButton#{obj_name}{{background:{bg};color:{fg};"
+                    f"border:1px solid {fg};border-radius:4px;font-size:11px;"
+                    f"font-weight:bold;padding:3px 8px;}}"
+                    f"QPushButton#{obj_name}:hover{{background:{fg};color:#000;}}"
+                    f"QPushButton#{obj_name}:disabled{{background:#111;color:#444;border-color:#333;}}")
+            else:
+                b.setStyleSheet(
+                    f"background:{bg};color:{fg};font-size:11px;"
+                    f"font-weight:bold;padding:3px 8px;border-radius:4px;")
+            b.clicked.connect(fn)
+            return b
 
-        btn_reset = QPushButton("🗑 초기화")
-        btn_reset.setStyleSheet(
-            "background:#5a1a1a;color:#ff6666;font-weight:bold;"
-            "padding:6px 10px;border-radius:4px;")
-        btn_reset.clicked.connect(self._reset_legs)
-
-        self._btn_opt_toggle = QPushButton("🔍 Optimiser ▼")
-        self._btn_opt_toggle.setStyleSheet(
-            "background:#1a2a4a;color:#90caf9;font-size:11px;"
-            "font-weight:bold;padding:6px 10px;border-radius:4px;"
-            "border:1px solid #3a5a9a;")
-        self._btn_opt_toggle.clicked.connect(self._toggle_optimizer_panel)
-
-        # ★ v2.3 합성 주문 버튼
-        self.btn_synthetic_order = QPushButton("⚡ 합성 주문")
-        self.btn_synthetic_order.setObjectName("btn_synthetic_order")
-        self.btn_synthetic_order.setToolTip(
-            "레그 설정을 기반으로 합성 주문을 전송합니다.\n"
-            "우측 [증거금 확인] 탭에서 가능 여부를 확인하세요.")
-        self.btn_synthetic_order.setStyleSheet(
-            "QPushButton#btn_synthetic_order{"
-            "background:#0e2e1a;color:#00ff88;border:1px solid #00ff88;"
-            "border-radius:4px;font-size:12px;font-weight:bold;padding:6px 10px;}"
-            "QPushButton#btn_synthetic_order:hover{background:#00ff88;color:#000;}"
-            "QPushButton#btn_synthetic_order:disabled{background:#111;color:#444;border-color:#333;}")
-        self.btn_synthetic_order.clicked.connect(self._on_synthetic_order)
-
-        # ★ v2.4 증거금 실시간 조회 버튼
-        self.btn_check_margin = QPushButton("💰 증거금 조회")
-        self.btn_check_margin.setObjectName("btn_check_margin")
-        self.btn_check_margin.setToolTip(
-            "IB TWS에서 실시간 계좌 증거금을 조회합니다.\n"
-            "연결 상태에서만 동작합니다.")
-        self.btn_check_margin.setStyleSheet(
-            "QPushButton#btn_check_margin{"
-            "background:#1a1a0e;color:#ffd700;border:1px solid #ffd700;"
-            "border-radius:4px;font-size:12px;font-weight:bold;padding:6px 10px;}"
-            "QPushButton#btn_check_margin:hover{background:#ffd700;color:#000;}"
-            "QPushButton#btn_check_margin:disabled{background:#111;color:#444;border-color:#333;}")
-        self.btn_check_margin.clicked.connect(self._on_check_margin)
-
-        btn_row.addWidget(btn_calc)
-        btn_row.addWidget(btn_reset)
-        btn_row.addWidget(self._btn_opt_toggle)
-        btn_row.addWidget(self.btn_synthetic_order)
+        # ── 그룹 A: 손익계산 / 증거금조회 / 초기화 / Optimiser ──
+        btn_row = QHBoxLayout(); btn_row.setSpacing(4)
+        btn_row.addWidget(_mk_btn("📊 손익 계산",  "#1a5c2e", "#00ff88", self._calc_pnl))
+        self.btn_check_margin = _mk_btn("💰 증거금 조회", "#1a1a0e", "#ffd700", self._on_check_margin, "btn_check_margin")
         btn_row.addWidget(self.btn_check_margin)
+        btn_row.addWidget(_mk_btn("🗑 초기화", "#5a1a1a", "#ff6666", self._reset_legs))
+        self._btn_opt_toggle = _mk_btn("🔍 Optimiser ▼", "#1a2a4a", "#90caf9", self._toggle_optimizer_panel)
+        btn_row.addWidget(self._btn_opt_toggle)
+
+        # 구분선
+        sep = QLabel("│")
+        sep.setStyleSheet("color:#333;font-size:16px;border:none;")
+        sep.setFixedWidth(10); sep.setAlignment(Qt.AlignCenter)
+        btn_row.addWidget(sep)
+
+        # ── 그룹 B: 합성주문 / 미체결 / 정정 / 취소 ──────────────
+        self.btn_synthetic_order = _mk_btn("⚡ 합성 주문", "#0e2e1a", "#00ff88", self._on_synthetic_order, "btn_synthetic_order")
+        btn_row.addWidget(self.btn_synthetic_order)
+        self.btn_open_orders  = _mk_btn("📋 미체결", "#1a1a3a", "#aabbff", self._on_open_orders,  "btn_open_orders")
+        self.btn_modify_order = _mk_btn("✏ 정정",   "#2a1a0a", "#ffaa44", self._on_modify_order, "btn_modify_order")
+        self.btn_cancel_order = _mk_btn("✖ 취소",   "#2a0a0a", "#ff4444", self._on_cancel_order, "btn_cancel_order")
+        btn_row.addWidget(self.btn_open_orders)
+        btn_row.addWidget(self.btn_modify_order)
+        btn_row.addWidget(self.btn_cancel_order)
         right_v.addLayout(btn_row)
 
         # ★ v2.3 증거금확인 / 합성잔고 탭 (우측 하단)
@@ -1013,6 +1002,23 @@ def _on_synthetic_order(self):
             _place_combo_legs(self, legs, strat)
 
     _send_whatif_order(self, legs, strat, cost_str, on_done=_on_margin_checked)
+
+
+
+def _on_open_orders(self):
+    """미체결 주문 조회 → 팝업 테이블 표시."""
+    from combo_order_open import on_open_orders
+    on_open_orders(self)
+
+def _on_modify_order(self):
+    """정정 주문 — 미체결 조회 후 선택 정정."""
+    from combo_order_open import on_modify_order
+    on_modify_order(self)
+
+def _on_cancel_order(self):
+    """취소 주문 — 미체결 조회 후 선택 취소."""
+    from combo_order_open import on_cancel_order
+    on_cancel_order(self)
 
 
 def _on_check_margin(self):

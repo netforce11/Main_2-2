@@ -1,10 +1,5 @@
-"""
-combo_ui_synthetic_panel.py — SyntheticStatusPanel 위젯
-────────────────────────────────────────────────────────
-전략설정 패널 우측 하단에 embed되는 탭 위젯.
-  탭1: 📊 증거금 확인 — update_margin() 으로 갱신
-  탭2: 📋 합성 잔고  — add_position() / update_position_prices()
-────────────────────────────────────────────────────────
+"""combo_ui_synthetic_panel.py — SyntheticStatusPanel 위젯
+탭1: 📊 증거금 확인 (update_margin)  탭2: 📋 합성 잔고 (add_position)
 """
 
 from PyQt5.QtWidgets import (
@@ -13,33 +8,32 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QSizePolicy,
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QFont
+
+# ── 폰트 상수 (setFont로 적용 — QSS font-size 캐스케이딩 우회) ───
+def _f(pt, bold=False):
+    f = QFont(); f.setPointSize(pt)
+    if bold: f.setBold(True)
+    return f
 
 _TAB_STYLE = """
 QTabWidget::pane { border:1px solid #1a1a3a; background:#07070f; }
-QTabBar::tab {
-    background:#0d0d22; color:#666688;
-    padding:3px 10px; border:1px solid #1a1a3a; border-bottom:none; font-size:11px;
-}
+QTabBar::tab { background:#0d0d22; color:#666688;
+    padding:5px 12px; border:1px solid #1a1a3a; border-bottom:none; }
 QTabBar::tab:selected { background:#07070f; color:#e0e0ff; border-top:2px solid #00ff88; }
 QTabBar::tab:hover { color:#aaaacc; }
 """
-
 _TBL_STYLE = """
-QTableWidget {
-    background:#07070f; alternate-background-color:#0c0c20;
-    color:#cccccc; gridline-color:#1a1a3a; border:none; font-size:11px;
-}
+QTableWidget { background:#07070f; alternate-background-color:#0c0c20;
+    color:#cccccc; gridline-color:#1a1a3a; border:none; }
 QTableWidget::item:selected { background:#1a1a3a; color:#ffffff; }
-QHeaderView::section {
-    background:#0a0a1e; color:#90caf9; border:1px solid #1a1a3a;
-    font-weight:bold; padding:2px 4px; font-size:10px;
-}
+QHeaderView::section { background:#0a0a1e; color:#90caf9;
+    border:1px solid #1a1a3a; font-weight:bold; padding:3px 6px; }
 """
 
 
 class SyntheticStatusPanel(QWidget):
-    """합성 주문 상태 패널 (v2.3)."""
+    """합성 주문 상태 패널 (v2.5)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,19 +47,19 @@ class SyntheticStatusPanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         self._tabs = QTabWidget()
         self._tabs.setStyleSheet(_TAB_STYLE)
+        self._tabs.tabBar().setFont(_f(12, bold=True))
         self._tabs.addTab(self._build_margin_tab(),   "📊 증거금 확인")
         self._tabs.addTab(self._build_position_tab(), "📋 합성 잔고")
         root.addWidget(self._tabs)
 
-    # ── 탭1: 증거금 확인 ─────────────────────────────────────
     def _build_margin_tab(self) -> QWidget:
         w = QWidget(); w.setStyleSheet("background:#07070f;")
         lay = QVBoxLayout(w); lay.setContentsMargins(8, 6, 8, 6); lay.setSpacing(5)
 
         def kv(label):
             row = QHBoxLayout()
-            lk = QLabel(label); lk.setStyleSheet("color:#888;font-size:10px;border:none;")
-            lv = QLabel("―");   lv.setStyleSheet("color:#e0e0e0;font-size:11px;font-weight:bold;border:none;")
+            lk = QLabel(label); lk.setStyleSheet("color:#888;border:none;"); lk.setFont(_f(12))
+            lv = QLabel("―");   lv.setStyleSheet("color:#e0e0e0;border:none;"); lv.setFont(_f(13, True))
             row.addWidget(lk); row.addStretch(); row.addWidget(lv)
             return row, lv
 
@@ -74,46 +68,45 @@ class SyntheticStatusPanel(QWidget):
         row_a, self._lbl_m_available = kv("주문가능")
         row_r, self._lbl_m_required  = kv("필요증거금")
 
-        for row in (row_s, row_c):
-            lay.addLayout(row)
+        for row in (row_s, row_c): lay.addLayout(row)
         sep1 = QFrame(); sep1.setFrameShape(QFrame.HLine)
-        sep1.setStyleSheet("color:#1a1a3a; max-height:1px;")
-        lay.addWidget(sep1)
-        for row in (row_a, row_r):
-            lay.addLayout(row)
+        sep1.setStyleSheet("color:#1a1a3a; max-height:1px;"); lay.addWidget(sep1)
+        for row in (row_a, row_r): lay.addLayout(row)
         sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine)
-        sep2.setStyleSheet("color:#1a1a3a; max-height:1px;")
-        lay.addWidget(sep2)
+        sep2.setStyleSheet("color:#1a1a3a; max-height:1px;"); lay.addWidget(sep2)
 
         self._lbl_margin_status = QLabel("―")
         self._lbl_margin_status.setAlignment(Qt.AlignCenter)
+        self._lbl_margin_status.setFont(_f(13, bold=True))
         self._lbl_margin_status.setStyleSheet(
-            "font-size:11px;font-weight:bold;color:#555577;"
-            "padding:5px;border:1px solid #2a2a4a;border-radius:4px;background:#0a0a1e;")
+            "color:#555577;padding:7px;border:1px solid #2a2a4a;"
+            "border-radius:4px;background:#0a0a1e;")
         lay.addWidget(self._lbl_margin_status)
         lay.addStretch()
         return w
 
-    # ── 탭2: 합성 잔고 ────────────────────────────────────────
     def _build_position_tab(self) -> QWidget:
         w = QWidget(); w.setStyleSheet("background:#07070f;")
         lay = QVBoxLayout(w); lay.setContentsMargins(4, 4, 4, 4); lay.setSpacing(4)
 
         summary = QHBoxLayout()
-        lk = QLabel("총 손익"); lk.setStyleSheet("color:#888;font-size:10px;border:none;")
+        lk = QLabel("총 손익"); lk.setStyleSheet("color:#888;border:none;"); lk.setFont(_f(12))
         self._lbl_total_pnl = QLabel("$0.00")
-        self._lbl_total_pnl.setStyleSheet(
-            "color:#e0e0e0;font-size:12px;font-weight:bold;border:none;")
+        self._lbl_total_pnl.setStyleSheet("color:#e0e0e0;border:none;")
+        self._lbl_total_pnl.setFont(_f(14, bold=True))
         summary.addWidget(lk); summary.addStretch(); summary.addWidget(self._lbl_total_pnl)
         lay.addLayout(summary)
 
         self._lbl_no_pos = QLabel("체결된 합성 포지션이 없습니다.")
         self._lbl_no_pos.setAlignment(Qt.AlignCenter)
-        self._lbl_no_pos.setStyleSheet("color:#333355;font-size:11px;padding:14px;")
+        self._lbl_no_pos.setFont(_f(12))
+        self._lbl_no_pos.setStyleSheet("color:#333355;padding:14px;")
         lay.addWidget(self._lbl_no_pos)
 
         self._tbl_pos = QTableWidget(0, 5)
         self._tbl_pos.setHorizontalHeaderLabels(["전략명","수량","진입가","현재가","손익"])
+        self._tbl_pos.setFont(_f(12))
+        self._tbl_pos.horizontalHeader().setFont(_f(11, bold=True))
         self._tbl_pos.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         for c in range(1, 5):
             self._tbl_pos.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
@@ -142,8 +135,8 @@ class SyntheticStatusPanel(QWidget):
             st, col, bg, bc = f"❌  증거금 부족  (${shortage:,.2f} 부족)", "#ff4444", "#1a0707", "#ff4444"
         self._lbl_margin_status.setText(st)
         self._lbl_margin_status.setStyleSheet(
-            f"font-size:11px;font-weight:bold;color:{col};"
-            f"padding:5px;border:1px solid {bc};border-radius:4px;background:{bg};")
+            f"color:{col};padding:7px;border:1px solid {bc};"
+            f"border-radius:4px;background:{bg};")
         self._tabs.setCurrentIndex(0)
 
     def add_position(self, fill_info: dict):
@@ -162,15 +155,13 @@ class SyntheticStatusPanel(QWidget):
         self._positions.clear()
         self._refresh_pos_table()
 
-    # ── 내부 ──────────────────────────────────────────────────
     def _refresh_pos_table(self):
         tbl = self._tbl_pos
         tbl.setRowCount(0)
         if not self._positions:
             self._lbl_no_pos.setVisible(True); tbl.setVisible(False)
             self._lbl_total_pnl.setText("$0.00")
-            self._lbl_total_pnl.setStyleSheet(
-                "color:#e0e0e0;font-size:12px;font-weight:bold;border:none;")
+            self._lbl_total_pnl.setStyleSheet("color:#e0e0e0;border:none;")
             return
         self._lbl_no_pos.setVisible(False); tbl.setVisible(True)
         tbl.setRowCount(len(self._positions))
@@ -198,5 +189,4 @@ class SyntheticStatusPanel(QWidget):
 
         tc = "#00ff88" if total_pnl > 0 else "#ff4444" if total_pnl < 0 else "#888899"
         self._lbl_total_pnl.setText(f"${total_pnl:+,.2f}")
-        self._lbl_total_pnl.setStyleSheet(
-            f"color:{tc};font-size:12px;font-weight:bold;border:none;")
+        self._lbl_total_pnl.setStyleSheet(f"color:{tc};border:none;")
