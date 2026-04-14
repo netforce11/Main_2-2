@@ -41,9 +41,9 @@ def _build_result_panel(self) -> QGroupBox:
         box.setStyleSheet(
             "border:1px solid #2a2a4a;border-radius:5px;background:#0a0a1e;")
         lk = QLabel(label)
-        lk.setStyleSheet(f"color:{col};font-size:10px;font-weight:bold;border:none;")
+        lk.setStyleSheet(f"color:{col};font-size:13px;font-weight:bold;border:none;")
         lv = QLabel("―")
-        lv.setFont(_QFont("Arial", 13, _QFont.Bold))
+        lv.setFont(_QFont("Arial", 16, _QFont.Bold))
         lv.setStyleSheet(f"color:{col};border:none;")
         lv.setAlignment(Qt.AlignCenter)
         bv.addWidget(lk); bv.addWidget(lv)
@@ -60,9 +60,9 @@ def _build_result_panel(self) -> QGroupBox:
     ]
     for i, (key, label) in enumerate(_SG):
         lk = QLabel(label + ":")
-        lk.setStyleSheet("color:#aaa;font-size:10px;border:none;")
+        lk.setStyleSheet("color:#aaa;font-size:13px;border:none;")
         lv = QLabel("―")
-        lv.setStyleSheet("color:#ffd700;font-size:11px;font-weight:bold;border:none;")
+        lv.setStyleSheet("color:#ffd700;font-size:14px;font-weight:bold;border:none;")
         sg.addWidget(lk, i // 2, (i % 2) * 2)
         sg.addWidget(lv, i // 2, (i % 2) * 2 + 1)
         self._spread_labels[key] = lv
@@ -82,7 +82,7 @@ def _build_result_panel(self) -> QGroupBox:
         "QHeaderView::section{background:#0a0a1e;color:#90caf9;"
         "border:1px solid #1a1a3a;font-weight:bold;}")
     v.addWidget(self.tbl_scenario, 1)
-    gb.setMinimumHeight(200)
+    gb.setMinimumHeight(80)
     return gb
 
 
@@ -105,7 +105,7 @@ def _build_spread_chart_panel(self) -> QGroupBox:
         v.addWidget(self._pw_pnl, 1)
     else:
         v.addWidget(QLabel("pip install pyqtgraph"))
-    gb.setMinimumHeight(160)
+    gb.setMinimumHeight(80)
     return gb
 
 

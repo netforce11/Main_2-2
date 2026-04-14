@@ -77,8 +77,15 @@ class ComboStrategyGrid(
 
         self._trend_panel: TrendScorePanel | None = None
 
+        # [S11] Chaser 상태 미리 초기화 — _on_chase_click 방어
+        from combo_order_chaser import init_chaser_state
+        init_chaser_state(self)
+
         self._build()
         self._connect_signals()
+
+        # [S11] 연결 시 계좌 표시 갱신 — 이미 연결된 경우 즉시 시도
+        QTimer.singleShot(500, self._refresh_account_display)
 
     # ──────────────────────────────────────────────────────────
     def _build(self):
@@ -122,47 +129,14 @@ class ComboStrategyGrid(
         self._left_vsplit.setSizes([540, 160])
         return self._left_vsplit
 
-    # ── v2.3 개선: 우측 = 전략설정 / [결과|곡선] 좌우 / Optimizer 토글 ──
+    # ── 우측 패널: RightPanelMixin._build_right_panel() 에 위임 (v2.6) ──
     def _build_right_with_optimizer(self) -> QWidget:
         """
-        ★ v2.4 레이아웃:
-          [전략 설정]  ← 상단 고정 (Cost Optimiser 토글 버튼 포함)
-          [손익 결과 | 손익 곡선]  ← 좌우 대칭 QSplitter
-          [Cost Optimizer 패널]  ← 버튼 클릭 시 슬라이드 인/아웃
+        RightPanelMixin._build_right_panel() 으로 통합.
+        계좌바 / 전략설정 / 손익결과|곡선 / Optimizer 슬라이드
+        모두 combo_ui_right_panel.py 에서 빌드.
         """
-        from PyQt5.QtWidgets import QWidget as _W, QVBoxLayout as _V
-        container = _W()
-        cv = _V(container)
-        cv.setSpacing(4)
-        cv.setContentsMargins(0, 0, 0, 0)
-
-        # 상단: 전략 설정 (Cost Optimiser 토글 버튼 포함)
-        cv.addWidget(self._build_strategy_input_panel())
-
-        # 중간: 손익 결과(좌) | 손익 곡선(우) — 50:50
-        from PyQt5.QtWidgets import QSplitter as _S
-        from PyQt5.QtCore import Qt as _Qt
-        self._mid_hsplit = _S(_Qt.Horizontal)
-        self._mid_hsplit.setHandleWidth(6)
-        self._mid_hsplit.setStyleSheet(SPLITTER_STYLE)
-        self._mid_hsplit.setChildrenCollapsible(False)
-        self._mid_hsplit.addWidget(self._build_result_panel())
-        self._mid_hsplit.addWidget(self._build_spread_chart_panel())
-        self._mid_hsplit.setSizes([1, 1])
-        cv.addWidget(self._mid_hsplit, 1)
-
-        # 하단: Cost Optimizer 슬라이드 패널 (초기 접힘)
-        from PyQt5.QtWidgets import QWidget as _W2, QVBoxLayout as _V2
-        self._opt_wrapper = _W2()
-        self._opt_wrapper.setMaximumHeight(0)
-        self._opt_wrapper.setMinimumHeight(0)
-        ow = _V2(self._opt_wrapper)
-        ow.setContentsMargins(0, 4, 0, 0)
-        ow.setSpacing(0)
-        ow.addWidget(self._build_optimizer_panel())
-        cv.addWidget(self._opt_wrapper)
-
-        return container
+        return self._build_right_panel()
 
     # ── Tab7(ChartGrid) → DF 수신 진입점 ───────────────────────
     def set_trend_df(self, df):
@@ -200,12 +174,36 @@ class ComboStrategyGrid(
     # ──────────────────────────────────────────────────────────
     def _connect_signals(self):
         bridge.tick_price.connect(self._on_tick_price)
+        # [S11] 연결/재연결 시 계좌 표시 자동 갱신
+        bridge.connected.connect(self._refresh_account_display)
 
     def _on_tick_price(self, rid, tt, price):
-        if rid == REQ_UND and tt in (4, 68, 75) and price > 0:
+        REQ_COMBO_UND = 8500  # 콤보탭 전용 기초자산 reqId (combo_ui_left._req_sym_price 참조)
+        if rid in (REQ_UND, REQ_COMBO_UND) and tt in (4, 68, 75) and price > 0:
             self._und_price = price
             QTimer.singleShot(0, lambda: self.lbl_sym_price.setText(
                 f"현재가: {price:,.2f}"))
+
+    def keyPressEvent(self, event):
+        """Shift+1~4 단축키로 전략 빠른 변경."""
+        from PyQt5.QtCore import Qt
+        if event.modifiers() & Qt.ShiftModifier:
+            _map = {
+                Qt.Key_1: "콜 백 스프레드",
+                Qt.Key_2: "풋 백 스프레드",
+                Qt.Key_3: "콜 스프레드",
+                Qt.Key_4: "풋 스프레드",
+            }
+            strat_name = _map.get(event.key())
+            if strat_name:
+                combo = getattr(self, 'combo_strat', None)
+                if combo:
+                    for i in range(combo.count()):
+                        if strat_name in combo.itemText(i):
+                            combo.setCurrentIndex(i)
+                            self._log(f"⌨ {strat_name}")
+                            return
+        super().keyPressEvent(event)
 
     def _log(self, msg: str):
         self.log_box.append(f"[{ts()}] {msg}")

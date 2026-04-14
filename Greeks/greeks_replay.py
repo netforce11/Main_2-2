@@ -57,14 +57,28 @@ class ReplayPanel(QWidget):
         self.cmb_day.currentTextChanged.connect(self._on_day_changed)
         ctrl.addWidget(self.cmb_day)
 
-        ctrl.addWidget(QLabel("From:"))
-        self.edit_from = QLineEdit("14:00")
-        self.edit_from.setFixedWidth(52)
+        self.lbl_from = QLabel("From:")
+        self.lbl_from.setStyleSheet("color:#888;font-size:10px;border:none;")
+        ctrl.addWidget(self.lbl_from)
+        self.edit_from = QLineEdit("")
+        self.edit_from.setPlaceholderText("HH:MM (선택)")
+        self.edit_from.setFixedWidth(80)
+        self.edit_from.setToolTip("비워두면 해당 날짜 전체 로드")
+        self.edit_from.setStyleSheet(
+            "background:#0a0a18;color:#ffd700;border:1px solid #2e3060;"
+            "font-size:11px;padding:1px 3px;")
         ctrl.addWidget(self.edit_from)
 
-        ctrl.addWidget(QLabel("To:"))
-        self.edit_to = QLineEdit("15:05")
-        self.edit_to.setFixedWidth(52)
+        self.lbl_to = QLabel("To:")
+        self.lbl_to.setStyleSheet("color:#888;font-size:10px;border:none;")
+        ctrl.addWidget(self.lbl_to)
+        self.edit_to = QLineEdit("")
+        self.edit_to.setPlaceholderText("HH:MM (선택)")
+        self.edit_to.setFixedWidth(80)
+        self.edit_to.setToolTip("비워두면 해당 날짜 전체 로드")
+        self.edit_to.setStyleSheet(
+            "background:#0a0a18;color:#ffd700;border:1px solid #2e3060;"
+            "font-size:11px;padding:1px 3px;")
         ctrl.addWidget(self.edit_to)
 
         self.btn_load = QPushButton("📂 불러오기")
@@ -120,8 +134,9 @@ class ReplayPanel(QWidget):
             self.cmb_day.addItem(d)
 
     def _on_day_changed(self, day: str):
-        self.edit_from.setText("14:00")
-        self.edit_to.setText("15:05")
+        # 날짜 변경 시 시간 필터 초기화 (선택 사항)
+        self.edit_from.clear()
+        self.edit_to.clear()
 
     def _on_speed(self, key: str):
         if self._playing:
@@ -132,12 +147,40 @@ class ReplayPanel(QWidget):
     # ─────────────────────────────────────────────────────────
     def _load(self):
         self._stop()
-        day  = self.cmb_day.currentText()
-        t_fr = self.edit_from.text().strip()
-        t_to = self.edit_to.text().strip()
-        rows = load_snapshots(day, t_fr, t_to)
+        day  = self.cmb_day.currentText()    # "20260414"
+        t_fr = self.edit_from.text().strip() # "HH:MM" 또는 빈 문자열
+        t_to = self.edit_to.text().strip()   # "HH:MM" 또는 빈 문자열
+
+        if not day:
+            self.lbl_ts.setText("날짜를 선택하세요")
+            return
+
+        # 시간 필터 변환 — 비어있으면 "" 그대로 → load_snapshots이 전체 반환
+        try:
+            date_str = f"{day[:4]}-{day[4:6]}-{day[6:8]}"  # "2026-04-14"
+
+            def _to_full(t: str, end: bool = False) -> str:
+                if not t:
+                    return ""
+                parts = t.split(":")
+                hh = parts[0].zfill(2)
+                mm = parts[1].zfill(2) if len(parts) > 1 else "00"
+                ss = parts[2].zfill(2) if len(parts) > 2 else ("59" if end else "00")
+                return f"{date_str} {hh}:{mm}:{ss}"
+
+            from_ts = _to_full(t_fr, end=False)
+            to_ts   = _to_full(t_to, end=True)
+        except Exception as e:
+            self.lbl_ts.setText(f"시간 형식 오류: {e}")
+            return
+
+        # 시간 범위 표시 문자열
+        range_str = (f"{t_fr}~{t_to}" if t_fr or t_to else "전체")
+        self.lbl_ts.setText(f"로딩 중… [{day} {range_str}]")
+
+        rows = load_snapshots(day, from_ts, to_ts)
         if not rows:
-            self.lbl_ts.setText("데이터 없음")
+            self.lbl_ts.setText(f"데이터 없음  [{day} {range_str}]")
             return
 
         # 타임스탬프 순서 구성

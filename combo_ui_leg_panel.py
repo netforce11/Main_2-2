@@ -12,8 +12,10 @@ v2.5.1 변경:
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QTableWidget, QHeaderView,
+    QLineEdit, QFrame,
 )
 from PyQt5.QtCore import QTimer
+from PyQt5.QtGui import QKeySequence
 from combo_constants import STRATEGIES
 
 # ── Mid-price 티커 ID 범위: 8800~8815 (레그 0~15) ────────────────
@@ -118,6 +120,63 @@ def _build_leg_left(self) -> QWidget:
         "QLabel{background:#0a0a1e;color:#aaa;font-size:12px;font-weight:bold;"
         "border:1px solid #2a2a4a;border-radius:3px;padding:3px 8px;}")
     v.addWidget(self.lbl_net_price)
+
+    # ── 세트 입력 패널 (1세트/2세트/3세트) ─────────────────────
+    set_frame = QFrame()
+    set_frame.setStyleSheet(
+        "QFrame{background:#0a0a1e;border:1px solid #2a2a4a;border-radius:4px;}")
+    set_v = QVBoxLayout(set_frame); set_v.setContentsMargins(4,3,4,3); set_v.setSpacing(3)
+
+    set_lbl = QLabel("세트 입력  (행사가 직접 입력 후 클릭 → 레그 자동 적용)")
+    set_lbl.setStyleSheet("color:#90caf9;font-size:10px;font-weight:bold;border:none;")
+    set_v.addWidget(set_lbl)
+
+    self._set_inputs = []   # [(sell_edit, buy_edit), ...]
+    self._set_rows   = []   # [QWidget, ...]
+    for i in range(3):
+        row_w = QWidget(); row_h = QHBoxLayout(row_w)
+        row_h.setContentsMargins(0,0,0,0); row_h.setSpacing(4)
+
+        lbl_n = QLabel(f"{i+1}세트")
+        lbl_n.setStyleSheet("color:#ffd700;font-size:10px;font-weight:bold;border:none;")
+        lbl_n.setFixedWidth(32)
+        row_h.addWidget(lbl_n)
+
+        lbl_s = QLabel("매도:")
+        lbl_s.setStyleSheet("color:#ff6666;font-size:10px;border:none;"); lbl_s.setFixedWidth(28)
+        row_h.addWidget(lbl_s)
+        sell_e = QLineEdit(); sell_e.setFixedHeight(20); sell_e.setFixedWidth(55)
+        sell_e.setPlaceholderText("행사가"); sell_e.setStyleSheet(
+            "background:#1a0a0a;color:#ff9999;border:1px solid #4a2a2a;border-radius:2px;font-size:11px;")
+        row_h.addWidget(sell_e)
+
+        lbl_b = QLabel("매수:")
+        lbl_b.setStyleSheet("color:#00ff88;font-size:10px;border:none;"); lbl_b.setFixedWidth(28)
+        row_h.addWidget(lbl_b)
+        buy_e = QLineEdit(); buy_e.setFixedHeight(20); buy_e.setFixedWidth(55)
+        buy_e.setPlaceholderText("행사가"); buy_e.setStyleSheet(
+            "background:#0a1a0a;color:#aaffaa;border:1px solid #2a4a2a;border-radius:2px;font-size:11px;")
+        row_h.addWidget(buy_e)
+
+        btn_apply = QPushButton("적용")
+        btn_apply.setFixedHeight(20); btn_apply.setFixedWidth(36)
+        btn_apply.setStyleSheet(
+            "background:#1a2a4a;color:#90caf9;font-size:10px;"
+            "border:1px solid #3a5a9a;border-radius:2px;")
+        # 클로저용 default arg
+        btn_apply.clicked.connect(
+            lambda _, se=sell_e, be=buy_e: _apply_set_input(self, se, be))
+        row_h.addWidget(btn_apply)
+        row_h.addStretch()
+
+        self._set_inputs.append((sell_e, buy_e))
+        self._set_rows.append(row_w)
+        set_v.addWidget(row_w)
+
+    v.addWidget(set_frame)
+
+    # ── 단축키: tab_combo_strategy.py의 keyPressEvent에서 처리 ──
+    # Shift+1=콜백, Shift+2=풋백, Shift+3=콜스프레드, Shift+4=풋스프레드
 
     # 재귀 방지 플래그 + itemChanged 연결
     self._leg_item_changing = False
@@ -329,3 +388,76 @@ def _set_premium_cell(self, row: int, value: float):
     finally:
         self._leg_item_changing = False
     _recalc_net_price(self)
+
+# ── 세트 입력 적용 ────────────────────────────────────────────
+
+def _apply_set_input(self, sell_edit, buy_edit):
+    """
+    세트 입력 적용 — 현재 전략에 맞게 레그 테이블에 행사가 삽입.
+    지원 전략: 콜/풋 백 스프레드, 콜/풋 스프레드
+    """
+    sell_s = sell_edit.text().strip()
+    buy_s  = buy_edit.text().strip()
+    if not sell_s and not buy_s:
+        return
+
+    strat = getattr(self, 'combo_strat', None)
+    strat_name = strat.currentText() if strat else ""
+
+    rows = self.tbl_legs.rowCount()
+    if rows == 0:
+        return
+
+    # 전략별 레그 구조 매핑
+    # sell_idx: SELL 레그 행 인덱스들, buy_idx: BUY 레그 행 인덱스들
+    if "백 스프레드" in strat_name:
+        sell_indices = [0]       # 레그1 = SELL
+        buy_indices  = [1]       # 레그2 = BUY
+    elif "스프레드" in strat_name:
+        sell_indices = [1]       # 레그2 = SELL
+        buy_indices  = [0]       # 레그1 = BUY
+    else:
+        # 일반: 첫 번째 레그에 sell, 두 번째에 buy
+        sell_indices = [0] if rows > 0 else []
+        buy_indices  = [1] if rows > 1 else []
+
+    self._leg_item_changing = True
+    try:
+        for idx in sell_indices:
+            if idx < rows and sell_s:
+                it = self.tbl_legs.item(idx, 3)
+                if it:
+                    it.setText(sell_s)
+        for idx in buy_indices:
+            if idx < rows and buy_s:
+                it = self.tbl_legs.item(idx, 3)
+                if it:
+                    it.setText(buy_s)
+
+        # 만기 자동 입력
+        expiry = getattr(self, '_current_expiry', '')
+        if expiry and len(expiry) == 8:
+            fmt = f"{expiry[4:6]}/{expiry[6:8]}"
+            for r in range(rows):
+                it = self.tbl_legs.item(r, 6)
+                if it:
+                    it.setText(fmt)
+    finally:
+        self._leg_item_changing = False
+
+    _recalc_net_price(self)
+    sell_str = f"매도={sell_s}" if sell_s else ""
+    buy_str  = f"매수={buy_s}"  if buy_s  else ""
+    self._log(f"세트 적용: {sell_str}  {buy_str}")
+
+
+def _set_strategy_by_name(self, strat_name: str):
+    """단축키로 전략 변경."""
+    combo = getattr(self, 'combo_strat', None)
+    if combo is None:
+        return
+    for i in range(combo.count()):
+        if strat_name in combo.itemText(i):
+            combo.setCurrentIndex(i)
+            self._log(f"⌨ 단축키 전략 변경: {combo.itemText(i)}")
+            return

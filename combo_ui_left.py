@@ -68,6 +68,19 @@ class LeftPanelMixin:
         self.lbl_sym_price.setFont(QFont("Arial", 12, QFont.Bold))
         self.lbl_sym_price.setStyleSheet("color:#ffd700;border:none;")
         sym_row.addWidget(self.lbl_sym_price)
+
+        # 만기 날짜 자동 입력 필드
+        sym_row.addWidget(QLabel("만기:"))
+        self.edit_expiry_combo = QLineEdit()
+        self.edit_expiry_combo.setFixedWidth(72)
+        self.edit_expiry_combo.setFixedHeight(24)
+        self.edit_expiry_combo.setPlaceholderText("YYYYMMDD")
+        self.edit_expiry_combo.setReadOnly(True)
+        self.edit_expiry_combo.setStyleSheet(
+            "background:#0a0a1e;color:#aaffaa;border:1px solid #3a6a3a;"
+            "border-radius:3px;font-size:11px;font-weight:bold;")
+        self.edit_expiry_combo.setToolTip("콜-풋 탭 만기 자동 수신")
+        sym_row.addWidget(self.edit_expiry_combo)
         sym_row.addStretch()
 
         v.addLayout(sym_row)
@@ -232,6 +245,34 @@ class LeftPanelMixin:
                 f"{lp:.2f}" if lp else "―", "#ff6666"))
             self.tbl_chain_put.setItem(r, 2, mk_item("―"))
 
+        # 만기 날짜 자동 수신 — 탭1의 현재 만기 읽기
+        try:
+            expiry_code = ""
+            if hasattr(cp, '_expiry_list') and cp._expiry_list:
+                idx = getattr(cp, 'combo_exp', None)
+                if idx is not None:
+                    ci = idx.currentIndex()
+                    if 0 <= ci < len(cp._expiry_list):
+                        _, expiry_code, _ = cp._expiry_list[ci]
+                        if expiry_code and expiry_code != "CUSTOM":
+                            pass
+                        else:
+                            expiry_code = getattr(cp, 'edit_custom', None)
+                            if expiry_code:
+                                expiry_code = expiry_code.text().strip()
+            elif hasattr(cp, 'date_edit'):
+                expiry_code = cp.date_edit.date().toString("yyyyMMdd")
+            if expiry_code and len(expiry_code) == 8:
+                lbl = f"{expiry_code[4:6]}/{expiry_code[6:8]}"
+                lbl_full = f"{expiry_code[:4]}-{expiry_code[4:6]}-{expiry_code[6:8]}"
+                ed = getattr(self, 'edit_expiry_combo', None)
+                if ed:
+                    ed.setText(expiry_code)
+                    ed.setToolTip(f"만기: {lbl_full}")
+                self._current_expiry = expiry_code
+        except Exception:
+            pass
+
         if not silent:
             self._log(
                 f"체인 동기화: {sym}  C{len(cp.call_strikes)} / P{len(cp.put_strikes)}")
@@ -258,6 +299,12 @@ class LeftPanelMixin:
         self.tbl_legs.item(leg_row, 3).setText(str(int(strike)))
         if price:
             self.tbl_legs.item(leg_row, 4).setText(f"{price:.2f}")
+
+        # 만기 자동 입력
+        expiry = getattr(self, '_current_expiry', '')
+        if expiry and self.tbl_legs.item(leg_row, 6):
+            fmt = f"{expiry[4:6]}/{expiry[6:8]}" if len(expiry) == 8 else expiry
+            self.tbl_legs.item(leg_row, 6).setText(fmt)
 
         price_str = f"{price:.2f}" if price else "0.00"
         self._log(f"레그{leg_row+1} 자동 입력: {side} {int(strike)}  ${price_str}")

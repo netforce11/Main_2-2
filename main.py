@@ -71,14 +71,20 @@ from core import (
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "Greeks"))
 
+# ── combo_libs 폴더 경로 등록 (Main2/combo_libs/) ───────────────
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "combo_libs"))
+
+# ── tab_chart_libs 폴더 경로 등록은 tab_chart.py 내부에서 처리 ──────
+# (tab_chart.py 는 Main2/ 루트에 위치)
+
 # ── 탭 모듈 ───────────────────────────────────────────────────
-from tab_options import CallPutGrid
+from call_put_tab import CallPutGrid, init_chain_saver
 from tab_sniper  import SniperGrid
 from tab_oi      import OITrackerGrid
 from tab_combo_strategy import ComboStrategyGrid
 from tab_account import BalanceGrid, MultiPriceGrid
 from tab_greeks  import GreeksGrid          # ← Main2/Greeks/tab_greeks.py
-from tab_chart   import ChartGrid
+from tab_chart   import ChartGrid           # tab_chart_libs/ 경로는 tab_chart.py 내부 등록
 from tab_trading import TradingGrid
 from tab_kr_futures  import KRFuturesGrid
 from tab_spx_history import SpxHistoryGrid
@@ -150,6 +156,7 @@ class TradingDashboard(QMainWindow):
 
         # ── 탭 등록 ────────────────────────────────────────────
         self.tab_callput = add(CallPutGrid,   "1. 콜-풋 (Main)", self)
+        init_chain_saver(self)   # ← chain_saver 초기화 (저장 스레드 + 스케줄러)
         self.tab_balance = add(BalanceGrid,   "2. 잔고/PnL",     self)
         self.tab_sniper  = add(SniperGrid,    "3. 스나이퍼",     self)
         self.tab_combo = add(ComboStrategyGrid, "4. 복합 전략",    self)
@@ -292,5 +299,6 @@ if __name__ == "__main__":
     app.setFont(default_font)
 
     win = TradingDashboard()
+    win.app = app   # chain_saver worker 종료 연결용
     win.show()
     sys.exit(app.exec_())

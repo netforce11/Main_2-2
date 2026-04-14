@@ -5,6 +5,7 @@ chart_tick.py — Tick 수신 처리 (가격 / 옵션 Greeks)
 from PyQt5.QtCore import QTimer
 
 from core import REQ_UND, REQ_CALL, REQ_PUT, tbl_set
+from tab_options_price_patch import render_chain_chg   # [S10-A] 등락% 색상
 
 
 class TickMixin:
@@ -50,6 +51,9 @@ class TickMixin:
         if tt in (4, 68):
             tbl_set(self.tbl_call, row, 1, f"{price:.2f}", "#33aaff")
             self.call_data[rid]["last"] = price
+            # [S10-A] 전일종가 있으면 등락% 즉시 갱신
+            prev = self.call_data[rid].get("prev_close")
+            render_chain_chg(self.tbl_call, row, price, prev)
             self._upd_spread()
             if self._chart_strike == strike and self._chart_side == "C":
                 self._push_price(price)
@@ -71,7 +75,10 @@ class TickMixin:
                     self._pp_opt_ask = price
                 self._refresh_opt_panel("C", strike)
         elif tt in (9, 75):
-            tbl_set(self.tbl_call, row, 2, f"{price:.2f}", "#aaa")
+            # [S10-A] 전일종가 저장 — 등락% 계산용
+            self.call_data[rid]["prev_close"] = price
+            cur = self.call_data[rid].get("last")
+            render_chain_chg(self.tbl_call, row, cur, price)
 
     def _apply_tick_put(self, rid, tt, price):
         row = rid - REQ_PUT
@@ -81,6 +88,9 @@ class TickMixin:
         if tt in (4, 68):
             tbl_set(self.tbl_put, row, 1, f"{price:.2f}", "#ff6666")
             self.put_data[rid]["last"] = price
+            # [S10-A] 전일종가 있으면 등락% 즉시 갱신
+            prev = self.put_data[rid].get("prev_close")
+            render_chain_chg(self.tbl_put, row, price, prev)
             self._upd_spread()
             if self._chart_strike == strike and self._chart_side == "P":
                 self._push_price(price)
@@ -98,7 +108,10 @@ class TickMixin:
                     self._pp_opt_ask = price
                 self._refresh_opt_panel("P", strike)
         elif tt in (9, 75):
-            tbl_set(self.tbl_put, row, 2, f"{price:.2f}", "#aaa")
+            # [S10-A] 전일종가 저장 — 등락% 계산용
+            self.put_data[rid]["prev_close"] = price
+            cur = self.put_data[rid].get("last")
+            render_chain_chg(self.tbl_put, row, cur, price)
 
     def _refresh_opt_panel(self, side: str, strike: float):
         if not hasattr(self, '_pp_mode') or self._pp_mode != 'opt':

@@ -1,235 +1,159 @@
-"""
-greeks_db.py — Greeks 데이터 저장/불러오기/급변동 이벤트 기록
-════════════════════════════════════════════════════════════════
-저장 경로 (우선순위):
-  1. C:\\data\\Greeks_history\\         (신규 기본 경로)
-  2. C:\\Users\\<user>\\Downloads\\     (이전 저장 위치 자동 탐색)
-  3. 위 둘 다 없으면 C:\\data\\Greeks_history\\ 를 새로 생성
-"""
-
-import sqlite3, os
-from datetime import datetime
-from pathlib import Path
+# greeks_db.py  — SQLite 저장 / 불러오기 / 이벤트 감지
+# Python 3.8 호환  |  S11 patch 기준
+from __future__ import annotations
+import os, sqlite3, logging
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
+log = logging.getLogger(__name__)
 
-# ── 저장 경로 자동 결정 ────────────────────────────────────────
-def _resolve_greeks_dir() -> Path:
-    """
-    greeks_*.db 파일이 이미 존재하는 폴더를 우선 사용.
-    없으면 C:\\data\\Greeks_history\\ 를 생성해서 반환.
-    """
-    candidates = [
-        Path(r"C:\data\Greeks_history"),
-        Path.home() / "Downloads",          # C:\Users\상우\Downloads
-        Path.home() / "Documents",
-        Path(__file__).parent.parent / "data" / "Greeks_history",
-    ]
-    # 기존 파일이 있는 폴더 우선
-    for p in candidates:
-        if p.exists() and list(p.glob("greeks_*.db")):
-            return p
-    # 없으면 첫 번째 경로 생성
-    candidates[0].mkdir(parents=True, exist_ok=True)
-    return candidates[0]
+GAMMA_SPIKE_MULT   = 2.5
+IV_CHANGE_PCT      = 5.0
+DELTA_JUMP         = 0.05
+BASELINE_CUT_MIN   = 30
 
+def _resolve_greeks_dir() -> str:
+    for p in [r"C:\data\Greeks_history",
+              os.path.join(os.path.expanduser("~"), "Downloads"),
+              os.path.join(os.path.expanduser("~"), "Documents")]:
+        if os.path.isdir(p): return p
+    os.makedirs(r"C:\data\Greeks_history", exist_ok=True)
+    return r"C:\data\Greeks_history"
 
-GREEKS_DIR = _resolve_greeks_dir()
-EVENTS_DB  = GREEKS_DIR / "events_log.db"
+GREEKS_DIR: str = _resolve_greeks_dir()
 
-# ── 급변동 임계값 ─────────────────────────────────────────────
-GAMMA_SPIKE_MULT = 2.5   # 과거 평균 대비 N배 이상 → 이벤트
-IV_CHANGE_PCT    = 5.0   # 분당 IV 변화율 % 이상
-DELTA_JUMP       = 0.05  # 틱당 delta 점프
+def _db_path(day: str) -> str:       return os.path.join(GREEKS_DIR, f"greeks_{day}.db")
+def _events_path() -> str:           return os.path.join(GREEKS_DIR, "events_log.db")
+def _baseline_path() -> str:         return os.path.join(GREEKS_DIR, "baseline.db")
 
-
-# ══════════════════════════════════════════════════════════════
-# 날짜별 DB 파일명
-# ══════════════════════════════════════════════════════════════
-def _day_db(day: str = "") -> Path:
-    """day='20260412' or '' → 오늘."""
-    d = day or datetime.now().strftime("%Y%m%d")
-    return GREEKS_DIR / f"greeks_{d}.db"
-
-
-# ══════════════════════════════════════════════════════════════
-# 연결 + 초기화
-# ══════════════════════════════════════════════════════════════
-def open_db(day: str = "") -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_day_db(day)))
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS greeks (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts        TEXT,
-            sym       TEXT,
-            expiry    TEXT,
-            strike    REAL,
-            side      TEXT,
-            delta     REAL,
-            gamma     REAL,
-            iv        REAL,
-            vanna     REAL,
-            und_price REAL
-        )""")
-    conn.execute("CREATE INDEX IF NOT EXISTS ix_ts ON greeks(ts)")
-    conn.commit()
-    return conn
-
+def open_db(day: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(_db_path(day))
+    conn.execute("""CREATE TABLE IF NOT EXISTS greeks (
+        ts TEXT, sym TEXT, expiry TEXT, strike REAL, side TEXT,
+        delta REAL, gamma REAL, iv REAL, vanna REAL, und_price REAL)""")
+    conn.commit(); return conn
 
 def open_events_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(EVENTS_DB))
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS events (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts           TEXT,
-            sym          TEXT,
-            trigger_type TEXT,
-            strike       REAL,
-            value        REAL,
-            prev_avg     REAL,
-            und_price    REAL
-        )""")
-    conn.commit()
-    return conn
+    conn = sqlite3.connect(_events_path())
+    conn.execute("""CREATE TABLE IF NOT EXISTS events (
+        ts TEXT, sym TEXT, trigger_type TEXT, strike REAL,
+        value REAL, prev_avg REAL, und_price REAL)""")
+    conn.commit(); return conn
 
+def open_baseline_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(_baseline_path())
+    conn.execute("""CREATE TABLE IF NOT EXISTS baseline (
+        day TEXT, sym TEXT, expiry TEXT, strike REAL, side TEXT,
+        iv_avg REAL, gamma_avg REAL,
+        PRIMARY KEY (day, sym, expiry, strike, side))""")
+    conn.commit(); return conn
 
-# ══════════════════════════════════════════════════════════════
-# 저장
-# ══════════════════════════════════════════════════════════════
-def save_snapshot(conn: sqlite3.Connection,
-                  sym: str, expiry: str, und_price: float,
-                  rows: list):
-    """rows: [(strike, side, delta, gamma, iv, vanna), ...]"""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn.executemany(
-        "INSERT INTO greeks(ts,sym,expiry,strike,side,delta,gamma,iv,vanna,und_price) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?)",
-        [(now, sym, expiry, st, sd, d, g, iv, va, und_price)
-         for st, sd, d, g, iv, va in rows]
-    )
+# ── 저장 ────────────────────────────────────────────────
+def save_snapshot(conn: sqlite3.Connection, rows: List[Dict]) -> None:
+    conn.executemany("INSERT INTO greeks VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [(r["ts"],r["sym"],r["expiry"],r["strike"],r["side"],
+          r.get("delta"),r.get("gamma"),r.get("iv"),
+          r.get("vanna"),r.get("und_price")) for r in rows])
     conn.commit()
 
+def save_event(ec: sqlite3.Connection, ts: str, sym: str, ttype: str,
+               strike: float, value: float, prev: float, und: float) -> None:
+    ec.execute("INSERT INTO events VALUES (?,?,?,?,?,?,?)",
+               (ts, sym, ttype, strike, value, prev, und)); ec.commit()
 
-def save_event(econn: sqlite3.Connection,
-               sym: str, trigger: str, strike: float,
-               value: float, prev_avg: float, und_price: float):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    econn.execute(
-        "INSERT INTO events(ts,sym,trigger_type,strike,value,prev_avg,und_price) "
-        "VALUES(?,?,?,?,?,?,?)",
-        (now, sym, trigger, strike, value, prev_avg, und_price)
-    )
-    econn.commit()
+def save_baseline(rows: List[Dict], day: Optional[str] = None) -> None:
+    day = day or date.today().strftime("%Y%m%d")
+    conn = open_baseline_db()
+    conn.executemany("INSERT OR REPLACE INTO baseline VALUES (?,?,?,?,?,?,?)",
+        [(day,r["sym"],r["expiry"],r["strike"],r["side"],
+          r.get("iv_avg",0.0),r.get("gamma_avg",0.0)) for r in rows])
+    conn.commit(); conn.close()
+    log.info("[GreeksDB] 기준선 저장 %d rows (day=%s)", len(rows), day)
 
+# ── 조회 ────────────────────────────────────────────────
+_COLS = ["ts","sym","expiry","strike","side","delta","gamma","iv","vanna","und_price"]
 
-# ══════════════════════════════════════════════════════════════
-# 불러오기
-# ══════════════════════════════════════════════════════════════
-def load_snapshots(day: str, time_from: str = "", time_to: str = "") -> List[Dict]:
-    """
-    day='20260412', time_from='14:00', time_to='15:00'
-    → list of row dicts (ts, sym, expiry, strike, side, delta, gamma, iv, vanna, und_price)
-    """
-    db = _day_db(day)
-    if not db.exists():
-        return []
-    conn = sqlite3.connect(str(db))
-    conn.row_factory = sqlite3.Row
-    q = "SELECT * FROM greeks WHERE 1=1"
-    params = []
-    if time_from:
-        q += " AND time(ts) >= ?"
-        params.append(time_from)
-    if time_to:
-        q += " AND time(ts) <= ?"
-        params.append(time_to)
-    q += " ORDER BY ts"
-    rows = [dict(r) for r in conn.execute(q, params).fetchall()]
-    conn.close()
-    return rows
-
+def load_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[Dict]:
+    path = _db_path(day)
+    if not os.path.exists(path): return []
+    conn = sqlite3.connect(path)
+    q, p = "SELECT * FROM greeks", ()
+    if from_ts and to_ts:
+        q += " WHERE ts BETWEEN ? AND ?"; p = (from_ts, to_ts)
+    rows = conn.execute(q, p).fetchall(); conn.close()
+    return [dict(zip(_COLS, r)) for r in rows]
 
 def available_days() -> List[str]:
-    """저장된 날짜 목록 반환 (YYYYMMDD 문자열)."""
-    return sorted(
-        p.stem.replace("greeks_", "")
-        for p in GREEKS_DIR.glob("greeks_*.db")
-    )
-
+    return sorted([f[8:16] for f in os.listdir(GREEKS_DIR)
+                   if f.startswith("greeks_") and f.endswith(".db")])
 
 def load_timestamps(day: str) -> List[str]:
-    """해당 날짜의 저장된 타임스탬프 목록 (중복 제거)."""
-    rows = load_snapshots(day)
-    seen, result = set(), []
-    for r in rows:
-        t = r["ts"]
-        if t not in seen:
-            seen.add(t)
-            result.append(t)
-    return result
+    path = _db_path(day)
+    if not os.path.exists(path): return []
+    conn = sqlite3.connect(path)
+    rows = conn.execute("SELECT DISTINCT ts FROM greeks ORDER BY ts").fetchall()
+    conn.close(); return [r[0] for r in rows]
 
+def load_baseline(day: str, sym: str) -> List[Dict]:
+    conn = open_baseline_db()
+    cols = ["day","sym","expiry","strike","side","iv_avg","gamma_avg"]
+    rows = conn.execute("SELECT * FROM baseline WHERE day=? AND sym=?",
+                        (day, sym)).fetchall()
+    conn.close(); return [dict(zip(cols, r)) for r in rows]
 
-# ══════════════════════════════════════════════════════════════
-# 급변동 감지
-# ══════════════════════════════════════════════════════════════
-def detect_spike(day: str, sym: str,
-                 cur_gamma: dict,    # {strike: gamma_value}
-                 cur_iv: dict,       # {(strike, side): iv}
-                 und_price: float,
-                 econn: sqlite3.Connection,
-                 lookback_min: int = 20) -> List[Dict]:
-    """
-    과거 lookback_min 분 평균과 비교해 급변동 이벤트를 감지·저장.
-    반환: [{'trigger': str, 'strike': float, 'value': float, 'prev_avg': float}, ...]
-    """
-    events = []
-    rows   = load_snapshots(day)
-    if not rows:
-        return events
+# ── 감지 ────────────────────────────────────────────────
+def detect_spike(day: str, sym: str, current_rows: List[Dict],
+                 und_price: float, econn: sqlite3.Connection) -> List[str]:
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    win_end = datetime.now()
+    win_st  = win_end - timedelta(minutes=20)
+    past    = load_snapshots(day,
+                             win_st.strftime("%Y-%m-%d %H:%M:%S"),
+                             win_end.strftime("%Y-%m-%d %H:%M:%S"))
 
-    now_ts = datetime.now()
+    gamma_h: Dict[Tuple, List[float]] = {}
+    iv_h:    Dict[Tuple, List[float]] = {}
+    for r in past:
+        k = (r["expiry"], r["strike"], r["side"])
+        if r["gamma"]: gamma_h.setdefault(k, []).append(r["gamma"])
+        if r["iv"]:    iv_h.setdefault(k, []).append(r["iv"])
 
-    # 과거 N분 gamma 평균 (ATM 근처)
-    gamma_history: Dict[float, List[float]] = {}
-    iv_history: Dict[tuple, List[float]] = {}
+    prev_delta: Dict[Tuple, float] = {}
+    events: List[str] = []
 
-    for r in rows:
-        try:
-            row_ts = datetime.strptime(r["ts"], "%Y-%m-%d %H:%M:%S")
-        except Exception:
-            continue
-        diff_min = (now_ts - row_ts).total_seconds() / 60
-        if diff_min > lookback_min:
-            continue
-        st = r["strike"]
-        gamma_history.setdefault(st, []).append(r["gamma"] or 0.0)
-        iv_history.setdefault((st, r["side"]), []).append(r["iv"] or 0.0)
+    for r in current_rows:
+        k = (r["expiry"], r["strike"], r["side"])
+        g  = r.get("gamma"); iv = r.get("iv"); d = r.get("delta")
 
-    # Gamma spike 검사
-    for st, cur_g in cur_gamma.items():
-        hist = gamma_history.get(st, [])
-        if len(hist) < 3:
-            continue
-        avg = sum(hist) / len(hist)
-        if avg > 0 and cur_g / avg >= GAMMA_SPIKE_MULT:
-            ev = {"trigger": "Gamma", "strike": st,
-                  "value": cur_g, "prev_avg": avg}
-            events.append(ev)
-            save_event(econn, sym, "Gamma", st, cur_g, avg, und_price)
+        # ① Gamma 급등
+        if g and k in gamma_h:
+            avg = sum(gamma_h[k]) / len(gamma_h[k])
+            if avg > 0 and g >= avg * GAMMA_SPIKE_MULT:
+                events.append(f"[Gamma↑] {r['side']} {r['strike']} "
+                               f"Gamma={g:.4f}(avg={avg:.4f}×{GAMMA_SPIKE_MULT})")
+                save_event(econn, now_str, sym, "Gamma",
+                           r["strike"], g, avg, und_price)
 
-    # IV 급변 검사
-    for key, cur_iv_val in cur_iv.items():
-        hist = iv_history.get(key, [])
-        if len(hist) < 2:
-            continue
-        avg = sum(hist) / len(hist)
-        if avg > 0:
-            pct = abs(cur_iv_val - avg) / avg * 100
-            if pct >= IV_CHANGE_PCT:
-                st, side = key
-                ev = {"trigger": f"IV_{side}", "strike": st,
-                      "value": cur_iv_val, "prev_avg": avg}
-                events.append(ev)
-                save_event(econn, sym, f"IV_{side}", st, cur_iv_val, avg, und_price)
+        # ② IV 급변
+        if iv and k in iv_h and len(iv_h[k]) >= 2:
+            prev_iv = iv_h[k][-1]
+            if prev_iv > 0:
+                pct = abs(iv - prev_iv) / prev_iv * 100
+                if pct >= IV_CHANGE_PCT:
+                    events.append(f"[IV급변] {r['side']} {r['strike']} "
+                                  f"IV={iv:.3f}(Δ{pct:.1f}%)")
+                    save_event(econn, now_str, sym, f"IV_{r['side']}",
+                               r["strike"], iv, prev_iv, und_price)
+
+        # ③ Delta 이상 점프
+        if d is not None and k in prev_delta:
+            jump = abs(d - prev_delta[k])
+            if jump >= DELTA_JUMP:
+                events.append(f"[Delta↑] {r['side']} {r['strike']} "
+                               f"Δdelta={jump:.3f}")
+                save_event(econn, now_str, sym, "Delta",
+                           r["strike"], d, prev_delta[k], und_price)
+        if d is not None:
+            prev_delta[k] = d
 
     return events
