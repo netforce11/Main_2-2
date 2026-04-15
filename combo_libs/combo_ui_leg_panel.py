@@ -3,7 +3,7 @@ combo_ui_leg_panel.py — 레그 테이블 좌측 패널 빌드
 ────────────────────────────────────────────────────
 포함: _build_leg_left (RightPanelMixin에 mixin)
       _on_leg_item_changed / _recalc_net_price
-      _set_premium_cell / _apply_set_input / _set_strategy_by_name
+      _set_premium_cell / _set_strategy_by_name
 
 스트리밍 관련:
       fill_premium_from_market / _cancel_stream / cancel_all_streams
@@ -13,6 +13,7 @@ v2.6 변경:
   - ➕ 레그 추가 / ➖ 마지막 레그 제거 버튼 (자동/수동 모드 공용)
   - 추가된 레그도 손익·증거금 계산 자동 연동
   - MAX_LEGS(8) 초과 시 버튼 자동 비활성
+  - 세트 입력 패널 제거 (v2.7)
 ────────────────────────────────────────────────────
 """
 
@@ -155,9 +156,6 @@ def _build_leg_left(self) -> QWidget:
         "border:1px solid #2a2a4a;border-radius:3px;padding:3px 8px;}")
     v.addWidget(self.lbl_net_price)
 
-    # ── 세트 입력 패널 ────────────────────────────────────────
-    v.addWidget(_build_set_input_panel(self))
-
     # 재귀 방지 플래그 + itemChanged 연결
     self._leg_item_changing = False
     self._mid_ticks: dict   = {}
@@ -165,13 +163,6 @@ def _build_leg_left(self) -> QWidget:
         lambda item: _on_leg_item_changed(self, item))
 
     return w
-
-
-# ── 세트 입력 패널 빌드 ──────────────────────────────────────
-
-def _build_set_input_panel(self) -> QFrame:
-    from combo_ui_leg_setinput import build_set_input_panel
-    return build_set_input_panel(self)
 
 
 # ── Net Price 재계산 ─────────────────────────────────────────
@@ -251,7 +242,7 @@ def _set_premium_cell(self, row: int, value: float):
     _f(self, row, value)
 
 
-# ── 세트 입력 / 단축키 (combo_ui_leg_setinput.py 로 분리) ───────
+# ── 세트 입력 / 단축키 위임 (하위 호환 유지) ────────────────────
 
 def _apply_set_input(self, sell_edit, buy_edit):
     from combo_ui_leg_setinput import _apply_set_input as _f

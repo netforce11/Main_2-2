@@ -117,8 +117,17 @@ def _calc_pnl(self):
 
     strikes    = [l["strike"] for l in legs]
     min_s, max_s = min(strikes), max(strikes)
-    price_step = max(5.0, round((max_s - min_s) / 20, 0)) if max_s > min_s else 5.0
-    price_range = _make_price_range(min_s, max_s, price_step)
+    spread_width = max_s - min_s if max_s > min_s else 50.0
+
+    # 스트라이크 범위 바깥으로 충분히 확장 (양쪽 spread_width * 1.5 또는 최소 50pt)
+    padding    = max(spread_width * 1.5, 50.0)
+    range_low  = min_s - padding
+    range_high = max_s + padding
+
+    # 전체 범위를 40행 기준으로 스텝 결정 (최소 2.5, 최대 25)
+    total_width = range_high - range_low
+    price_step  = max(2.5, min(25.0, round(total_width / 40, 1)))
+    price_range = _make_price_range(range_low, range_high, price_step)
 
     pnl_series  = [_leg_pnl_at_expiry(leg, price_range) for leg in legs]
     total_pnl   = [sum(s[i] for s in pnl_series) for i in range(len(price_range))]

@@ -1,5 +1,5 @@
 """
-order_panel.py — 빠른 주문 패널 UI  v6.8
+order_panel.py — 빠른 주문 패널 UI  v6.9
 변경:
   - 잔고 버튼 → 플로팅 잔고창 토글 (항상 위, X버튼 없음)
   - 버튼 클릭 시 QPropertyAnimation 피드백
@@ -542,7 +542,9 @@ class OrderPanelMixin:
         from PyQt5.QtWidgets import QMessageBox
         if not self.mw.connected:
             QMessageBox.warning(self,"미연결","TWS에 먼저 연결하세요."); return
-        self._open_orders_buf = []; ib = self.mw.ib
+        self._open_orders_buf = []
+        self._fetch_oo_done = False   # 중복 복원 방지 플래그
+        ib = self.mw.ib
 
         def _on_open_order(orderId, contract, order, orderState):
             self._open_orders_buf.append({
@@ -555,7 +557,16 @@ class OrderPanelMixin:
                 "tif":    getattr(order,"tif","DAY"),
                 "contract": contract,
             })
+
+        def _restore_handlers():
+            if not self._fetch_oo_done:
+                self._fetch_oo_done = True
+                ib.openOrder    = ib._orig_openOrder
+                ib.openOrderEnd = ib._orig_openOrderEnd
+
         def _on_open_order_end():
+            # openOrderEnd 수신 즉시 콜백 복원 → 데이터 유실 없음
+            _restore_handlers()
             QTimer.singleShot(0, self._populate_open_order_tables)
 
         ib._orig_openOrder    = getattr(ib,'openOrder',    lambda *a: None)
@@ -564,12 +575,17 @@ class OrderPanelMixin:
         ib.openOrderEnd = _on_open_order_end
         try: ib.reqOpenOrders(); self._log("📋 미체결 주문 조회 요청...")
         except Exception as e: self._log(f"❌ 주문 조회 오류: {e}")
-        QTimer.singleShot(2000, lambda: (
-            setattr(ib,'openOrder',    ib._orig_openOrder),
-            setattr(ib,'openOrderEnd', ib._orig_openOrderEnd)))
+        # 안전망: 5초 후에도 openOrderEnd 미수신 시 강제 복원 후 테이블 갱신
+        QTimer.singleShot(5000, lambda: (
+            _restore_handlers(),
+            self._populate_open_order_tables()
+            ) if not self._fetch_oo_done else None)
 
     def _populate_open_order_tables(self):
-        from tab_options import _mk
+        from PyQt5.QtWidgets import QTableWidgetItem as _QTI
+        from PyQt5.QtGui import QColor as _QC
+        def _mk(text, color="#ccc"):
+            item = _QTI(str(text)); item.setForeground(_QC(color)); return item
         orders = getattr(self,'_open_orders_buf',[])
         for tbl in (self.tbl_open_orders_a, self.tbl_open_orders_c):
             tbl.setRowCount(0)
@@ -977,16 +993,15 @@ class OrderPanelMixin:
         QTimer.singleShot(3000, _restore_emrg_handlers)
 
     def _emergency_cancel_orders(self):
-        """미체결 매수 주문 전부 취소."""
+        """미체결 전체 주문(BUY + SELL) 취소."""
         if not self.mw.connected:
             self._log("🚨 미체결취소: 미연결"); return
         orders = getattr(self,'_open_orders_buf',[])
-        buy_orders = [o for o in orders if o.get('action')=='BUY']
-        if not buy_orders:
-            self._log("🚨 미체결취소: 미체결 BUY 없음 (먼저 [미체결 조회] 클릭)"); return
-        for o in buy_orders:
+        if not orders:
+            self._log("🚨 미체결취소: 미체결 주문 없음 (먼저 [미체결 조회] 클릭)"); return
+        for o in orders:
             try:
                 self.mw.ib.cancelOrder(o['oid'])
-                self._log(f"🚨 취소 전송: OID={o['oid']} {o['symbol']}")
+                self._log(f"🚨 취소 전송: OID={o['oid']} {o['action']} {o['symbol']}")
             except Exception as e:
                 self._log(f"❌ 취소 오류 OID={o['oid']}: {e}")

@@ -334,16 +334,41 @@ class CoreFetchMixin(CoreFetchPosMixin):
     _INDEX_SYMS = {"SPX","NDX","RUT","VIX","DJX","XSP","NQ","ES","MES","MNQ"}
 
     def _on_watch_dbl(self, item):
-        """더블클릭 → 종목 변경 + 옵션 테이블 전체 재조회 (스트림 구독)."""
-        sym = item.text().strip().upper().replace("SPXW","SPX")
+        """더블클릭 → 종목 변경 + 옵션 테이블 전체 재조회 (스트림 구독).
+
+        빠른 연속 더블클릭 시 _cancel_seq / _send_req 루프가 중첩되어
+        0xC0000005 크래시가 발생하므로:
+          1. _fetch_busy 중이면 즉시 차단
+          2. 이전 예약된 _fetch QTimer 취소 후 재예약
+        """
+        sym = item.text().strip().upper().replace("SPXW", "SPX")
+
+        # ── 중복 호출 방지 ────────────────────────────────────────
+        if getattr(self, '_fetch_busy', False):
+            self._log(f"⚠ 구독 진행 중 — {sym} 더블클릭 무시 (완료 후 재시도)")
+            return
+
         self.edit_sym.setText(sym)
         if not self.mw.connected:
             from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.warning(self,"미연결","TWS에 연결하세요."); return
-        self.und_price = None; self.lbl_und.setText("조회 중…")
-        if hasattr(self, '_pp_switch_to_und'): self._pp_switch_to_und()
+            QMessageBox.warning(self, "미연결", "TWS에 연결하세요.")
+            return
+
+        self.und_price = None
+        self.lbl_und.setText("조회 중…")
+        if hasattr(self, '_pp_switch_to_und'):
+            self._pp_switch_to_und()
         self._req_und(sym)
-        QTimer.singleShot(1000, self._fetch)
+
+        # ── 기존 예약된 _fetch 타이머 취소 후 재예약 ─────────────
+        t = getattr(self, '_watch_dbl_timer', None)
+        if t is None:
+            self._watch_dbl_timer = QTimer(self)
+            self._watch_dbl_timer.setSingleShot(True)
+            self._watch_dbl_timer.timeout.connect(self._fetch)
+        else:
+            self._watch_dbl_timer.stop()
+        self._watch_dbl_timer.start(1000)
 
     def _on_watch_single_click(self, item):
         """

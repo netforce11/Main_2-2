@@ -37,6 +37,14 @@ if IBAPI_AVAILABLE:
         def nextValidId(self, orderId):
             self._next_id = orderId
             bridge.connected.emit()
+            # ── 연결 즉시 계좌 잔고 영구 구독 ─────────────────────
+            # reqId=9901 고정, IB가 변경될 때마다 자동 push
+            # → _on_whatif_acct_value 에서 _whatif_acct_cache 갱신
+            # → whatIf 조회 시 reqAccountSummary 별도 호출 불필요
+            try:
+                self.reqAccountSummary(9901, "All", "AvailableFunds,BuyingPower")
+            except Exception as e:
+                print(f"[core] reqAccountSummary 구독 실패: {e}")
 
         def tickPrice(self, reqId, tickType, price, attrib):
             bridge.tick_price.emit(reqId, int(tickType), float(price))
@@ -104,6 +112,14 @@ if IBAPI_AVAILABLE:
                 str(execution.side),
                 float(execution.shares),
                 float(execution.price))
+
+        def contractDetails(self, reqId, contractDetails):
+            """BAG conId 조회 콜백 — bridge로 emit."""
+            bridge.contract_details_sig.emit(reqId, contractDetails)
+
+        def contractDetailsEnd(self, reqId):
+            """BAG conId 조회 완료 콜백 — bridge로 emit."""
+            bridge.contract_details_end_sig.emit(reqId)
 
         def historicalData(self, reqId, bar):
             """과거 바 배치 수신 — dict 직렬화 후 emit (cross-thread 안전)."""

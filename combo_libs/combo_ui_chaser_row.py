@@ -47,7 +47,9 @@ def _build_chaser_row(self) -> QWidget:
     _grp.addButton(self._rb_chaser_manual)
     _grp.addButton(self._rb_chaser_auto)
     self._rb_chaser_manual.toggled.connect(
-        lambda: self._on_chaser_mode_changed())
+        lambda checked: self._on_chaser_mode_changed(self._rb_chaser_manual))
+    self._rb_chaser_auto.toggled.connect(
+        lambda checked: self._on_chaser_mode_changed(self._rb_chaser_auto))
     btn_row.addWidget(self._rb_chaser_manual)
     btn_row.addWidget(self._rb_chaser_auto)
 

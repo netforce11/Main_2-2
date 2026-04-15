@@ -219,14 +219,26 @@ class LeftPanelMixin:
             self._log(f"❌ reqMktData 오류: {e}")
 
     def _on_combo_und_tick(self, rid, tt, price):
-        """콤보탭 전용 기초자산 실시간 tick 수신 슬롯 (REQ_COMBO_UND=8500)."""
+        """콤보탭 전용 기초자산 실시간 tick 수신 슬롯 (REQ_COMBO_UND=8500).
+
+        router → 이 슬롯은 IB 백그라운드 스레드에서 호출될 수 있으므로
+        Qt 위젯 접근은 QTimer.singleShot(0) 으로 메인 스레드에 위임.
+        """
         if tt not in (4, 68, 75) or price <= 0:
             return
-        self._und_price = price
-        self.lbl_sym_price.setText(f"현재가: {price:,.2f}")
-        # 주식 현재가 필드가 비어있을 때만 자동 채움
-        if hasattr(self, 'edit_stock_price') and not self.edit_stock_price.text().strip():
-            self.edit_stock_price.setText(f"{price:.2f}")
+        self._und_price = price  # float 대입은 GIL로 스레드 안전
+
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, lambda p=price: self._apply_und_price_ui(p))
+
+    def _apply_und_price_ui(self, price: float):
+        """메인 스레드에서 UI 위젯 갱신 (0xC0000005 크래시 방지)."""
+        try:
+            self.lbl_sym_price.setText(f"현재가: {price:,.2f}")
+            if hasattr(self, 'edit_stock_price') and not self.edit_stock_price.text().strip():
+                self.edit_stock_price.setText(f"{price:.2f}")
+        except RuntimeError:
+            pass  # 위젯이 이미 소멸된 경우 무시
 
     # ──────────────────────────────────────────────────────────
     # 체인 동기화
@@ -261,7 +273,7 @@ class LeftPanelMixin:
         if und_price:
             self._und_price = und_price
             self.lbl_sym_price.setText(f"현재가: {und_price:,.2f}")
-            if not self.edit_stock_price.text().strip():
+            if hasattr(self, 'edit_stock_price') and not self.edit_stock_price.text().strip():
                 self.edit_stock_price.setText(f"{und_price:.2f}")
 
         # CALL 체인 갱신

@@ -1,5 +1,5 @@
 """
-tab_chart.py — 1분봉 차트 탭  v6.3
+tab_chart.py — 1분봉 차트 탭  v6.4
 ════════════════════════════════════════════════════════════════
 v6.3 변경:
   - tab_chart_libs/ 로 로직 분리 (200줄 단위)
@@ -7,15 +7,25 @@ v6.3 변경:
   - 📷 차트 캡쳐 버튼: 마커 우측에 추가
     저장 경로: C:\\data\\chart_save\\{날짜}_{시각}_{심볼}.png
 
+v6.4 변경:
+  - 🔤 레이블 기능 추가 (chart_labels.py 신규)
+    차트 클릭으로 숫자(1~5) / 문자(A~E) 레이블을 원하는 위치에 배치
+    체크박스 해제로 개별 삭제, 🗑 버튼으로 전체 삭제
+  - 📈 일봉 추가 보기 버튼 (chart_daily.py 신규)
+    사이드바 하단 버튼 클릭 → 분차트 테이블 숨기고 일봉 캔들 표시
+    캘린더 날짜 기준 ±50봉 (~100봉), 날짜 중앙 정렬
+
 파일 구조:
   tab_chart_libs/
     chart_workers.py  — CandlestickItem / PolygonWorker / IBKRBarTimer
     chart_theme.py    — _THEME / apply_theme / c_up / c_dn
     chart_markers.py  — 시간 마커 + 숫자 입력 + 📷 캡쳐
-    chart_hlines.py   — 가로 라인
+    chart_hlines.py   — 가로 라인 (레이블 모드 분기 포함)
+    chart_labels.py   — 텍스트 레이블 (숫자/문자)
     chart_rt.py       — 실시간 스트림
     chart_data.py     — 데이터 로드·표시·KST
     chart_peaks.py    — 수급 피크 + FTD/공매도
+    chart_daily.py    — 일봉 추가 보기 ← v6.4 신규
 ════════════════════════════════════════════════════════════════
 """
 
@@ -51,8 +61,6 @@ from core import (
 )
 
 # ── tab_chart_libs 경로 등록 ─────────────────────────────────
-# tab_chart.py 는 Main2/ 루트에 위치
-# tab_chart_libs/ 는 tab_chart.py 와 같은 폴더의 서브폴더
 _LIBS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tab_chart_libs")
 if _LIBS_DIR not in sys.path:
     sys.path.insert(0, _LIBS_DIR)
@@ -63,6 +71,8 @@ from chart_markers  import add_time_marker, on_marker_chk, \
                            redraw_time_markers, capture_chart
 from chart_hlines   import on_chart_click, on_hline_chk, \
                            del_hlines, redraw_hlines
+from chart_labels   import on_chart_label_click, on_label_chk, \
+                           del_labels, redraw_labels
 from chart_rt       import on_rt_btn, start_stream, stop_rt, \
                            on_bar_in, fetch_missing_polygon
 from chart_data     import (
@@ -77,6 +87,9 @@ from chart_peaks    import (
     peak1, peak2, update_peak3,
     load_aux_file, on_aux_date_click,
 )
+# ── v6.4 신규 ────────────────────────────────────────────────
+from chart_daily    import toggle_daily_view, load_daily_data, \
+                           render_daily, center_on_calendar
 
 try:
     from common import (DATA_ROOT, API_KEY_FILE, WATCHLIST_FILE,
@@ -111,49 +124,62 @@ class ChartGrid(QWidget):
         self.dark_mode         = False
         self._multi_day_active = False
         self._multi_day_count  = 1
-        self._hlines: dict       = {}
-        self._time_markers: dict = {}
+        self._hlines: dict        = {}
+        self._time_markers: dict  = {}
+        self._chart_labels: dict  = {}
+        # ── v6.4: 일봉 보기 상태 ─────────────────────────
+        self._daily_worker         = None
+        self._daily_view_active    = False
         self._build()
         self._load_watchlist()
         self._apply_theme()
 
     # ── 위임 메서드 바인딩 ────────────────────────────────────
-    _apply_theme       = apply_theme
-    _c_up              = c_up
-    _c_dn              = c_dn
-    _add_time_marker   = add_time_marker
-    _on_marker_chk     = on_marker_chk
+    _apply_theme         = apply_theme
+    _c_up                = c_up
+    _c_dn                = c_dn
+    _add_time_marker     = add_time_marker
+    _on_marker_chk       = on_marker_chk
     _redraw_time_markers = redraw_time_markers
-    capture_chart      = capture_chart
-    _on_chart_click    = on_chart_click
-    _on_hline_chk      = on_hline_chk
-    _del_hlines        = del_hlines
-    _redraw_hlines     = redraw_hlines
-    _on_rt_btn         = on_rt_btn
-    start_stream       = start_stream
-    _stop_rt           = stop_rt
-    _on_bar_in         = on_bar_in
+    capture_chart        = capture_chart
+    _on_chart_click      = on_chart_click
+    _on_hline_chk        = on_hline_chk
+    _del_hlines          = del_hlines
+    _redraw_hlines       = redraw_hlines
+    _on_chart_label_click = on_chart_label_click
+    _on_label_chk         = on_label_chk
+    _del_labels           = del_labels
+    _redraw_labels        = redraw_labels
+    _on_rt_btn             = on_rt_btn
+    start_stream           = start_stream
+    _stop_rt               = stop_rt
+    _on_bar_in             = on_bar_in
     _fetch_missing_polygon = fetch_missing_polygon
-    _on_calendar       = on_calendar
-    _on_multi_chk      = on_multi_chk
-    _do_multi_day      = do_multi_day
-    _fetch_ibkr_history   = fetch_ibkr_history
+    _on_calendar           = on_calendar
+    _on_multi_chk          = on_multi_chk
+    _do_multi_day          = do_multi_day
+    _fetch_ibkr_history    = fetch_ibkr_history
     _fetch_polygon_history = fetch_polygon_history
-    _load_day_df       = load_day_df
-    _download_day      = download_day
-    _update_display    = update_display
-    _append_right      = append_right
-    _clr_right         = clr_right
-    _push_trend_df     = push_trend_df
-    _et_to_kst_str     = et_to_kst_str
-    _fmt_time          = fmt_time
-    _on_range_changed  = on_range_changed
-    _peak1             = peak1
-    _peak2             = peak2
-    _update_peak3      = update_peak3
-    _load_aux_file     = load_aux_file
-    _on_aux_date_click = on_aux_date_click
-    _force_redownload  = force_redownload
+    _load_day_df           = load_day_df
+    _download_day          = download_day
+    _update_display        = update_display
+    _append_right          = append_right
+    _clr_right             = clr_right
+    _push_trend_df         = push_trend_df
+    _et_to_kst_str         = et_to_kst_str
+    _fmt_time              = fmt_time
+    _on_range_changed      = on_range_changed
+    _peak1                 = peak1
+    _peak2                 = peak2
+    _update_peak3          = update_peak3
+    _load_aux_file         = load_aux_file
+    _on_aux_date_click     = on_aux_date_click
+    _force_redownload      = force_redownload
+    # ── v6.4 일봉 바인딩 ──────────────────────────────────────
+    _toggle_daily_view     = toggle_daily_view
+    _load_daily_data       = load_daily_data
+    _render_daily          = render_daily
+    _center_on_calendar    = center_on_calendar
 
     # ── API 키 / 관심종목 ─────────────────────────────────────
     def _load_api_key(self):
@@ -231,13 +257,10 @@ class ChartGrid(QWidget):
         root.addWidget(self._h_splitter)
 
     def _build_sidebar(self) -> QScrollArea:
-        """좌측 사이드바 → chart_build_side 위임."""
         from chart_build_side import build_sidebar
         return build_sidebar(self)
 
-
     def _build_content(self) -> QSplitter:
-        """우측: 테이블(상) + 차트(하) 수직 스플리터."""
         self._v_splitter = QSplitter(Qt.Vertical)
         self._v_splitter.setHandleWidth(5)
         self._v_splitter.setStyleSheet(
@@ -257,7 +280,6 @@ class ChartGrid(QWidget):
         return build_chart_area(self)
 
     def _on_force_reload(self):
-        """🔄 재조회 버튼 — 캘린더 선택 날짜를 강제 재다운로드"""
         tgt = self.calendar.selectedDate().toPyDate()
         sym = self.sym_in.text().strip().upper()
         if not sym:

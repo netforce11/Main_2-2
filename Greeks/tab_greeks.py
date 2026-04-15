@@ -424,7 +424,7 @@ class GreeksGrid(QWidget):
                 self._und_price = und
         if not self._cell_data: return
         ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        rows = [dict(ts=ts, sym=self._sym, **d) for d in self._cell_data.values()]
+        rows = [{**d, "ts": ts, "sym": self._sym} for d in self._cell_data.values()]
         try:
             gdb.save_snapshot(self._conn, rows)
             evts  = gdb.detect_spike(self._day, self._sym, rows,

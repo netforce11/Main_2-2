@@ -170,6 +170,9 @@ class SignalBridge(QObject):
     order_status_sig = pyqtSignal(int, str, float, float)     # oid,status,filled,remaining
     # whatIf 증거금 조회 결과
     whatif_sig = pyqtSignal(int, float, float, float, float, str)  # oid,initBefore,initAfter,maintBefore,maintAfter,commission
+    # contractDetails — BAG conId 조회용
+    contract_details_sig = pyqtSignal(int, object)   # reqId, contractDetails
+    contract_details_end_sig = pyqtSignal(int)        # reqId
     # 히스토리
     hist_bar       = pyqtSignal(int, dict)   # bar를 dict로 직렬화 후 emit (object는 cross-thread 크래시)
     hist_end       = pyqtSignal(int)

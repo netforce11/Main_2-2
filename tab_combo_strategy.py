@@ -84,6 +84,13 @@ class ComboStrategyGrid(
         self._build()
         self._connect_signals()
 
+        # synthetic_panel 콜백 연결 (margin_mode, close_pos, chaser 등)
+        try:
+            from combo_order_logic import _init_synthetic_panel_callbacks
+            _init_synthetic_panel_callbacks(self)
+        except Exception as _e:
+            print(f"[ComboStrategyGrid] 콜백 초기화 오류: {_e}")
+
         # [S11] 연결 시 계좌 표시 갱신 — 이미 연결된 경우 즉시 시도
         QTimer.singleShot(500, self._refresh_account_display)
 

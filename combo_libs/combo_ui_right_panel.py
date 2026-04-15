@@ -170,13 +170,21 @@ class RightPanelMixin:
 
         self.synthetic_panel = SyntheticStatusPanel()
         v.addWidget(self.synthetic_panel, 1)
+
+        # ── synthetic_panel 콜백 연결 (생성 직후 1회) ──────────
+        # _init_synthetic_panel_callbacks가 외부에서 호출되지 않을 경우 대비
+        try:
+            from combo_order_logic import _init_synthetic_panel_callbacks
+            _init_synthetic_panel_callbacks(self)
+        except Exception as _e:
+            print(f"[ComboUI] 콜백 초기화 오류: {_e}")
+
         return w
 
     # ── 미체결 / 정정 / 취소 핸들러 ─────────────────────────────
     def _on_open_orders(self):
         """미체결 주문 조회 → SyntheticStatusPanel 미체결 탭으로 이동."""
-        from combo_order_open import on_open_orders
-        # 패널 탭 전환 후 조회
+        from combo_order_open import on_open_orders, _modify_tick, _cancel_selected
         panel = getattr(self, 'synthetic_panel', None)
         if panel:
             panel._tabs.setCurrentIndex(2)
@@ -199,13 +207,14 @@ class RightPanelMixin:
         on_modify_order(self)
 
     def _on_cancel_order(self):
-        """취소 — 미체결 조회 후 자동 취소."""
+        """취소 — 미체결 조회 후 탭에서 선택 취소."""
+        from combo_order_open import _cancel_selected
         _cancel_selected(self)
 
     def _on_chaser_mode_changed(self, btn):
         """수동/자동 라디오 전환 시 UI 업데이트."""
         is_auto = self._rb_chaser_auto.isChecked()
-        self._lbl_chaser_info.setVisible(is_auto)
+        self._lbl_chaser_desc.setVisible(is_auto)
         chaser_active = getattr(self, '_chaser_active', False)
         self.btn_chase.setEnabled(not is_auto or not chaser_active)
 
