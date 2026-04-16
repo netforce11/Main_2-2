@@ -162,6 +162,11 @@ class TradingDashboard(QMainWindow):
         self.tab_combo = add(ComboStrategyGrid, "4. 복합 전략",    self)
         add(MultiPriceGrid,                   "5. 복수 현재가",  self)
         self.tab_greeks  = add(GreeksGrid,    "6. Greeks Matrix",self)
+        # ★ v6.6: Greeks Matrix → chain_saver 버퍼 연동
+        # init_chain_saver 호출 시점엔 tab_greeks 미생성이므로 여기서 연결
+        _buf = getattr(self, 'chain_buf', None)
+        if _buf and hasattr(self.tab_greeks, 'attach_chain_buffer'):
+            self.tab_greeks.attach_chain_buffer(_buf)
         add(ChartGrid,                        "7. 1분봉 차트",   self)
         add(OITrackerGrid,                    "8. OI 추적",      self)
         self.tab_trading = add(TradingGrid,   "9. 주문/잔고",    self)

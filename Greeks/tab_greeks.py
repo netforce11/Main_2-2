@@ -2,9 +2,12 @@
 # Python 3.8 호환  |  S11 patch 기준
 from __future__ import annotations
 import logging
+import os
+import sys
+import subprocess
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-from PyQt5.QtCore    import QTimer, Qt
+from PyQt5.QtCore    import QTimer, Qt, QMetaObject, Q_ARG, pyqtSlot
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QTabWidget,
                               QLabel, QPushButton, QComboBox, QSlider,
                               QSplitter, QTableWidget, QLineEdit)
@@ -15,6 +18,13 @@ from greeks_replay  import ReplayPanel
 from greeks_context import ContextDetector
 from core import (router, REQ_CHAIN, REQ_CHAIN_P,
                   make_opt_contract, build_expiry_list, SYMBOL_CFG, DEFAULT_CFG)
+
+# chain_saver 버퍼 연동 (Optional — 없으면 기존 IBKR 직접 구독 유지)
+try:
+    from call_put_tab.chain_saver.buffer import ChainBuffer
+    _CHAIN_BUFFER_AVAILABLE = True
+except ImportError:
+    _CHAIN_BUFFER_AVAILABLE = False
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +69,12 @@ class GreeksGrid(QWidget):
         self._flush_t = QTimer(self)
         self._flush_t.setSingleShot(True)
         self._flush_t.timeout.connect(self._flush)
+
+        # ── chain_saver 버퍼 연동 ────────────────────────────
+        # attach_chain_buffer() 로 주입되면 IBKR 직접 구독 대신 콜백 수신
+        self._chain_buf: Optional["ChainBuffer"] = None
+        self._use_chain_buf = False
+
         self._build()
         self._connect_signals()
         self._refresh_expiry()           # 앱 시작 시 만기 목록 자동 채우기
@@ -113,6 +129,16 @@ class GreeksGrid(QWidget):
         hb.addWidget(QLabel("Delta 필터")); hb.addWidget(self._delta_sl)
         hb.addStretch()
         hb.addWidget(QLabel(f"저장: {gdb.GREEKS_DIR}"))
+
+        # ChainSaver 저장 로그 열기 버튼
+        btn_log = QPushButton("📋 저장 로그")
+        btn_log.setToolTip("ChainSaver 30초 통계 로그 파일 열기")
+        btn_log.setStyleSheet(
+            "background:#1a2a1a;color:#00e676;padding:4px 8px;"
+            "font-size:11px;border:1px solid #2a5a2a;border-radius:3px;")
+        btn_log.clicked.connect(self._open_chainsaver_log)
+        hb.addWidget(btn_log)
+
         return hb
 
     def _connect_signals(self):
@@ -180,32 +206,165 @@ class GreeksGrid(QWidget):
         tag  = "0DTE" if "0DTE" in text else "W" if "[W]" in text else "M" if "[M]" in text else ""
         return code, tag
 
+    # ── chain_saver 버퍼 연동 ────────────────────────────────
+    def attach_chain_buffer(self, buf: "ChainBuffer"):
+        """
+        _init_saver.py 에서 호출.
+        chain_saver ChainBuffer 를 주입하면 IBKR 직접 구독 대신
+        버퍼 콜백으로 Greeks 수신 → 티커 슬롯 0개 추가 사용.
+
+        사용 예:
+            # _init_saver.py
+            self.tab_greeks.attach_chain_buffer(chain_buf)
+        """
+        if not _CHAIN_BUFFER_AVAILABLE:
+            log.warning("[GreeksGrid] ChainBuffer import 불가 — IBKR 직접 구독 유지")
+            return
+        self._chain_buf    = buf
+        self._use_chain_buf = True
+        buf.register_greeks_subscriber(self._on_chain_buf_update)
+        log.info("[GreeksGrid] chain_saver 버퍼 연동 완료 ✅")
+        print("[Greeks] 🔗 chain_saver 버퍼 연동 — IBKR 직접 구독 생략")
+
+    def _on_chain_buf_update(self, expiry: str, strike: float,
+                              side: str, data: dict):
+        """
+        chain_saver buffer 브로드캐스트 콜백.
+        ★ IBKR EClient 스레드에서 호출됨 — UI 접근 금지 ★
+        데이터 유효성만 확인 후 메인 스레드로 마샬링.
+        """
+        # 빠른 필터링 (스레드 안전한 값만 읽기)
+        if expiry != self._expiry:
+            return
+        iv = data.get("iv")
+        if not iv or not (0 < iv < 10):
+            return
+
+        # 메인 스레드에서 실제 처리 — invokeMethod로 안전하게 전달
+        import json
+        try:
+            payload = json.dumps({
+                "expiry": expiry,
+                "strike": strike,
+                "side":   side,
+                "iv":     data.get("iv"),
+                "delta":  data.get("delta"),
+                "gamma":  data.get("gamma"),
+                "vega":   data.get("vega"),
+                "theta":  data.get("theta"),
+                "und_price": data.get("und_price"),
+                "theo":   data.get("theo"),
+                "mid":    data.get("mid"),
+                "mispct": data.get("mispct"),
+            })
+        except Exception:
+            return
+        QMetaObject.invokeMethod(
+            self, "_apply_chain_buf_update",
+            Qt.QueuedConnection,
+            Q_ARG(str, payload),
+        )
+
+    @pyqtSlot(str)
+    def _apply_chain_buf_update(self, payload: str):
+        """
+        메인 스레드에서 실행 — UI/데이터 갱신 안전.
+        """
+        import json
+        try:
+            data = json.loads(payload)
+        except Exception:
+            return
+
+        expiry = data["expiry"]
+        strike = data["strike"]
+        side   = data["side"]
+
+        cfg     = SYMBOL_CFG.get(self._sym, DEFAULT_CFG)
+        step    = cfg[3]
+        strikes = self._calc_strikes(self._und_price, ATM_WING, step)
+        if strike not in strikes:
+            return
+
+        iv    = data.get("iv")
+        delta = data.get("delta")
+        gamma = data.get("gamma")
+        vega  = data.get("vega")
+        theta = data.get("theta")
+        und   = data.get("und_price") or self._und_price
+
+        vanna = (vega * delta) if (vega and delta) else 0.0
+        ts    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        k     = (expiry, strike, side)
+
+        is_new = k not in self._cell_data
+        if is_new and len(self._cell_data) == 0:
+            print(f"[Greeks] ✅ 첫 chain_buf tick! strike={strike} {side} "
+                  f"iv={iv:.4f} delta={delta:.4f} "
+                  f"theo={data.get('theo')} mispct={data.get('mispct')}")
+
+        self._prev_data[k] = self._cell_data.get(k, {}).copy()
+        self._cell_data[k] = dict(
+            expiry=expiry, strike=strike, side=side,
+            delta=delta, gamma=gamma, iv=iv, vanna=vanna,
+            und_price=und, ts=ts,
+            theo=data.get("theo"),
+            mid=data.get("mid"),
+            mispct=data.get("mispct"),
+        )
+
+        # 수신 진행 현황 (10개 단위)
+        n     = len(self._cell_data)
+        total = len(strikes) * 2
+        if is_new and (n % 10 == 0 or n == total):
+            pct = int(n / total * 100) if total else 0
+            print(f"[Greeks] buf 수신 {n}/{total} ({pct}%) "
+                  f"strike={strike} {side} iv={iv:.3f}")
+            self._banner.setText(
+                f"🔗 버퍼 수신 {n}/{total} ({pct}%) | {side}{int(strike)} iv={iv:.3f}")
+
+        if not self._flush_t.isActive():
+            self._flush_t.start(THROTTLE_MS)
+
     # ── 조회 ────────────────────────────────────────────
     def _fetch(self):
         self._sym           = self._sym_cb.currentText()
         self._expiry, self._tag = self._current_expiry()
-        print(f"[Greeks] 조회 시작 sym={self._sym} expiry={self._expiry} tag={self._tag} und={self._und_price}")
+        print(f"[Greeks] 조회 시작 sym={self._sym} expiry={self._expiry} "
+              f"tag={self._tag} und={self._und_price} "
+              f"mode={'chain_buf' if self._use_chain_buf else 'IBKR'}")
         if not self._expiry:
             msg = "만기 미선택 — 만기갱신 버튼을 누르세요"
             self._banner.setText(f"⚠ {msg}"); log.warning("[GreeksGrid] %s", msg); return
         if self._und_price <= 0:
             msg = f"⚠ 기초자산 가격 미수신 (und={self._und_price}) — IBKR 연결 확인"
             self._banner.setText(msg); print(f"[Greeks] {msg}"); return
-        # 기존 구독 reqId 초기화
+
+        cfg    = SYMBOL_CFG.get(self._sym, DEFAULT_CFG)
+        step   = cfg[3]
+        strikes = self._calc_strikes(self._und_price, ATM_WING, step)
+        atm_check = round(self._und_price / (step if step else 5)) * (step if step else 5)
+
+        # ── chain_buf 모드: IBKR 구독 생략, 콜백 대기 ──────────
+        if self._use_chain_buf:
+            self._cell_data.clear()
+            self._prev_data.clear()
+            msg = (f"🔗 chain_buf 대기 중 | {self._sym} {self._expiry} "
+                   f"ATM={atm_check} ±{ATM_WING} | {len(strikes)*2}개")
+            self._banner.setText(msg)
+            print(f"[Greeks] {msg}")
+            return
+
+        # ── IBKR 직접 구독 모드 (기존 로직) ────────────────────
         self._req_map.clear()
         self._rid_c = REQ_CHAIN
         self._rid_p = REQ_CHAIN_P
-        cfg  = SYMBOL_CFG.get(self._sym, DEFAULT_CFG)
-        step = cfg[3]
-        strikes = self._calc_strikes(self._und_price, ATM_WING, step)
-        # [S10] 기존 구독 먼저 모두 취소 (재조회 시 중복 방지)
+        # 기존 구독 먼저 취소
         for rid in list(self._req_map.keys()):
             try: self._main.ib.cancelMktData(rid)
             except Exception: pass
 
         ok = 0; fail = 0
-        # [S10] SNAPSHOT_MODE=True → snapshot=True(1회수신후자동해제)
-        #       티커 한도 소비 없음 — Max tickers 오류 해결
         snap = SNAPSHOT_MODE
         for s in strikes:
             for side, counter_attr, end in [
@@ -226,14 +385,12 @@ class GreeksGrid(QWidget):
                     log.error("[GreeksGrid] reqMktData 오류 %s %s: %s", s, side, e)
                     fail += 1
 
-        atm_check = round(self._und_price / (cfg[3] if cfg[3] else 5)) * (cfg[3] if cfg[3] else 5)
-        mode_str  = "📸 스냅샷" if snap else "📡 스트림"
+        mode_str = "📸 스냅샷" if snap else "📡 스트림"
         msg = (f"{mode_str} {self._sym} {self._expiry} | ATM={atm_check} ±{ATM_WING} | "
                f"요청 {ok}건" + (f" (실패 {fail}건)" if fail else ""))
         self._banner.setText(msg)
         print(f"[Greeks] {msg}")
         print(f"[Greeks] reqId 범위: 콜={REQ_CHAIN}~{self._rid_c-1} 풋={REQ_CHAIN_P}~{self._rid_p-1}")
-        print(f"[Greeks] router 등록 범위: option {REQ_CHAIN}~{REQ_CHAIN_P+199}")
         print(f"[Greeks] strikes 샘플: {strikes[:3]}...{strikes[-3:]}")
         print(f"[Greeks] SNAPSHOT_MODE={snap}  ATM_WING=±{ATM_WING}  총={ok}개")
 
@@ -415,6 +572,38 @@ class GreeksGrid(QWidget):
                                    hist_gamma, hist_iv)
         except Exception as e:
             log.error("[GreeksGrid] band update: %s", e)
+
+    # ── ChainSaver 로그 파일 열기 ──────────────────────────
+    def _open_chainsaver_log(self):
+        """ChainSaver 30초 통계 로그 파일을 OS 기본 뷰어로 열기."""
+        # scheduler 참조 시도
+        sched = None
+        try:
+            sched = self.mw.tab_callput._saver_scheduler
+        except AttributeError:
+            pass
+
+        if sched and hasattr(sched, 'log_path_today'):
+            path = sched.log_path_today()
+        else:
+            today = date.today().strftime("%Y%m%d")
+            path  = os.path.join(r"C:\data\Greeks_history",
+                                 f"chainsaver_{today}.log")
+
+        # 파일 없으면 빈 파일 생성
+        if not os.path.exists(path):
+            try:
+                open(path, "w", encoding="utf-8").close()
+            except OSError:
+                pass
+
+        try:
+            if sys.platform == "win32":
+                os.startfile(path)
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception as e:
+            log.error("[GreeksGrid] 로그 파일 열기 실패: %s", e)
 
     # ── 자동저장 ────────────────────────────────────────
     def _autosave(self):

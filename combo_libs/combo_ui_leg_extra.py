@@ -8,6 +8,10 @@ combo_ui_leg_extra.py — 수동 레그 추가/제거 + strike 변경 훅
   _extra_del_leg    — ➖ 마지막 추가 레그 제거
   _on_strike_changed      — 행사가 변경 훅
   _fetch_conid_then_premium — conId → Mid-price 자동 조회
+
+v2.1 변경:
+  - ★ _fetch_conid_then_premium: conId 수신 즉시 _CONID_CACHE에 저장
+    (symbol/cp/strike/expiry를 이미 보유하고 있어 테이블 재조회 불필요)
 ──────────────────────────────────────────────────────────────
 """
 
@@ -71,7 +75,6 @@ def _extra_add_leg(self):
     col = LEG_COLORS[r % len(LEG_COLORS)]
     self.tbl_legs.insertRow(r)
 
-    # 기본값: BUY C, 수량 1, 프리미엄 0
     defaults = [f"레그{r+1}", "BUY", "C", "", "0.00", "1", "―"]
     for c, val in enumerate(defaults):
         it = QTableWidgetItem(val)
@@ -80,10 +83,8 @@ def _extra_add_leg(self):
             it.setForeground(QBrush(QColor(col)))
         elif c == 1:
             it.setForeground(QBrush(QColor("#00ff88")))
-        # 자동 모드라도 추가된 레그는 모두 편집 가능
         self.tbl_legs.setItem(r, c, it)
 
-    # 만기 기본값: 현재 전략 첫 번째 레그와 동일
     if r > 0:
         prev_exp = self.tbl_legs.item(r - 1, 6)
         if prev_exp:
@@ -99,7 +100,6 @@ def _extra_add_leg(self):
 def _extra_del_leg(self):
     """➖ 마지막 레그 제거 (추가 레그 전용)."""
     from combo_ui_leg_logic import _update_add_btn_state
-    # 전략 기본 레그 수 파악: _base_leg_count 가 없으면 제거 차단
     base_count = getattr(self, '_base_leg_count', 0)
     row_count  = self.tbl_legs.rowCount()
     if row_count <= base_count:
@@ -146,7 +146,13 @@ def _on_strike_changed(self, item):
 
 
 def _fetch_conid_then_premium(self, row, symbol, strike, cp, expiry):
-    """reqContractDetails → conId → fill_premium_from_market."""
+    """
+    reqContractDetails → conId → fill_premium_from_market.
+
+    ★ v2.1: conId 수신 즉시 _CONID_CACHE에 저장.
+      symbol/cp/strike/expiry를 이미 인자로 보유하므로
+      테이블 재조회 없이 정확하게 저장 가능.
+    """
     try:
         from core_contract import make_opt_contract
         from combo_ui_leg_panel import fill_premium_from_market
@@ -158,9 +164,11 @@ def _fetch_conid_then_premium(self, row, symbol, strike, cp, expiry):
     if ib is None:
         return
 
-    rid = 8850 + row
-    opt = make_opt_contract(symbol=symbol, strike=strike,
-                            right=cp, expiry=expiry)
+    rid      = 8850 + row
+    opt      = make_opt_contract(symbol=symbol, strike=strike,
+                                 right=cp, expiry=expiry)
+    # BAG용 심볼 통일 (SPXW → SPX)
+    bag_sym  = symbol.replace("SPXW", "SPX")
 
     _orig_cd     = getattr(ib, 'contractDetails',    lambda *a: None)
     _orig_cd_end = getattr(ib, 'contractDetailsEnd', lambda *a: None)
@@ -177,6 +185,19 @@ def _fetch_conid_then_premium(self, row, symbol, strike, cp, expiry):
         ib.contractDetailsEnd = _orig_cd_end
         con_id = resolved.get('conId', 0)
         if con_id > 0:
+            # ★ conId 캐시 저장 — 여기서 직접 저장 (타이밍 문제 없음)
+            try:
+                from combo_order_bag import (
+                    _CONID_CACHE, _conid_key, _save_conid_cache)
+                key = _conid_key(bag_sym, cp, strike, expiry)
+                if _CONID_CACHE.get(key) != con_id:
+                    _CONID_CACHE[key] = con_id
+                    _save_conid_cache()
+                    self._log(
+                        f"💾 conId 캐시 저장: 레그{row+1} "
+                        f"{cp} {int(strike)} {expiry} → {con_id}")
+            except Exception:
+                pass
             fill_premium_from_market(self, row, con_id)
         else:
             self._log(f"⚠ 레그{row+1} conId 조회 실패 — 프리미엄 수동 입력 필요")

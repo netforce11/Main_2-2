@@ -15,8 +15,10 @@ except ImportError:
         class ZoneInfo:
             def __new__(cls, key): return _pytz.timezone(key)
 
-from pathlib import Path
-from core import SAVE_DIR
+# core.py 와 순환 import 방지 — SAVE_DIR 을 여기서 직접 정의
+# core.py 의 SAVE_DIR 과 동일한 값이어야 함
+SAVE_DIR = Path("data")
+SAVE_DIR.mkdir(exist_ok=True)
 
 def save_json(filename: str, data: dict):
     path = SAVE_DIR / filename

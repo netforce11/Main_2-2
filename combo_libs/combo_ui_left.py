@@ -338,6 +338,17 @@ class LeftPanelMixin:
             self._log(
                 f"체인 동기화: {sym}  C{len(cp.call_strikes)} / P{len(cp.put_strikes)}")
 
+        # ★ 당일 conId 일괄 조회
+        # 첫 자동 동기화(앱 시작 후 1회) 또는 수동 동기화 시에만 실행
+        # 이후 3초 자동 동기화는 코드 실행 안 함
+        raw_expiry = getattr(self, '_current_expiry', '')
+        first_run  = not getattr(self, '_conid_bulk_done', False)
+        if (not silent or first_run) and raw_expiry and (self._call_strikes or self._put_strikes):
+            self._conid_bulk_done = True
+            _bulk_fetch_conids(
+                self, sym, raw_expiry,
+                self._call_strikes, self._put_strikes)
+
     # ──────────────────────────────────────────────────────────
     # 체인 클릭 → 레그 자동 입력
     # ──────────────────────────────────────────────────────────
@@ -369,3 +380,129 @@ class LeftPanelMixin:
 
         price_str = f"{price:.2f}" if price else "0.00"
         self._log(f"레그{leg_row+1} 자동 입력: {side} {int(strike)}  ${price_str}")
+
+# ── 당일 conId 일괄 조회 ────────────────────────────────────────
+
+def _bulk_fetch_conids(self, symbol: str, expiry: str,
+                       call_strikes: list, put_strikes: list):
+    """
+    체인 동기화 완료 시 당일 conId가 캐시에 없으면 일괄 조회.
+
+    - data/conid_cache.json 에 오늘 날짜(YYYYMMDD) 키로 저장 여부 확인
+    - 없으면 reqContractDetails 일괄 요청 (80ms 간격)
+    - 진행률을 로그창에 출력, 완료 시 최종 결과 출력
+    - 조회 중 중복 실행 방지 (_conid_bulk_running 플래그)
+    """
+    from datetime import date
+    today = date.today().strftime("%Y%m%d")
+
+    # 오늘 만기와 expiry가 일치하는 경우에만 날짜 키 체크
+    # (내일만기 등 다른 만기도 저장하므로 expiry 단위로 체크)
+    try:
+        from combo_order_bag import _CONID_CACHE, _conid_key, _save_conid_cache
+    except ImportError:
+        return
+
+    bag_sym = symbol.replace("SPXW", "SPX")
+
+    # 이미 전부 캐시에 있으면 스킵
+    all_strikes = (
+        [(st, "C") for st in call_strikes] +
+        [(st, "P") for st in put_strikes]
+    )
+    missing = [
+        (st, cp) for st, cp in all_strikes
+        if _conid_key(bag_sym, cp, st, expiry) not in _CONID_CACHE
+    ]
+    if not missing:
+        self._log(f"✅ conId 캐시 완비 ({len(all_strikes)}개) — 조회 생략")
+        return
+
+    # 중복 실행 방지
+    if getattr(self, '_conid_bulk_running', False):
+        return
+    self._conid_bulk_running = True
+
+    ib = getattr(self.mw, 'ib', None)
+    if not ib or not getattr(self.mw, 'connected', False):
+        self._conid_bulk_running = False
+        return
+
+    total     = len(missing)
+    done_cnt  = [0]
+    saved_cnt = [0]
+    base_rid  = 8900   # 8900~8979 (최대 80개)
+
+    self._log(f"🔍 conId 일괄 조회 시작: {total}개 "
+              f"(기존 캐시 {len(all_strikes)-total}개 재사용)")
+
+    from PyQt5.QtCore import QTimer
+    from core_contract import make_opt_contract
+
+    _orig_cd     = getattr(ib, 'contractDetails',    lambda *a: None)
+    _orig_cd_end = getattr(ib, 'contractDetailsEnd', lambda *a: None)
+    _rid_map     = {}   # rid → (strike, cp)
+
+    for i, (st, cp_side) in enumerate(missing):
+        rid = base_rid + i
+        _rid_map[rid] = (st, cp_side)
+
+    def _on_cd(req_id, cd):
+        if req_id not in _rid_map:
+            return
+        st, cp_side = _rid_map[req_id]
+        con_id = cd.contract.conId
+        if con_id > 0:
+            key = _conid_key(bag_sym, cp_side, st, expiry)
+            _CONID_CACHE[key] = con_id
+            saved_cnt[0] += 1
+
+    def _on_cd_end(req_id):
+        if req_id not in _rid_map:
+            return
+        done_cnt[0] += 1
+        # 진행률 로그 (10개마다 + 마지막)
+        if done_cnt[0] % 10 == 0 or done_cnt[0] == total:
+            self._log(f"  conId 조회 중... {done_cnt[0]}/{total}")
+        if done_cnt[0] >= total:
+            _save_conid_cache()
+            ib.contractDetails    = _orig_cd
+            ib.contractDetailsEnd = _orig_cd_end
+            self._conid_bulk_running = False
+            self._log(
+                f"✅ conId 일괄 조회 완료: "
+                f"신규 저장 {saved_cnt[0]}개 / 전체 {len(all_strikes)}개 캐시 완비")
+
+    ib.contractDetails    = _on_cd
+    ib.contractDetailsEnd = _on_cd_end
+
+    # 80ms 간격으로 순차 요청 (IB 서버 부하 방지)
+    def _send(idx):
+        if idx >= total:
+            return
+        st, cp_side = missing[idx]
+        rid = base_rid + idx
+        try:
+            opt = make_opt_contract(
+                symbol=symbol, strike=st, right=cp_side, expiry=expiry)
+            ib.reqContractDetails(rid, opt)
+        except Exception as e:
+            done_cnt[0] += 1
+            self._log(f"  ⚠ conId 조회 오류 {cp_side}{int(st)}: {e}")
+        QTimer.singleShot(80, lambda: _send(idx + 1))
+
+    _send(0)
+
+    # 전체 타임아웃 (total × 80ms + 10초 여유)
+    def _timeout():
+        if not getattr(self, '_conid_bulk_running', False):
+            return
+        _save_conid_cache()
+        ib.contractDetails    = _orig_cd
+        ib.contractDetailsEnd = _orig_cd_end
+        self._conid_bulk_running = False
+        self._log(
+            f"⚠ conId 일괄 조회 타임아웃 — "
+            f"저장 완료 {saved_cnt[0]}/{total}개")
+
+    QTimer.singleShot(total * 80 + 10_000, _timeout)

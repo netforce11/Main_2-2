@@ -9,6 +9,8 @@ watch_cond_widget.py — 감시 조건 설정 탭 UI  v6.4
 ════════════════════════════════════════════════════════
 """
 
+from call_put_tab.watch_alert_tab import WatchAlertTabMixin
+
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QLineEdit, QComboBox,
@@ -18,7 +20,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 
 
-class WatchCondMixin:
+class WatchCondMixin(WatchAlertTabMixin):
     """감시 조건 설정 탭 UI. CallPutGrid에 mixin된다."""
 
     def _build_watch_widget(self) -> QWidget:
@@ -41,6 +43,7 @@ class WatchCondMixin:
         self._watch_tabs.addTab(self._build_watch_tab(),  "🔔 조건 설정")
         self._watch_tabs.addTab(self._build_log_tab(),    "📋 알람 로그")
         self._watch_tabs.addTab(self._build_rules_tab(),  "📌 등록 목록")
+        self._watch_tabs.addTab(self._build_alert_tab(),  "🚨 SPX 알람")
 
         outer_v.addWidget(self._watch_tabs)
         self._watch_gb = outer

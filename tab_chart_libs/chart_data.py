@@ -110,6 +110,13 @@ def on_calendar(self, qdate=None):
     tgt = date(qd.year(), qd.month(), qd.day())
     self.selected_date = tgt
     sym = self.sym_in.text().upper()
+
+    # ── 일봉 뷰 활성 중이면 일봉도 자동 갱신 ─────────────────
+    if getattr(self, '_daily_view_active', False):
+        from chart_daily import load_daily_data
+        load_daily_data(self)
+        return   # 일봉 모드일 때는 분봉 로드 생략
+
     if self._multi_day_active:
         do_multi_day(self, self._multi_day_count); return
     if self.mode == "ibkr" and self.mw.connected:

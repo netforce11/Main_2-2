@@ -1,0 +1,15 @@
+[33m44ac765[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcomplete_basic_combo_order[m[33m)[m 복합전략 부분 업데이트 추가
+[33m30fcf2c[m 종합 업데이트 _ 콜-풋 탭과 데이터 수신 관리 그리고 버그 픽스
+[33mead374a[m 합성주문 추가 수정
+[33m2c34d50[m[33m ([m[1;31morigin/complete_basic_combo_order[m[33m)[m complete combo order basic set
+[33m40b78ac[m[33m ([m[1;31morigin/complete_order_panel(buy-sell-modify)[m[33m, [m[1;32mcomplete_order_panel(buy-sell-modify)[m[33m)[m 매도 주문오류 추가 수정
+[33m3167947[m[33m ([m[1;32mcomplete_price_balance[m[33m, [m[1;32mIBKR_update_v1[m[33m, [m[1;32mIBKR_UPDATE_V2[m[33m)[m 콤보전략까지 합체
+[33m418bdb2[m 장 시작할때, 지수 1분차트까지 실시간 적용됨.
+[33m74bf8a0[m 차트 실시간 1분봉 업데이트
+[33m4d24450[m 기본 완성,차트 완성, 주문 완성
+[33mfd97176[m 기능 변경 내역 빠른주문 패널  탭 4개로 확장: ⚡ 신규 / ✏ 정정 / ✕ 취소 / ▼ 빠른매도 정정·취소 탭 진입 시 미체결 자동 조회 (currentChanged → QTimer.singleShot(100, _fetch_open_orders)) 신규 탭 하단 잔고 패널 내장 (최대 120px, 🔄 조회 버튼)  빠른매도 탭 (신규)  미체결 테이블에서 행 선택 → OID 저장 +0.05 / +0.10 (더 비싸게, 빨간) / -0.05 / -0.10 (빠른체결, 초록) 버튼 ▼ 선택 주문 즉시 매도 전송 버튼 → 선택 OID를 SELL로 정정  현재가 패널 폰트  종목명: 12 → 14px (+2) 현재가: 18 → 20px (+2) 등락: 11 → 13px (+2) Ask/Bid 값: 12 → 15px (+3)
+[33m2e247d2[m 수평 바 이동 완성
+[33m58ec82e[m 분봉까지 완성
+[33mb813005[m core.py — make_und_contract 수정 항목수정 전수정 후NDX exchange"NASDAQ" (잘못됨)"NASDAQ" (IND 타입 올바른 값)RUT exchange"CBOE""RUSSELL" (Russell 2000 거래소)SPXW 처리그대로 "SPXW" symbol 사용"SPXW"→"SPX" 정규화 후 계약 생성거래소 매핑inline if/else_IND_EXCH 딕셔너리로 명확하게 관리
+[33m4ad51e3[m options_chart 코드 리팩토링 300줄 이하로
+[33m2c3c271[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m Initial commit

@@ -130,25 +130,36 @@ class CoreFetchMixin(CoreFetchPosMixin):
         _,_,_,step = SYMBOL_CFG.get(
             sym if sym != "SPXW" else "SPX", DEFAULT_CFG)
 
-        cancel_ids = [REQ_UND]
-        for i in range(self._MAX_STRIKES):
-            cancel_ids.append(REQ_CALL + i)
-            cancel_ids.append(REQ_PUT  + i)
+        # ── [v6.6] cancel 대상: 실제 구독 중인 reqId 만 ────────────
+        # 기존: _MAX_STRIKES 전체(최대 81개) 무조건 cancel
+        #       → 30ms 간격 81개 = 2.4초, EClient 소켓 버퍼 overflow → 0xC0000005
+        # 변경: call_data / put_data 에 실제 등록된 rid 만 cancel
+        #       → 첫 조회 시 0개, 이후 실제 구독수(보통 40개 이하)
+        active_rids = list(self.call_data.keys()) + list(self.put_data.keys())
+        cancel_ids  = [REQ_UND] + active_rids   # UND 는 항상 포함
 
         self._fetch_busy = True
-        self._arm_fetch_timeout()   # [v6.5-4] 30초 Safety Net 시작
-        self._log(f"{display_tc}  구독 초기화 중…  만기={expiry}  Zone={self._zone}  n={n}")
+        self._arm_fetch_timeout()
+        self._log(f"{display_tc}  구독 초기화 중…  만기={expiry}  Zone={self._zone}  n={n}  cancel={len(cancel_ids)}건")
+
+        # ── [v6.6] 세대(generation) 카운터 ─────────────────────────
+        # _fetch() 재호출 시 +1 증가.
+        # 이전 세대 _cancel_seq / _send_req 체인은 gen 불일치 시 즉시 종료.
+        gen = getattr(self, '_fetch_gen', 0) + 1
+        self._fetch_gen = gen
 
         def _cancel_seq(idx):
+            if self._fetch_gen != gen: return   # 세대 폐기
             if not _alive(self): return
             if idx >= len(cancel_ids):
-                QTimer.singleShot(500, _prepare_and_subscribe)
+                QTimer.singleShot(300, _prepare_and_subscribe)
                 return
             try: self.mw.ib.cancelMktData(cancel_ids[idx])
             except: pass
-            QTimer.singleShot(30, lambda: _cancel_seq(idx + 1))
+            QTimer.singleShot(80, lambda: _cancel_seq(idx + 1))   # 30→80ms
 
         def _prepare_and_subscribe():
+            if self._fetch_gen != gen: return   # 세대 폐기
             if not _alive(self): return
             self.call_data.clear(); self.put_data.clear()
             if PG:
@@ -199,6 +210,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
 
             # ── [v6.5-1] 진행률 표시 포함 구독 루프 ──────────────
             def _send_req(idx):
+                if self._fetch_gen != gen: return   # 세대 폐기
                 if not _alive(self): return
                 if idx >= total:
                     self._fetch_busy = False   # 🔓 완료
@@ -393,7 +405,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
         if hasattr(self, '_pp_lbl_price'):
             self._pp_lbl_price.setText("조회 중…")
         if hasattr(self, '_pp_tbl_quote'):
-            from tab_options import _mk
+            from call_put_tab.tab_options import _mk
             self._pp_tbl_quote.setItem(0, 1, _mk("―", "#ff6666"))
             self._pp_tbl_quote.setItem(1, 1, _mk("―", "#33aaff"))
 

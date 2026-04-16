@@ -12,6 +12,10 @@ tab_greeks.py — Greeks Matrix 탭  v2.0  (tab_account.py 에서 분리)
   │          ├─ GEX 막대 차트  (Call +위 / Put –아래)         │
   │          └─ IV Skew 라인 차트                             │
   └───────────────────────────────────────────────────────────┘
+# ※ 이 파일은 사용되지 않습니다.
+# 실제 파일: Main2/Greeks/tab_greeks.py
+# main.py 에서 sys.path.insert(0, "Greeks/") 로 로드됨
+
 
   신규 기능
   ─────────

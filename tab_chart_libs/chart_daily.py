@@ -330,11 +330,12 @@ def render_daily(self, df):
             x=[i], height=[b[5]], width=0.6,
             brush=pg.mkBrush(col), pen=pg.mkPen(None)))
 
-    # 캘린더 날짜 수직선
-    _draw_cal_vline(candle_plot, bars, self.calendar)
-
-    # 캘린더 날짜 중앙 정렬
+    # 캘린더 날짜 중앙 정렬 + y축 범위 + 수직선 (center_on_calendar 내부에서 처리)
     center_on_calendar(self, candle_plot, bars)
+
+    # autoRange 비활성화 (볼륨 등 외부 데이터에 끌려가지 않도록)
+    candle_plot.getViewBox().disableAutoRange()
+    vol_plot.getViewBox().disableAutoRange()
 
     layout.addWidget(candle_plot, stretch=4)
     layout.addWidget(vol_plot,    stretch=1)
@@ -346,7 +347,9 @@ def render_daily(self, df):
 
 
 def center_on_calendar(self, plot, bars):
-    """캘린더 선택 날짜가 x축 중앙에 오도록 뷰 범위 설정"""
+    """캘린더 선택 날짜가 x축 중앙에 오도록 뷰 범위 설정.
+    표시 구간 내 고가/저가 기준으로 y축 범위도 명시적으로 설정한다.
+    캘린더 날짜 수직선도 여기서 재드로우 (캘린더 변경 시 항상 최신 상태 유지)."""
     cal_date = self.calendar.selectedDate().toPyDate()
 
     best_idx, best_delta = None, timedelta(days=9999)
@@ -362,6 +365,33 @@ def center_on_calendar(self, plot, bars):
     x_min = max(0, best_idx - half)
     x_max = min(len(bars) - 1, best_idx + half)
     plot.setXRange(x_min, x_max, padding=0.02)
+
+    # 표시 구간 내 봉들의 고가/저가로 y축 범위 계산
+    # bars 구조: (ts_ms, o, h, l, c, v)  → h=index2, l=index3
+    visible = bars[x_min: x_max + 1]
+    if visible:
+        y_lo = min(b[3] for b in visible)
+        y_hi = max(b[2] for b in visible)
+        margin = (y_hi - y_lo) * 0.06   # 위아래 6% 여백
+        plot.setYRange(y_lo - margin, y_hi + margin, padding=0)
+
+    # 기존 수직선 제거 후 재드로우 (캘린더 날짜 변경 시 항상 최신 위치 반영)
+    if hasattr(plot, '_cal_vline') and plot._cal_vline is not None:
+        try:
+            plot.removeItem(plot._cal_vline)
+        except Exception:
+            pass
+    plot._cal_vline = None
+    for i, b in enumerate(bars):
+        if datetime.fromtimestamp(b[0] / 1000).date() == cal_date:
+            vline = pg.InfiniteLine(
+                pos=i, angle=90,
+                pen=pg.mkPen("#f9a825", width=1, style=Qt.DashLine),
+                label=str(cal_date),
+                labelOpts={"color": "#f9a825", "position": 0.92})
+            plot.addItem(vline)
+            plot._cal_vline = vline
+            break
 
 
 # ── 내부 헬퍼 ──────────────────────────────────────────────

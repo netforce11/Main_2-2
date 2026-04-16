@@ -8,16 +8,14 @@ combo_order_whatif.py — whatIf 증거금 조회 콜백 & 전송 로직
   _finish_whatif         — 결과 집계 → 패널 갱신
   _send_whatif_order     — whatIf=True 주문 전송 진입점
 
-v3.0 개선:
+v3.1 개선:
+  - ★ _on_whatif_acct_value: _cached_available_funds / _acct_fetched_once
+    동시 갱신 → 로컬 모드에서도 실계좌 잔고 즉시 반영
   - BAG whatIf 단일 전송 (레그 개별 전송 방식 폐기)
     · conId 캐시 있음 → BAG whatIf 1회 전송 (정확, 빠름)
     · conId 캐시 없음 → 로컬 추정값 즉시 사용 (대기 없음)
-      ※ 로그창에 안내 메시지 출력
-      ※ 실제 주문 후 conId 캐시 저장 → 다음 조회부터 BAG 방식 사용
-  - 타임아웃 20초 → 5초 (초과 시 로컬 추정값 폴백)
+  - 타임아웃 5초 → 로컬 추정값 폴백
   - reqAccountSummary: core_contract.py 연결 시 영구 구독
-    → 별도 호출 없이 캐시 즉시 사용
-  - 콜백 필터링 로직 단순화 (BAG 응답 1개)
 ────────────────────────────────────────────────────────────
 """
 
@@ -29,14 +27,26 @@ from combo_order_utils import _calc_required_margin
 # ── 계좌 요약 콜백 (core_contract.py 영구 구독 → 자동 갱신) ───
 
 def _on_whatif_acct_value(self, tag: str, value: str, currency: str, account: str):
-    """bridge.acct_value 수신 → _whatif_acct_cache 갱신."""
+    """
+    bridge.acct_value 수신 → 두 캐시 모두 갱신.
+
+    ★ v3.1: _whatif_acct_cache 뿐 아니라 _cached_available_funds /
+             _acct_fetched_once 도 동기화 → 로컬 모드에서도 실잔고 사용.
+    """
     try:
         v = float(value)
         cache = getattr(self, '_whatif_acct_cache', {})
         if tag == "AvailableFunds":
             cache["af"] = v
+            # ★ 로컬 모드 캐시도 동기화
+            self._cached_available_funds = v
+            self._acct_fetched_once      = True
         elif tag == "BuyingPower":
             cache["bp"] = v
+            # AvailableFunds 없을 때 폴백
+            if not cache.get("af"):
+                self._cached_available_funds = v
+                self._acct_fetched_once      = True
         self._whatif_acct_cache = cache
 
         # fallback 세션 진행 중이면 버퍼에도 저장
@@ -110,7 +120,6 @@ def _finish_whatif(self, session_id: int):
     self._whatif_session     = -1
     self._whatif_in_progress = False
 
-    # 로컬에 먼저 복사한 뒤 초기화 (초기화 후 읽으면 빈 값이 되는 버그 방지)
     buf  = dict(getattr(self, '_whatif_buf',  {}))
     oids = list(getattr(self, '_whatif_oids', []))
     self._whatif_oids = []
@@ -162,8 +171,6 @@ def _send_whatif_order(self, legs: list, strat: str, cost_str: str, on_done=None
 
     [conId 캐시 없음]
       로컬 추정값 즉시 사용 (서버 조회 생략)
-      로그창 안내: 실제 주문 후 conId 캐시 저장됨
-                  → 다음 조회부터 IB 서버 방식 자동 적용
     """
     from core_contract import make_opt_contract
     from ibapi.contract import Contract, ComboLeg

@@ -161,7 +161,9 @@ def _place_bag_with_conids(self, bag, combo_legs, legs, strat):
         for i in range(total):
             if i not in resolved:
                 resolved[i] = 0
-                self._log(f"  ⚠ 레그{i+1} conId 타임아웃 → 0 폴백")
+                opt_c = combo_legs[i][1]
+                self._log(f"  ⚠ 레그{i+1} conId 타임아웃 10초 — "
+                          f"{opt_c.right} {int(opt_c.strike)} {opt_c.lastTradeDateOrContractMonth}")
         _do_send(self, bag, combo_legs, legs, strat, ib, total, resolved, session)
 
     QTimer.singleShot(10000, _on_timeout)
@@ -190,20 +192,40 @@ def _do_send(self, bag, combo_legs, legs, strat, ib, total, resolved, session):
                   f"{legs[i]['dir']} {legs[i]['cp']} {int(legs[i]['strike'])}")
     bag.comboLegs = [cl for cl, _ in combo_legs]
 
-    # lmtPrice 계산
-    try:
-        from combo_ui_leg_panel import _recalc_net_price
-        lmt_price = _recalc_net_price(self) or 0.0
-    except Exception:
-        lmt_price = 0.0
+    # ★ conId=0 레그 존재 시 주문 차단 (타임아웃 폴백 케이스)
+    zero_legs = [i+1 for i, (cl, _) in enumerate(combo_legs) if cl.conId == 0]
+    if zero_legs:
+        self._bag_session = None
+        self._log(f"❌ 주문 취소: 레그 {zero_legs} conId 조회 실패 (타임아웃) — "
+                  f"체인 동기화 후 다시 시도하세요")
+        from PyQt5.QtWidgets import QMessageBox
+        QMessageBox.warning(self, "주문 오류",
+            f"레그 {zero_legs}의 conId 조회가 타임아웃됐습니다.\n\n"
+            f"복합전략 탭 좌측 '↺ 즉시 동기화' 버튼을 누른 후\n"
+            f"잠시 기다렸다가 다시 시도하세요.")
+        return
 
+    # lmtPrice 계산
+    # BAG 주문: BUY 레그 합계 - SELL 레그 합계 = net
+    # net > 0 (데빗): BUY BAG, lmtPrice = net (지불 금액)
+    # net < 0 (크레딧): SELL BAG, lmtPrice = abs(net) (수취 금액)
     buy_total  = sum(float(lg.get("prem", 0) or 0) * int(float(lg.get("qty", 1)))
                      for lg in legs if lg["dir"] == "BUY")
     sell_total = sum(float(lg.get("prem", 0) or 0) * int(float(lg.get("qty", 1)))
                      for lg in legs if lg["dir"] == "SELL")
     net        = round(buy_total - sell_total, 2)
-    if lmt_price == 0.0:
+
+    # _recalc_net_price 는 보조 수단 — 실패해도 net 으로 대체
+    try:
+        from combo_ui_leg_panel import _recalc_net_price
+        ui_price = _recalc_net_price(self)
+        lmt_price = round(abs(float(ui_price)), 2) if ui_price else round(abs(net), 2)
+    except Exception:
         lmt_price = round(abs(net), 2)
+
+    # lmtPrice 최소값 보정 — 0.00 이면 주문 거절됨
+    if lmt_price <= 0.0:
+        lmt_price = 0.01
 
     bag_action = "BUY" if net >= 0 else "SELL"
     type_label = "데빗 (지불)" if net >= 0 else "크레딧 (수취)"

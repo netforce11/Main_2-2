@@ -206,7 +206,7 @@ class CoreFetchPosMixin:
           4: 평가손익  ← 이 메서드 완료 후 _start_server_pnl 또는 _update_pos_pnl 이 채움
         """
         try:
-            from tab_options import _mk
+            from call_put_tab.tab_options import _mk
         except Exception as e:
             self._log(f"⚠ _apply_positions: _mk 임포트 실패 → {e}")
             return
@@ -397,7 +397,7 @@ class CoreFetchPosMixin:
             if row_idx >= self.tbl_positions.rowCount():
                 return
 
-            from tab_options import _mk
+            from call_put_tab.tab_options import _mk
             # unrealizedPnL: float (달러 단위, IBKR가 이미 multiplier 반영해서 줌)
             pnl = unrealizedPnL
             if pnl is None or pnl != pnl:   # NaN 방어
@@ -525,7 +525,7 @@ class CoreFetchPosMixin:
         서버 PnL 모드에서 conId 미보유 포지션의 폴백으로도 사용됨.
         cur_price 가 None 이면 price_cache 에서 재탐색.
         """
-        from tab_options import _mk
+        from call_put_tab.tab_options import _mk
         if not hasattr(self, 'tbl_positions'):
             return
         if row_idx >= self.tbl_positions.rowCount():

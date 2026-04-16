@@ -157,3 +157,107 @@ def detect_spike(day: str, sym: str, current_rows: List[Dict],
             prev_delta[k] = d
 
     return events
+
+# ── chain_YYYYMMDD.db 조회 ───────────────────────────────────
+def _chain_db_path(day: str) -> str:
+    return os.path.join(GREEKS_DIR, f"chain_{day}.db")
+
+def load_chain_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[Dict]:
+    """chain_YYYYMMDD.db에서 가격+Greeks 로드. 구버전 DB(mid/theo/mispct 없음) 호환."""
+    path = _chain_db_path(day)
+    if not os.path.exists(path):
+        return []
+    conn = sqlite3.connect(path)
+
+    # ★ 구버전 DB 호환: 실제 존재하는 컬럼만 조회
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(chain_data)").fetchall()}
+    base_cols = ["ts", "sym", "expiry", "strike", "side",
+                 "bid", "ask", "last", "iv",
+                 "delta", "gamma", "vega", "theta", "und_price"]
+    extra_cols = [c for c in ["mid", "theo", "mispct"] if c in existing]
+    all_cols = base_cols + extra_cols
+    select = ", ".join(all_cols)
+
+    q = f"SELECT {select} FROM chain_data"
+    p: tuple = ()
+    if from_ts and to_ts:
+        q += " WHERE ts BETWEEN ? AND ?"
+        p = (from_ts, to_ts)
+    elif from_ts:
+        q += " WHERE ts >= ?"
+        p = (from_ts,)
+    elif to_ts:
+        q += " WHERE ts <= ?"
+        p = (to_ts,)
+    q += " ORDER BY ts, strike, side"
+    rows = conn.execute(q, p).fetchall()
+    conn.close()
+    return [dict(zip(all_cols, r)) for r in rows]
+
+
+def load_merged_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[Dict]:
+    """
+    greeks_YYYYMMDD.db + chain_YYYYMMDD.db 를 조인해서 반환.
+    - chain DB 기준으로 bid/ask/mid/theo/mispct/vega 추가
+    - greeks DB 기준으로 vanna 추가
+    - 어느 한쪽만 있어도 반환 (outer join 방식)
+    """
+    greeks_rows = load_snapshots(day, from_ts, to_ts)
+    chain_rows  = load_chain_snapshots(day, from_ts, to_ts)
+
+    # chain 데이터를 (ts, strike, side) 키로 인덱싱
+    chain_idx: Dict[tuple, dict] = {}
+    for r in chain_rows:
+        key = (r["ts"], r["strike"], r["side"])
+        chain_idx[key] = r
+
+    # greeks 데이터를 (ts, strike, side) 키로 인덱싱
+    greeks_idx: Dict[tuple, dict] = {}
+    for r in greeks_rows:
+        key = (r["ts"], r["strike"], r["side"])
+        greeks_idx[key] = r
+
+    # 두 키셋 합집합으로 머지
+    all_keys = set(chain_idx.keys()) | set(greeks_idx.keys())
+    merged = []
+    for key in sorted(all_keys):
+        c = chain_idx.get(key, {})
+        g = greeks_idx.get(key, {})
+        merged.append({
+            "ts":        key[0],
+            "strike":    key[1],
+            "side":      key[2],
+            "sym":       c.get("sym")    or g.get("sym", ""),
+            "expiry":    c.get("expiry") or g.get("expiry", ""),
+            "bid":       c.get("bid"),
+            "ask":       c.get("ask"),
+            "last":      c.get("last"),
+            "mid":       c.get("mid"),
+            "theo":      c.get("theo"),
+            "mispct":    c.get("mispct"),
+            "iv":        c.get("iv")    or g.get("iv"),
+            "delta":     c.get("delta") or g.get("delta"),
+            "gamma":     c.get("gamma") or g.get("gamma"),
+            "vega":      c.get("vega"),
+            "theta":     c.get("theta"),
+            "vanna":     g.get("vanna"),
+            "und_price": c.get("und_price") or g.get("und_price"),
+        })
+    return merged
+
+
+def available_days_merged() -> List[str]:
+    """chain_*.db 와 greeks_*.db 날짜 합집합 반환."""
+    days = set()
+    for f in os.listdir(GREEKS_DIR):
+        if not f.endswith(".db"):
+            continue
+        if f.startswith("greeks_"):
+            day = f[7:-3]   # greeks_20260416.db -> 20260416
+            if len(day) == 8 and day.isdigit():
+                days.add(day)
+        elif f.startswith("chain_"):
+            day = f[6:-3]   # chain_20260416.db -> 20260416
+            if len(day) == 8 and day.isdigit():
+                days.add(day)
+    return sorted(days)

@@ -6,12 +6,14 @@ chain_saver/scheduler.py — 저장 스케줄러
   - 60초마다: 내일 만기 스냅샷 요청
   - 장중(is_market_open)일 때만 저장 실행
   - 사이드바 상태 라벨 업데이트
+  ── v6.6: 수신 통계 상태 라벨 표시 추가
 
 스냅샷 요청 로직은 snapshot.py 에 분리됨.
 """
 from __future__ import annotations
 import logging
-from datetime import datetime
+import os
+from datetime import datetime, date
 from typing import Dict, Tuple
 
 from PyQt5.QtCore import QTimer, QObject
@@ -20,6 +22,7 @@ from core_io import is_market_open
 from call_put_tab.chain_saver.buffer import ChainBuffer
 from call_put_tab.chain_saver.worker import SaveWorker
 from call_put_tab.chain_saver import snapshot as snap
+from call_put_tab.chain_saver.db import check_recent
 
 log = logging.getLogger(__name__)
 
@@ -31,24 +34,71 @@ class ChainScheduler(QObject):
         self._cp      = cp
         self._buf     = buf
         self._worker  = worker
-        self._status_lbl = None
+        self._status_lbl  = None
+        self._detail_lbl  = None   # 수신 통계 전용 라벨 (선택)
         self._snap_map: Dict[int, Tuple] = {}
         self._next_map: Dict[int, Tuple] = {}
+        self._save_count_total = 0   # 누적 저장 건수
+
+        # ── 파일 로거 초기화 ─────────────────────────────────
+        self._log_dir  = r"C:\data\Greeks_history"
+        self._file_log = logging.getLogger("chainsaver_file")
+        self._file_log.propagate = False   # 콘솔 중복 출력 방지
+        self._setup_file_logger()
 
         self._t5  = QTimer(self); self._t5.setInterval(5_000)
         self._t60 = QTimer(self); self._t60.setInterval(60_000)
+        # 30초마다 수신 통계 로그 출력
+        self._t_stat = QTimer(self); self._t_stat.setInterval(30_000)
+
         self._t5.timeout.connect(self._on_5s)
         self._t60.timeout.connect(self._on_60s)
+        self._t_stat.timeout.connect(self._on_stat)
 
     # ── 외부 인터페이스 ──────────────────────────────────────
     def set_status_label(self, lbl):
         self._status_lbl = lbl
 
+    def set_detail_label(self, lbl):
+        """수신 통계 전용 라벨. 없어도 동작."""
+        self._detail_lbl = lbl
+
+    # ── 파일 로거 셋업 ───────────────────────────────────────
+    def _setup_file_logger(self):
+        """일별 chainsaver_YYYYMMDD.log 파일 핸들러 등록."""
+        os.makedirs(self._log_dir, exist_ok=True)
+        today    = date.today().strftime("%Y%m%d")
+        log_path = os.path.join(self._log_dir, f"chainsaver_{today}.log")
+
+        # 이미 같은 파일 핸들러가 붙어있으면 재등록 생략
+        for h in self._file_log.handlers:
+            if getattr(h, 'baseFilename', '') == log_path:
+                return
+
+        # 기존 핸들러 제거 후 오늘 파일 핸들러 등록
+        self._file_log.handlers.clear()
+        fh = logging.FileHandler(log_path, encoding="utf-8")
+        fh.setFormatter(logging.Formatter(
+            "%(asctime)s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        ))
+        self._file_log.setLevel(logging.INFO)
+        self._file_log.addHandler(fh)
+
+    def log_path_today(self) -> str:
+        """오늘 로그 파일 전체 경로 반환 (버튼 열기용)."""
+        today = date.today().strftime("%Y%m%d")
+        return os.path.join(self._log_dir, f"chainsaver_{today}.log")
+
     def start(self):
-        self._t5.start(); self._t60.start()
+        self._t5.start()
+        self._t60.start()
+        self._t_stat.start()
 
     def stop(self):
-        self._t5.stop(); self._t60.stop()
+        self._t5.stop()
+        self._t60.stop()
+        self._t_stat.stop()
 
     # ── 5초 tick ────────────────────────────────────────────
     def _on_5s(self):
@@ -73,6 +123,7 @@ class ChainScheduler(QObject):
         rows = self._buf.flush()
         if rows:
             self._worker.enqueue(rows)
+            self._save_count_total += len(rows)
             self._set_status("saving", len(rows))
 
     # ── 60초 tick — 내일 만기 ────────────────────────────────
@@ -90,6 +141,51 @@ class ChainScheduler(QObject):
 
     def _cancel_next(self):
         snap.cancel_map(self._cp.mw.ib, self._next_map)
+
+    # ── 30초 tick — 수신 통계 ────────────────────────────────
+    def _on_stat(self):
+        """30초마다 버퍼 통계 + DB 통계를 콘솔과 파일에 출력."""
+        # 날짜 바뀌면 파일 핸들러 갱신
+        self._setup_file_logger()
+
+        buf_stat = self._buf.stats()
+
+        # 콘솔 + 파일 동시 기록
+        buf_line = (
+            f"[ChainSaver] 버퍼 엔트리={buf_stat['entries']} | "
+            f"price_ticks={buf_stat['price_ticks']} "
+            f"greeks_ticks={buf_stat['greeks_ticks']} "
+            f"snap_ticks={buf_stat['snap_ticks']} | "
+            f"이론가 커버리지={buf_stat['theo_coverage']}"
+        )
+        log.info(buf_line)
+        self._file_log.info(buf_line)
+
+        # DB 저장 현황 (최근 5분)
+        day = date.today().strftime("%Y%m%d")
+        db_stat = check_recent(day, minutes=5)
+        if "error" not in db_stat:
+            db_line = (
+                f"[ChainSaver] DB 최근5분 rows={db_stat['total_rows']} | "
+                f"IV커버={db_stat['coverage_iv']:<6} "
+                f"이론가커버={db_stat['coverage_theo']} | "
+                f"stream={db_stat['streams']} snap={db_stat['snapshots']} | "
+                f"최근저장={db_stat['latest_ts']}"
+            )
+            log.info(db_line)
+            self._file_log.info(db_line)
+
+        # 선택 라벨 업데이트
+        if self._detail_lbl:
+            txt = (
+                f"엔트리 {buf_stat['entries']}  "
+                f"이론가 {buf_stat['theo_coverage']}  "
+                f"누적 {self._save_count_total}건"
+            )
+            self._detail_lbl.setText(txt)
+            self._detail_lbl.setStyleSheet(
+                "color:#888;font-size:9px;border:none;"
+            )
 
     # ── tick 수신 (router 에서 호출) ─────────────────────────
     def on_tick_price(self, req_id: int, tick_type: int, price: float):

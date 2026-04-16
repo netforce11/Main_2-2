@@ -94,7 +94,8 @@ def cancel_map(ib, req_map: Dict[int, Tuple]) -> None:
 # ── 내부 헬퍼 ────────────────────────────────────────────────
 def _req(ib, rid: int, contract) -> None:
     try:
-        ib.reqMktData(rid, contract, "100,101,106", True, False, [])
+        # snapshot=True 모드에서는 genericTickList 비워야 함 (bM 에러 방지)
+        ib.reqMktData(rid, contract, "", True, False, [])
     except Exception as e:
         log.warning("[Snapshot] reqMktData rid=%d: %s", rid, e)
 
