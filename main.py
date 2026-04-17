@@ -79,6 +79,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "combo_libs"))
 
 # ── 탭 모듈 ───────────────────────────────────────────────────
 from call_put_tab import CallPutGrid, init_chain_saver
+from watch_dog    import WatchAlertPanel   # SPX 감시 패널
 from tab_sniper  import SniperGrid
 from tab_oi      import OITrackerGrid
 from tab_combo_strategy import ComboStrategyGrid
