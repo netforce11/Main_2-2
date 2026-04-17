@@ -173,8 +173,21 @@ def check_recent(day: str, minutes: int = 5) -> dict:
         return {"error": "DB 없음"}
     try:
         conn = sqlite3.connect(path)
-        from datetime import datetime, timedelta
-        cutoff = (datetime.now() - timedelta(minutes=minutes)
+        from datetime import datetime, timedelta, timezone
+        # ★ ET 기준으로 cutoff 계산 (DB ts 컬럼이 ET 기준이므로 일치시킴)
+        def _et_now():
+            now_utc = datetime.now(timezone.utc)
+            y = now_utc.year
+            from datetime import timedelta as _td
+            mar1 = datetime(y, 3, 1, tzinfo=timezone.utc)
+            dst_start = mar1 + _td(days=(6 - mar1.weekday()) % 7 + 7)
+            dst_start = dst_start.replace(hour=7)
+            nov1 = datetime(y, 11, 1, tzinfo=timezone.utc)
+            dst_end = nov1 + _td(days=(6 - nov1.weekday()) % 7)
+            dst_end = dst_end.replace(hour=6)
+            offset = _td(hours=-4 if dst_start <= now_utc < dst_end else -5)
+            return now_utc + offset
+        cutoff = (_et_now() - timedelta(minutes=minutes)
                   ).strftime("%Y-%m-%d %H:%M:%S")
         rows = conn.execute(
             "SELECT iv, theo, source FROM chain_data WHERE ts >= ?",

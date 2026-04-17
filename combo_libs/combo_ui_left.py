@@ -381,6 +381,11 @@ class LeftPanelMixin:
         price_str = f"{price:.2f}" if price else "0.00"
         self._log(f"레그{leg_row+1} 자동 입력: {side} {int(strike)}  ${price_str}")
 
+        # ★ 방향 배너 갱신
+        banner = getattr(self, 'direction_banner', None)
+        if banner is not None:
+            banner.refresh(self.tbl_legs)
+
 # ── 당일 conId 일괄 조회 ────────────────────────────────────────
 
 def _bulk_fetch_conids(self, symbol: str, expiry: str,

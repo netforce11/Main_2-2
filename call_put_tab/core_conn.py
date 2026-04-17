@@ -26,8 +26,23 @@ v6.5 개선 사항:
 ════════════════════════════════════════════════════════
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, date
 from collections import deque
+
+
+def _today_et() -> date:
+    """pytz 없이 미국 동부시간(ET) 기준 오늘 날짜 반환."""
+    now_utc = datetime.now(timezone.utc)
+    y = now_utc.year
+    from datetime import timedelta as _td
+    mar1 = datetime(y, 3, 1, tzinfo=timezone.utc)
+    dst_start = mar1 + _td(days=(6 - mar1.weekday()) % 7 + 7)
+    dst_start = dst_start.replace(hour=7)
+    nov1 = datetime(y, 11, 1, tzinfo=timezone.utc)
+    dst_end = nov1 + _td(days=(6 - nov1.weekday()) % 7)
+    dst_end = dst_end.replace(hour=6)
+    offset = _td(hours=-4 if dst_start <= now_utc < dst_end else -5)
+    return (now_utc + offset).date()
 
 from PyQt5.QtCore import QDate, QTimer
 from PyQt5.QtWidgets import QMessageBox
@@ -260,7 +275,7 @@ class CoreConnMixin:
 
     def _auto_fetch_spxw_today(self):
         """연결 후 SPXW 0DTE 콤보만 자동 선택."""
-        today = datetime.today().date()
+        today = _today_et()   # ★ ET 기준
         if not is_trading_day(today):
             self._log("오늘은 거래일이 아닙니다. SPXW 자동 선택 건너뜀."); return
         today_str = today.strftime("%Y%m%d")
@@ -326,7 +341,7 @@ class CoreConnMixin:
         self.combo_spxw.blockSignals(True)
         self.combo_spxw.clear()
         self.combo_spxw.addItem("── 0DTE 선택 ──", "")
-        today = datetime.today().date()
+        today = _today_et()   # ★ ET 기준
         d = today - timedelta(days=3)
         days = []
         while d <= today + timedelta(days=14):
@@ -380,7 +395,7 @@ class CoreConnMixin:
             return
 
         from datetime import datetime as _dt
-        today_str = _dt.today().strftime("%Y%m%d")
+        today_str = _today_et().strftime("%Y%m%d")   # ★ ET 기준
         best_idx = 0
         for i, (_, code, _) in enumerate(self._expiry_list):
             if code == "CUSTOM":
@@ -391,7 +406,7 @@ class CoreConnMixin:
         _, code, best_date = self._expiry_list[best_idx]
 
         if code == "CUSTOM":
-            today = datetime.today().date()
+            today = _today_et()   # ★ ET 기준
             self.date_edit.blockSignals(True)
             self.date_edit.setDate(QDate(today.year, today.month, today.day))
             self.date_edit.blockSignals(False)

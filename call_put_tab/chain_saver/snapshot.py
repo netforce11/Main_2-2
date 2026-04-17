@@ -100,8 +100,26 @@ def _req(ib, rid: int, contract) -> None:
         log.warning("[Snapshot] reqMktData rid=%d: %s", rid, e)
 
 
+def _today_et() -> date:
+    """pytz 없이 미국 동부시간(ET) 기준 오늘 날짜 반환."""
+    from datetime import datetime, timezone, timedelta as _td
+    from datetime import date as _date
+    now_utc = datetime.now(timezone.utc)
+    y = now_utc.year
+    # 3월 둘째 일요일 (DST 시작, 07:00 UTC = 02:00 ET)
+    mar1 = datetime(y, 3, 1, tzinfo=timezone.utc)
+    dst_start = mar1 + _td(days=(6 - mar1.weekday()) % 7 + 7)
+    dst_start = dst_start.replace(hour=7)
+    # 11월 첫째 일요일 (DST 종료, 06:00 UTC = 02:00 ET)
+    nov1 = datetime(y, 11, 1, tzinfo=timezone.utc)
+    dst_end = nov1 + _td(days=(6 - nov1.weekday()) % 7)
+    dst_end = dst_end.replace(hour=6)
+    offset = _td(hours=-4 if dst_start <= now_utc < dst_end else -5)
+    return (now_utc + offset).date()
+
+
 def _next_trading_day() -> Optional[str]:
-    nxt = date.today() + timedelta(days=1)
+    nxt = _today_et() + timedelta(days=1)   # ★ ET 기준 오늘 날짜
     while nxt.weekday() >= 5:
         nxt += timedelta(days=1)
     return nxt.strftime("%Y%m%d")

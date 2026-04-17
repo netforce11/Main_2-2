@@ -149,6 +149,11 @@ def _build_leg_left(self) -> QWidget:
     extra_row.addStretch()
     v.addLayout(extra_row)
 
+    # ── 방향 배너 ─────────────────────────────────────────────
+    from combo_direction_banner import DirectionBanner
+    self.direction_banner = DirectionBanner(self)
+    v.addWidget(self.direction_banner)
+
     # ── Net Price 라벨 ────────────────────────────────────────
     self.lbl_net_price = QLabel("Net Price: —")
     self.lbl_net_price.setStyleSheet(
@@ -161,6 +166,8 @@ def _build_leg_left(self) -> QWidget:
     self._mid_ticks: dict   = {}
     self.tbl_legs.itemChanged.connect(
         lambda item: _on_leg_item_changed(self, item))
+    self.tbl_legs.itemChanged.connect(
+        lambda item: self.direction_banner.refresh(self.tbl_legs))
 
     return w
 

@@ -199,6 +199,12 @@ def _fetch_conid_then_premium(self, row, symbol, strike, cp, expiry):
             except Exception:
                 pass
             fill_premium_from_market(self, row, con_id)
+            # ★ 방향 배너 갱신 (프리미엄 수신 후 약간 지연)
+            from PyQt5.QtCore import QTimer as _QT
+            _QT.singleShot(300, lambda: (
+                getattr(self, 'direction_banner', None) and
+                self.direction_banner.refresh(self.tbl_legs)
+            ))
         else:
             self._log(f"⚠ 레그{row+1} conId 조회 실패 — 프리미엄 수동 입력 필요")
 
