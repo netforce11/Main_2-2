@@ -20,6 +20,7 @@ from datetime import date
 from typing import List
 
 from call_put_tab.chain_saver.db import open_db, insert_rows
+from call_put_tab.chain_saver.buffer import today_et
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class SaveWorker:
     def __init__(self):
         self._q: queue.Queue = queue.Queue(maxsize=200)
         self._thread  = threading.Thread(target=self._run, daemon=True)
-        self._day     = date.today().strftime("%Y%m%d")
+        self._day     = today_et().strftime("%Y%m%d")   # ★ ET 날짜
         self._conn    = open_db(self._day)
         self._running = False
 
@@ -68,21 +69,25 @@ class SaveWorker:
     # ── 내부 루프 ────────────────────────────────────────────
     def _run(self):
         while True:
+            # ★ 날짜 체크: 큐와 무관하게 매 루프 최상단에서 수행
+            # 기존: 큐 Empty→continue 시 날짜 체크 건너뜀 → 자정 DB 교체 실패
+            today = today_et().strftime("%Y%m%d")   # ★ ET 날짜
+            if today != self._day:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._day  = today
+                self._conn = open_db(self._day)
+                log.info("[SaveWorker] ★ 자정 DB 교체 → %s", self._day)
+
             try:
                 rows = self._q.get(timeout=1)
             except queue.Empty:
-                continue
+                continue   # 큐 비어있어도 다음 루프에서 날짜 재체크
 
             if rows is _SENTINEL:
                 break
-
-            # 자정 넘어가면 DB 교체
-            today = date.today().strftime("%Y%m%d")
-            if today != self._day:
-                self._conn.close()
-                self._day  = today
-                self._conn = open_db(self._day)
-                log.info("[SaveWorker] DB 교체 → %s", self._day)
 
             cnt = insert_rows(self._conn, rows)
             log.debug("[SaveWorker] INSERT %d rows", cnt)

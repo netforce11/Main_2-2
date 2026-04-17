@@ -48,8 +48,35 @@ def open_baseline_db() -> sqlite3.Connection:
         PRIMARY KEY (day, sym, expiry, strike, side))""")
     conn.commit(); return conn
 
+# ── 정규장 시간 체크 (ET 기준) ──────────────────────────────
+def _is_market_hours() -> bool:
+    """
+    미국 ET 기준 정규장: 09:30 ~ 16:00
+    16:00 이후 저장 차단.
+    """
+    try:
+        from call_put_tab.chain_saver.buffer import now_et
+        now = now_et()
+    except ImportError:
+        # fallback: KST→ET 변환 (KST - 13 or 14)
+        import math
+        now = datetime.utcnow()  # 간이 대체
+    h, m = now.hour, now.minute
+    # 09:30 ~ 16:00
+    if h < 9:
+        return False
+    if h == 9 and m < 30:
+        return False
+    if h >= 16:
+        return False
+    return True
+
 # ── 저장 ────────────────────────────────────────────────
 def save_snapshot(conn: sqlite3.Connection, rows: List[Dict]) -> None:
+    if not _is_market_hours():
+        log.debug("[GreeksDB] 장외 시간 — 스냅샷 저장 생략 (%s)",
+                  datetime.now().strftime("%H:%M"))
+        return
     conn.executemany("INSERT INTO greeks VALUES (?,?,?,?,?,?,?,?,?,?)",
         [(r["ts"],r["sym"],r["expiry"],r["strike"],r["side"],
           r.get("delta"),r.get("gamma"),r.get("iv"),
@@ -195,7 +222,44 @@ def load_chain_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[D
     return [dict(zip(all_cols, r)) for r in rows]
 
 
-def load_merged_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[Dict]:
+def available_expiries_for_day(day: str) -> List[str]:
+    """
+    기준일(day)의 chain_*.db + greeks_*.db 에서 만기(expiry) 목록 반환.
+    예: ['20260417', '20260418', '20260425', ...]
+    """
+    expiries: set = set()
+
+    # chain DB
+    chain_path = _chain_db_path(day)
+    if os.path.exists(chain_path):
+        try:
+            conn = sqlite3.connect(chain_path)
+            rows = conn.execute(
+                "SELECT DISTINCT expiry FROM chain_data WHERE expiry IS NOT NULL AND expiry != ''"
+            ).fetchall()
+            conn.close()
+            expiries.update(r[0] for r in rows)
+        except Exception:
+            pass
+
+    # greeks DB
+    greeks_path = _db_path(day)
+    if os.path.exists(greeks_path):
+        try:
+            conn = sqlite3.connect(greeks_path)
+            rows = conn.execute(
+                "SELECT DISTINCT expiry FROM greeks WHERE expiry IS NOT NULL AND expiry != ''"
+            ).fetchall()
+            conn.close()
+            expiries.update(r[0] for r in rows)
+        except Exception:
+            pass
+
+    return sorted(expiries)
+
+
+def load_merged_snapshots(day: str, from_ts: str = "", to_ts: str = "",
+                          expiry: str = "") -> List[Dict]:
     """
     greeks_YYYYMMDD.db + chain_YYYYMMDD.db 를 조인해서 반환.
     - chain DB 기준으로 bid/ask/mid/theo/mispct/vega 추가
@@ -204,6 +268,11 @@ def load_merged_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[
     """
     greeks_rows = load_snapshots(day, from_ts, to_ts)
     chain_rows  = load_chain_snapshots(day, from_ts, to_ts)
+
+    # ★ 만기 필터
+    if expiry:
+        greeks_rows = [r for r in greeks_rows if r.get("expiry") == expiry]
+        chain_rows  = [r for r in chain_rows  if r.get("expiry") == expiry]
 
     # chain 데이터를 (ts, strike, side) 키로 인덱싱
     chain_idx: Dict[tuple, dict] = {}

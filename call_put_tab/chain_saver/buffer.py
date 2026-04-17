@@ -24,6 +24,46 @@ log = logging.getLogger(__name__)
 
 _Key = Tuple[str, float, str]   # (expiry, strike, side)
 
+# ── 미국 동부 시간 (ET) 유틸 ─────────────────────────────────
+# pytz 없이 동작하도록 UTC 오프셋 직접 계산.
+# 서머타임(DST): 3월 둘째 일요일 ~ 11월 첫째 일요일 → EDT = UTC-4
+# 겨울(EST): 그 외 → EST = UTC-5
+# KST = UTC+9  →  KST - ET = 13(DST) or 14(EST)
+
+def _et_offset_hours() -> int:
+    """현재 ET UTC 오프셋 반환: DST이면 -4, 겨울이면 -5."""
+    from datetime import timezone, timedelta
+    now_utc = datetime.now(timezone.utc)
+    y = now_utc.year
+    # 3월 둘째 일요일
+    mar1 = datetime(y, 3, 1, tzinfo=timezone.utc)
+    dst_start = mar1 + timedelta(days=(6 - mar1.weekday()) % 7 + 7)
+    dst_start = dst_start.replace(hour=7)   # 02:00 ET = 07:00 UTC
+    # 11월 첫째 일요일
+    nov1 = datetime(y, 11, 1, tzinfo=timezone.utc)
+    dst_end = nov1 + timedelta(days=(6 - nov1.weekday()) % 7)
+    dst_end = dst_end.replace(hour=6)       # 02:00 ET = 06:00 UTC
+    return -4 if dst_start <= now_utc < dst_end else -5
+
+def now_et() -> datetime:
+    """현재 ET 시각 반환."""
+    from datetime import timezone, timedelta
+    return datetime.now(timezone.utc) + timedelta(hours=_et_offset_hours())
+
+def today_et() -> date:
+    """현재 ET 날짜 반환."""
+    return now_et().date()
+
+def et_to_kst(et_str: str) -> str:
+    """'YYYY-MM-DD HH:MM:SS' ET → KST 문자열 변환."""
+    from datetime import timezone, timedelta
+    try:
+        dt_et = datetime.strptime(et_str, "%Y-%m-%d %H:%M:%S")
+        dt_kst = dt_et + timedelta(hours=_et_offset_hours() + 9)
+        return dt_kst.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return et_str
+
 # ── 무위험 금리 ──────────────────────────────────────────────
 _RISK_FREE_RATE = 0.053
 
@@ -59,10 +99,10 @@ def calc_bs(S: float, K: float, T: float, iv: float,
 
 
 def _days_to_expiry(expiry: str) -> float:
-    """'YYYYMMDD' → 연환산 만기 (당일이면 1/365)."""
+    """'YYYYMMDD' → 연환산 만기 (ET 기준, 당일이면 1/365)."""
     try:
         exp_date = datetime.strptime(expiry, "%Y%m%d").date()
-        delta = (exp_date - date.today()).days
+        delta = (exp_date - today_et()).days   # ★ ET 날짜 기준
         return max(delta, 1) / 365.0
     except ValueError:
         return 0.0
@@ -200,7 +240,7 @@ class ChainBuffer:
     def flush(self) -> List[dict]:
         if not self._buf:
             return []
-        ts  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ts  = now_et().strftime("%Y-%m-%d %H:%M:%S")   # ★ ET 기준
         sym = self._sym
         und = self._und_price
         rows = []

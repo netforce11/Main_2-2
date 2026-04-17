@@ -23,6 +23,7 @@ from call_put_tab.chain_saver.buffer import ChainBuffer
 from call_put_tab.chain_saver.worker import SaveWorker
 from call_put_tab.chain_saver import snapshot as snap
 from call_put_tab.chain_saver.db import check_recent
+from call_put_tab.chain_saver.buffer import today_et
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ class ChainScheduler(QObject):
         self._snap_map: Dict[int, Tuple] = {}
         self._next_map: Dict[int, Tuple] = {}
         self._save_count_total = 0   # 누적 저장 건수
+        self._bulk_buf: list = []    # ★ bulk INSERT 버퍼
+        self._bulk_tick: int = 0     # flush 주기 카운터
 
         # ── 파일 로거 초기화 ─────────────────────────────────
         self._log_dir  = r"C:\data\Greeks_history"
@@ -46,7 +49,7 @@ class ChainScheduler(QObject):
         self._file_log.propagate = False   # 콘솔 중복 출력 방지
         self._setup_file_logger()
 
-        self._t5  = QTimer(self); self._t5.setInterval(5_000)
+        self._t5  = QTimer(self); self._t5.setInterval(1_000)   # ★ 기본 1초
         self._t60 = QTimer(self); self._t60.setInterval(60_000)
         # 30초마다 수신 통계 로그 출력
         self._t_stat = QTimer(self); self._t_stat.setInterval(30_000)
@@ -63,11 +66,17 @@ class ChainScheduler(QObject):
         """수신 통계 전용 라벨. 없어도 동작."""
         self._detail_lbl = lbl
 
+    def set_save_interval(self, ms: int):
+        """저장 주기 변경 (UI 콤보박스에서 호출)."""
+        ms = max(500, ms)   # 최소 0.5초
+        self._t5.setInterval(ms)
+        log.info("[ChainScheduler] 저장 주기 변경 → %dms (%.1f초)", ms, ms/1000)
+
     # ── 파일 로거 셋업 ───────────────────────────────────────
     def _setup_file_logger(self):
         """일별 chainsaver_YYYYMMDD.log 파일 핸들러 등록."""
         os.makedirs(self._log_dir, exist_ok=True)
-        today    = date.today().strftime("%Y%m%d")
+        today    = today_et().strftime("%Y%m%d")   # ★ ET 날짜
         log_path = os.path.join(self._log_dir, f"chainsaver_{today}.log")
 
         # 이미 같은 파일 핸들러가 붙어있으면 재등록 생략
@@ -87,7 +96,7 @@ class ChainScheduler(QObject):
 
     def log_path_today(self) -> str:
         """오늘 로그 파일 전체 경로 반환 (버튼 열기용)."""
-        today = date.today().strftime("%Y%m%d")
+        today = today_et().strftime("%Y%m%d")   # ★ ET 날짜
         return os.path.join(self._log_dir, f"chainsaver_{today}.log")
 
     def start(self):
@@ -122,9 +131,18 @@ class ChainScheduler(QObject):
     def _flush_and_save(self):
         rows = self._buf.flush()
         if rows:
-            self._worker.enqueue(rows)
-            self._save_count_total += len(rows)
-            self._set_status("saving", len(rows))
+            # ★ bulk 버퍼에 누적 후 10초마다 한번에 INSERT
+            self._bulk_buf.extend(rows)
+            self._bulk_tick += 1
+            now_ms = self._t5.interval()
+            # 저장주기 × 10 마다 또는 500행 초과 시 flush
+            bulk_every = max(1, 10_000 // now_ms)
+            if self._bulk_tick >= bulk_every or len(self._bulk_buf) >= 500:
+                self._worker.enqueue(self._bulk_buf.copy())
+                self._save_count_total += len(self._bulk_buf)
+                self._set_status("saving", len(self._bulk_buf))
+                self._bulk_buf.clear()
+                self._bulk_tick = 0
 
     # ── 60초 tick — 내일 만기 ────────────────────────────────
     def _on_60s(self):
@@ -162,7 +180,7 @@ class ChainScheduler(QObject):
         self._file_log.info(buf_line)
 
         # DB 저장 현황 (최근 5분)
-        day = date.today().strftime("%Y%m%d")
+        day = today_et().strftime("%Y%m%d")   # ★ ET 날짜
         db_stat = check_recent(day, minutes=5)
         if "error" not in db_stat:
             db_line = (

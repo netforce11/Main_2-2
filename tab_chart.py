@@ -90,6 +90,8 @@ from chart_peaks    import (
 # ── v6.4 신규 ────────────────────────────────────────────────
 from chart_daily    import toggle_daily_view, load_daily_data, \
                            render_daily, center_on_calendar
+# ── v6.5 신규 ────────────────────────────────────────────────
+from chart_prefetch import PrefetchManager
 
 try:
     from common import (DATA_ROOT, API_KEY_FILE, WATCHLIST_FILE,
@@ -130,6 +132,9 @@ class ChartGrid(QWidget):
         # ── v6.4: 일봉 보기 상태 ─────────────────────────
         self._daily_worker         = None
         self._daily_view_active    = False
+        # ── v6.5: 선행 다운로드 ──────────────────────────
+        self._prefetch_manager     = None
+        self._prefetch_done_today  = None   # 마지막 실행 date
         self._build()
         self._load_watchlist()
         self._apply_theme()
@@ -286,3 +291,29 @@ class ChartGrid(QWidget):
             QMessageBox.warning(self, "종목 없음", "종목을 입력하세요."); return
         self.status_lbl.setText(f"🔄 {sym} {tgt} 재다운로드 중…")
         self._force_redownload(sym, tgt)
+
+    # ── v6.5: 탭 포커스 → 선행 다운로드 ─────────────────────
+    def on_tab_activate(self):
+        """main.py _on_tab_changed() 에서 탭 활성 시 호출됨.
+        하루 1회만 관심종목 선행 다운로드 실행."""
+        from datetime import date as _date
+        today = _date.today()
+        if self._prefetch_done_today == today:
+            return   # 오늘 이미 실행
+
+        symbols = [self.watch_list.item(i).text().strip().upper()
+                   for i in range(self.watch_list.count())
+                   if self.watch_list.item(i).text().strip()]
+        if not symbols:
+            return
+
+        self._prefetch_done_today = today
+        self._prefetch_manager    = PrefetchManager(self)
+        self._prefetch_manager.status_msg.connect(
+            lambda msg: self.status_lbl.setText(msg))
+        self._prefetch_manager.ibkr_alert.connect(
+            lambda msg: QMessageBox.warning(self, "IBKR 미연결", msg))
+        self._prefetch_manager.all_done.connect(
+            lambda: print("[Prefetch] 전체 완료"))
+        self._prefetch_manager.start(
+            symbols, self.api_key, mw=self.mw)

@@ -12,7 +12,17 @@ from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QTabWidget,
                               QLabel, QPushButton, QComboBox, QSlider,
                               QSplitter, QTableWidget, QLineEdit)
 import greeks_db as gdb
-from greeks_render  import init_table, init_row, render_rows
+from greeks_db import (load_merged_snapshots, available_days_merged,
+                        available_expiries_for_day)
+try:
+    from call_put_tab.chain_saver.buffer import et_to_kst, today_et
+except ImportError:
+    def et_to_kst(s): return s
+    def today_et():
+        from datetime import date; return date.today()
+from greeks_render  import (init_table, init_row, render_rows,
+                              init_table_replay, init_row_replay, render_rows_replay,
+                              REPLAY_NCOLS, RCOL_STRIKE)
 from greeks_chart   import GexSkewPanel, NormalBandPanel
 from greeks_replay  import ReplayPanel
 from greeks_context import ContextDetector
@@ -84,8 +94,25 @@ class GreeksGrid(QWidget):
     def _build(self):
         root = QVBoxLayout(self)
         root.addLayout(self._build_ctrl())
-        tabs = QTabWidget()
-        rt = QWidget(); rt_v = QVBoxLayout(rt)
+
+        # ★ 리플레이 컨트롤 바 (실시간 탭 내부)
+        self._replay_bar = self._build_replay_bar()
+        root.addLayout(self._replay_bar)
+
+        # ★ 리플레이 슬라이더 (리플레이 모드에서만 표시)
+        self._rp_slider = QSlider(Qt.Horizontal)
+        self._rp_slider.setMinimum(0)
+        self._rp_slider.setMaximum(0)
+        self._rp_slider.valueChanged.connect(self._rp_on_slider)
+        self._rp_slider.setVisible(False)
+        root.addWidget(self._rp_slider)
+
+        # ★ 테이블: 실시간(9col) / 리플레이(19col) 공용 스택
+        from PyQt5.QtWidgets import QStackedWidget
+        self._stack = QStackedWidget()
+
+        # 실시간 페이지
+        rt_page = QWidget(); rt_v = QVBoxLayout(rt_page)
         sp = QSplitter(Qt.Horizontal)
         self._table = QTableWidget()
         init_table(self._table)
@@ -96,14 +123,131 @@ class GreeksGrid(QWidget):
         rsp.addWidget(self._gex); rsp.addWidget(self._band)
         sp.addWidget(rsp)
         rt_v.addWidget(sp)
+        self._stack.addWidget(rt_page)   # index 0 = 실시간
+
+        # 리플레이 페이지 (실시간과 동일한 9컬럼 테이블 + 차트)
+        rp_page = QWidget(); rp_v = QVBoxLayout(rp_page)
+        rsp2 = QSplitter(Qt.Horizontal)
+        self._replay_table = QTableWidget()
+        init_table(self._replay_table)   # 9컬럼 — 실시간과 동일
+        rsp2.addWidget(self._replay_table)
+        rsp3 = QSplitter(Qt.Vertical)
+        self._replay_gex  = GexSkewPanel()
+        self._replay_band = NormalBandPanel()
+        rsp3.addWidget(self._replay_gex)
+        rsp3.addWidget(self._replay_band)
+        rsp2.addWidget(rsp3)
+        rp_v.addWidget(rsp2)
+        self._stack.addWidget(rp_page)   # index 1 = 리플레이
+
+        root.addWidget(self._stack)
+
         self._banner = QLabel("")
         self._banner.setStyleSheet("color:orange;font-weight:bold;")
-        rt_v.addWidget(self._banner)
-        tabs.addTab(rt, "📡 실시간")
-        tabs.addTab(ReplayPanel(), "⏪ 리플레이")
-        root.addWidget(tabs)
+        root.addWidget(self._banner)
+
+        # 별도 리플레이 탭 유지 (19컬럼 상세용)
+        self._replay_panel = ReplayPanel()
+
+        # 리플레이 상태
+        self._replay_mode    = False
+        self._replay_frames: dict = {}
+        self._replay_ts_list: list = []
+        self._replay_strikes: list = []
+        self._replay_atm:    float = 0.0
+        self._replay_prev:   dict  = {}
+        self._replay_cur:    int   = 0
+        self._replay_playing = False
+        self._replay_timer   = QTimer(self)
+        self._replay_timer.timeout.connect(self._replay_step)
+
         for ms, slot in [(AUTOSAVE_MS, self._autosave), (60_000, self._update_band)]:
             t = QTimer(self); t.timeout.connect(slot); t.start(ms)
+
+    def _build_replay_bar(self):
+        """실시간 탭 내부 리플레이 컨트롤 바."""
+        from PyQt5.QtWidgets import QHBoxLayout
+        hb = QHBoxLayout()
+
+        # 모드 토글
+        self.btn_live = QPushButton("📡 실시간")
+        self.btn_live.setCheckable(True); self.btn_live.setChecked(True)
+        self.btn_live.setStyleSheet(
+            "background:#1a4a1a;color:#00e676;font-weight:bold;padding:4px 10px;")
+        self.btn_live.clicked.connect(lambda: self._set_replay_mode(False))
+
+        self.btn_replay_mode = QPushButton("⏮ 리플레이")
+        self.btn_replay_mode.setCheckable(True)
+        self.btn_replay_mode.setStyleSheet(
+            "background:#1a1a4a;color:#aaaaff;font-weight:bold;padding:4px 10px;")
+        self.btn_replay_mode.clicked.connect(lambda: self._set_replay_mode(True))
+
+        hb.addWidget(self.btn_live)
+        hb.addWidget(self.btn_replay_mode)
+        hb.addWidget(QLabel("  |  날짜:"))
+
+        self.rp_cmb_day = QComboBox(); self.rp_cmb_day.setMinimumWidth(90)
+        self.rp_cmb_day.currentTextChanged.connect(self._rp_on_day_changed)
+        hb.addWidget(self.rp_cmb_day)
+
+        hb.addWidget(QLabel("만기:"))
+        self.rp_cmb_expiry = QComboBox(); self.rp_cmb_expiry.setMinimumWidth(100)
+        hb.addWidget(self.rp_cmb_expiry)
+
+        hb.addWidget(QLabel("From:"))
+        self.rp_edit_from = QLineEdit(); self.rp_edit_from.setPlaceholderText("HH:MM")
+        self.rp_edit_from.setFixedWidth(70)
+        hb.addWidget(self.rp_edit_from)
+
+        hb.addWidget(QLabel("To:"))
+        self.rp_edit_to = QLineEdit(); self.rp_edit_to.setPlaceholderText("HH:MM")
+        self.rp_edit_to.setFixedWidth(70)
+        hb.addWidget(self.rp_edit_to)
+
+        self.rp_btn_load = QPushButton("불러오기")
+        self.rp_btn_load.clicked.connect(self._rp_load)
+        hb.addWidget(self.rp_btn_load)
+
+        # 재생 컨트롤
+        hb.addWidget(QLabel("  속도:"))
+        self.rp_cmb_speed = QComboBox()
+        for k in ("x1", "x5", "x10"): self.rp_cmb_speed.addItem(k)
+        hb.addWidget(self.rp_cmb_speed)
+
+        self.rp_btn_play = QPushButton("▶ 재생")
+        self.rp_btn_play.setStyleSheet("background:#1a5a1a;font-weight:bold;padding:4px 10px;")
+        self.rp_btn_play.clicked.connect(self._rp_toggle_play)
+        hb.addWidget(self.rp_btn_play)
+
+        self.rp_btn_stop = QPushButton("■ 정지")
+        self.rp_btn_stop.clicked.connect(self._rp_stop)
+        hb.addWidget(self.rp_btn_stop)
+
+        # 저장 주기 설정
+        hb.addWidget(QLabel("  |  저장주기:"))
+        self.cmb_save_interval = QComboBox()
+        for label, ms in [("1초", 1000), ("3초", 3000), ("5초", 5000),
+                           ("10초", 10000), ("30초", 30000)]:
+            self.cmb_save_interval.addItem(label, ms)
+        self.cmb_save_interval.setCurrentIndex(0)   # 기본값 1초
+        self.cmb_save_interval.currentIndexChanged.connect(self._on_save_interval_changed)
+        hb.addWidget(self.cmb_save_interval)
+
+        self.rp_lbl_ts = QLabel("-")
+        self.rp_lbl_ts.setStyleSheet("color:#ffd700;font-weight:bold;padding:0 8px;border:none;")
+        hb.addWidget(self.rp_lbl_ts)
+
+        # 슬라이더
+        hb.addStretch()
+
+        # 리플레이 바는 처음에 숨김 (실시간 모드)
+        for w in [self.rp_cmb_day, self.rp_cmb_expiry,
+                  self.rp_edit_from, self.rp_edit_to,
+                  self.rp_btn_load, self.rp_cmb_speed,
+                  self.rp_btn_play, self.rp_btn_stop, self.rp_lbl_ts]:
+            w.setVisible(False)
+
+        return hb
 
     def _build_ctrl(self) -> QHBoxLayout:
         hb = QHBoxLayout()
@@ -612,7 +756,11 @@ class GreeksGrid(QWidget):
             if und and und > 0:
                 self._und_price = und
         if not self._cell_data: return
-        ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            from call_put_tab.chain_saver.buffer import now_et
+            ts = now_et().strftime("%Y-%m-%d %H:%M:%S")
+        except ImportError:
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         rows = [{**d, "ts": ts, "sym": self._sym} for d in self._cell_data.values()]
         try:
             gdb.save_snapshot(self._conn, rows)
@@ -653,3 +801,207 @@ class GreeksGrid(QWidget):
         while nxt.weekday() >= 5:
             nxt += timedelta(days=1)
         return nxt.strftime("%Y%m%d") if nxt.weekday() in (0, 2, 4) else None
+    # ══════════════════════════════════════════════════════════
+    # ★ 실시간 탭 내 리플레이 모드
+    # ══════════════════════════════════════════════════════════
+
+    def _set_replay_mode(self, on: bool):
+        """실시간 ↔ 리플레이 모드 전환."""
+        self._replay_mode = on
+        self._stack.setCurrentIndex(1 if on else 0)
+        self.btn_live.setChecked(not on)
+        self.btn_replay_mode.setChecked(on)
+
+        # 리플레이 컨트롤 가시성
+        widgets = [self.rp_cmb_day, self.rp_cmb_expiry,
+                   self.rp_edit_from, self.rp_edit_to,
+                   self.rp_btn_load, self.rp_cmb_speed,
+                   self.rp_btn_play, self.rp_btn_stop, self.rp_lbl_ts]
+        for w in widgets:
+            w.setVisible(on)
+        self._rp_slider.setVisible(on)
+
+        if on:
+            self._rp_refresh_days()
+        else:
+            self._rp_stop()
+
+    def _rp_refresh_days(self):
+        self.rp_cmb_day.clear()
+        for d in reversed(available_days_merged()):
+            self.rp_cmb_day.addItem(d)
+        first = self.rp_cmb_day.currentText()
+        self._rp_refresh_expiries(first)
+
+    def _rp_on_day_changed(self, day: str):
+        self.rp_edit_from.clear()
+        self.rp_edit_to.clear()
+        self._rp_refresh_expiries(day)
+
+    def _rp_refresh_expiries(self, day: str):
+        self.rp_cmb_expiry.clear()
+        if not day:
+            return
+        from datetime import datetime as _dt
+        self.rp_cmb_expiry.addItem("전체 만기", "")
+        for exp in available_expiries_for_day(day):
+            try:
+                exp_dt  = _dt.strptime(exp, "%Y%m%d")
+                base_dt = _dt.strptime(day, "%Y%m%d")
+                diff = (exp_dt - base_dt).days
+                if diff == 0:   label = f"{exp[4:6]}/{exp[6:8]} (당일)"
+                elif diff == 1: label = f"{exp[4:6]}/{exp[6:8]} (내일)"
+                elif diff > 0:  label = f"{exp[4:6]}/{exp[6:8]} (+{diff}일)"
+                else:           label = f"{exp[4:6]}/{exp[6:8]} (만료)"
+            except Exception:
+                label = exp
+            self.rp_cmb_expiry.addItem(label, exp)
+
+    def _rp_load(self):
+        """DB에서 데이터 로드 후 리플레이 테이블 초기화."""
+        self._rp_stop()
+        day    = self.rp_cmb_day.currentText()
+        t_fr   = self.rp_edit_from.text().strip()
+        t_to   = self.rp_edit_to.text().strip()
+        expiry = self.rp_cmb_expiry.currentData() or ""
+
+        if not day:
+            self.rp_lbl_ts.setText("날짜 선택 필요"); return
+
+        try:
+            from datetime import datetime as _dt, timedelta as _td
+            base_dt  = _dt.strptime(day, "%Y%m%d")
+            next_dt  = base_dt + _td(days=1)
+            date_str = base_dt.strftime("%Y-%m-%d")
+            next_str = next_dt.strftime("%Y-%m-%d")
+
+            def _to_full(t, end=False):
+                if not t: return ""
+                parts = t.split(":")
+                hh = int(parts[0])
+                mm = parts[1].zfill(2) if len(parts) > 1 else "00"
+                ss = "59" if end else "00"
+                d  = next_str if hh <= 8 else date_str
+                return f"{d} {hh:02d}:{mm}:{ss}"
+
+            if t_fr or t_to:
+                from_ts = _to_full(t_fr, False)
+                to_ts   = _to_full(t_to, True)
+            else:
+                from_ts = f"{date_str} 09:00:00"
+                to_ts   = f"{next_str} 16:30:00"
+        except Exception as e:
+            self.rp_lbl_ts.setText(f"시간 오류: {e}"); return
+
+        self.rp_lbl_ts.setText("로딩 중...")
+        rows = load_merged_snapshots(day, from_ts, to_ts, expiry=expiry)
+        if not rows:
+            self.rp_lbl_ts.setText("데이터 없음"); return
+
+        ts_set = dict.fromkeys(r["ts"] for r in rows)
+        self._replay_ts_list = list(ts_set.keys())
+        strikes_set = sorted({r["strike"] for r in rows})
+        self._replay_strikes = strikes_set
+
+        und = next((r["und_price"] for r in rows if r["und_price"]), 0)
+        self._replay_atm = (min(strikes_set, key=lambda s: abs(s - und))
+                            if und and strikes_set else 0.0)
+
+        # 프레임 구성 (9컬럼용 — delta/gamma/iv/vanna)
+        self._replay_frames = {}
+        for r in rows:
+            ts   = r["ts"]
+            st   = r["strike"]
+            side = r["side"]
+            row  = strikes_set.index(st)
+            self._replay_frames.setdefault(ts, {})[(row, side)] = {
+                "delta":  r.get("delta")  or 0.0,
+                "gamma":  r.get("gamma")  or 0.0,
+                "iv":     r.get("iv")     or 0.0,
+                "vanna":  r.get("vanna")  or 0.0,
+            }
+
+        # 테이블 초기화 (실시간과 동일한 9컬럼)
+        self._replay_table.setRowCount(len(strikes_set))
+        for i, st in enumerate(strikes_set):
+            init_row(self._replay_table, i, st, self._replay_atm)
+
+        # 슬라이더
+        self._rp_slider.setMaximum(max(0, len(self._replay_ts_list) - 1))
+        self._rp_slider.setValue(0)
+        self._replay_cur  = 0
+        self._replay_prev = {}
+
+        self.rp_lbl_ts.setText(
+            f"로드완료: {len(self._replay_ts_list)}시점 / "
+            f"{len(strikes_set)}행사가")
+        self._rp_render(0)
+
+    def _rp_toggle_play(self):
+        speeds = {"x1": 1000, "x5": 200, "x10": 100}
+        if self._replay_playing:
+            self._replay_playing = False
+            self._replay_timer.stop()
+            self.rp_btn_play.setText("▶ 재생")
+        else:
+            if not self._replay_ts_list: return
+            ms = speeds.get(self.rp_cmb_speed.currentText(), 1000)
+            self._replay_playing = True
+            self._replay_timer.start(ms)
+            self.rp_btn_play.setText("⏸ 일시정지")
+
+    def _rp_stop(self):
+        self._replay_playing = False
+        self._replay_timer.stop()
+        self.rp_btn_play.setText("▶ 재생")
+        self._replay_cur = 0
+        if self._replay_ts_list:
+            self._rp_slider.setValue(0)
+
+    def _replay_step(self):
+        if self._replay_cur >= len(self._replay_ts_list) - 1:
+            self._rp_stop(); return
+        self._replay_cur += 1
+        self._rp_slider.blockSignals(True)
+        self._rp_slider.setValue(self._replay_cur)
+        self._rp_slider.blockSignals(False)
+        self._rp_render(self._replay_cur)
+
+    def _rp_on_slider(self, val: int):
+        self._replay_cur = val
+        self._rp_render(val)
+
+    def _rp_render(self, idx: int):
+        if not self._replay_ts_list or idx >= len(self._replay_ts_list):
+            return
+        ts     = self._replay_ts_list[idx]
+        cell_d = self._replay_frames.get(ts, {})
+        kst    = et_to_kst(ts)
+        self.rp_lbl_ts.setText(f"{kst} (KST)  /  {ts} (ET)")
+
+        render_rows(self._replay_table, self._replay_strikes,
+                    self._replay_atm, cell_d, self._replay_prev)
+
+        # 차트도 갱신
+        try:
+            gex_data = {}
+            for i, s in enumerate(self._replay_strikes):
+                for side in ("C", "P"):
+                    k = (i, side)
+                    if k in cell_d:
+                        gex_data[k] = cell_d[k]
+            self._replay_gex.update(self._replay_strikes, gex_data)
+        except Exception:
+            pass
+
+    # ── 저장 주기 변경 ────────────────────────────────────────
+    def _on_save_interval_changed(self, idx: int):
+        ms = self.cmb_save_interval.itemData(idx)
+        try:
+            sched = getattr(self._main, '_chain_sched', None)
+            if sched and hasattr(sched, '_t5'):
+                sched._t5.setInterval(ms)
+                log.info("[GreeksGrid] 저장 주기 변경 → %dms", ms)
+                self._banner.setText(f"💾 저장 주기 변경: {self.cmb_save_interval.currentText()}")
+        except Exception as e:
+            log.error("[GreeksGrid] 저장 주기 변경 실패: %s", e)
