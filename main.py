@@ -1,341 +1,321 @@
-# greeks_db.py  — SQLite 저장 / 불러오기 / 이벤트 감지
-# Python 3.8 호환  |  S11 patch 기준
-from __future__ import annotations
-import os, sqlite3, logging
-from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+"""
+main.py — 0DTE Master Dashboard  v6.5  메인 진입점
+════════════════════════════════════════════════════════════════
+파일 구조:
+  main.py               ← 메인 윈도우 + 탭 조립 + 실행
+  core.py               ← 상수 / 브릿지 / TickRouter / IBKR 래퍼
 
-log = logging.getLogger(__name__)
+  [탭1 콜-풋 — 위젯별 세분화]
+  tab_options.py          메인 조립 (CallPutGrid, _build)
+  tab_options_chart.py    차트 패널 UI + Tick 수신
+  tab_options_settings.py 화면설정 저장/복원
+  watch_cond_widget.py    감시조건+AND조건 패널 UI
+  watch_log_widget.py     알람로그+사운드+등록목록 탭 UI
+  watch_logic.py          감시 규칙 등록·평가·체크 로직
+  order_panel.py          신규·정정·취소 탭 UI
+  order_logic.py          주문 실행 로직
+  core_conn.py            연결·MDT·SPXW·Zone·만기
+  core_fetch.py           조회·기초자산·테이블클릭·관심종목
 
-GAMMA_SPIKE_MULT   = 2.5
-IV_CHANGE_PCT      = 5.0
-DELTA_JUMP         = 0.05
-BASELINE_CUT_MIN   = 30
+  [나머지 탭]
+  tab_sniper.py         ← Tab3 스나이퍼 (SniperGrid)
+  tab_oi.py             ← Tab8 OI 추적 (OITrackerGrid)
+  tab_account.py        ← Tab2 잔고PnL / Tab5 복수현재가 / Tab6 Greeks
+  tab_chart.py          ← Tab7 1분봉 차트 (Polygon + IBKR)
+  tab_trading.py        ← Tab9 주문/잔고
+  tab_kr_futures.py     ← Tab10 한국선물옵션
+  tab_combo_strategy.py ← Tab4 복합전략
 
-def _resolve_greeks_dir() -> str:
-    for p in [r"C:\data\Greeks_history",
-              os.path.join(os.path.expanduser("~"), "Downloads"),
-              os.path.join(os.path.expanduser("~"), "Documents")]:
-        if os.path.isdir(p): return p
-    os.makedirs(r"C:\data\Greeks_history", exist_ok=True)
-    return r"C:\data\Greeks_history"
+실행:
+  python main.py
 
-GREEKS_DIR: str = _resolve_greeks_dir()
+필수 패키지:
+  pip install PyQt5 pyqtgraph ibapi pandas requests websockets
+════════════════════════════════════════════════════════════════
+탭 목록:
+  1  콜-풋 조회 (Main)
+  2  잔고 / PnL
+  3  스나이퍼 주문
+  4  복합 전략
+  5  복수 현재가
+  6  Greeks Matrix
+  7  1분봉 차트
+  8  OI 추적
+  9  주문/잔고
+  10 한국선물옵션
+  11 SPX 히스토리
+  12 옵션 분봉 차트
+════════════════════════════════════════════════════════════════
+"""
 
-def _db_path(day: str) -> str:       return os.path.join(GREEKS_DIR, f"greeks_{day}.db")
-def _events_path() -> str:           return os.path.join(GREEKS_DIR, "events_log.db")
-def _baseline_path() -> str:         return os.path.join(GREEKS_DIR, "baseline.db")
+import sys, threading
+from datetime import datetime
 
-def open_db(day: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(_db_path(day))
-    conn.execute("""CREATE TABLE IF NOT EXISTS greeks (
-        ts TEXT, sym TEXT, expiry TEXT, strike REAL, side TEXT,
-        delta REAL, gamma REAL, iv REAL, vanna REAL, und_price REAL)""")
-    conn.commit(); return conn
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout,
+    QTabWidget, QLabel, QMessageBox
+)
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QFont, QKeySequence
+from PyQt5.QtWidgets import QShortcut
 
-def open_events_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(_events_path())
-    conn.execute("""CREATE TABLE IF NOT EXISTS events (
-        ts TEXT, sym TEXT, trigger_type TEXT, strike REAL,
-        value REAL, prev_avg REAL, und_price REAL)""")
-    conn.commit(); return conn
+# ── 공통 코어 ─────────────────────────────────────────────────
+from core import (
+    IBapi, bridge, router, SignalBridge,
+    TWS_HOST, TWS_PORT, CLIENT_ID,
+    make_style, DEFAULT_FONT_SIZE,
+    GridTab, TabWrapper, SAVE_DIR
+)
 
-def open_baseline_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(_baseline_path())
-    conn.execute("""CREATE TABLE IF NOT EXISTS baseline (
-        day TEXT, sym TEXT, expiry TEXT, strike REAL, side TEXT,
-        iv_avg REAL, gamma_avg REAL,
-        PRIMARY KEY (day, sym, expiry, strike, side))""")
-    conn.commit(); return conn
+# ── Greeks 폴더 경로 등록 (Main2/Greeks/) ────────────────────
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "Greeks"))
 
-# ── 정규장 시간 체크 (ET 기준) ──────────────────────────────
-def _is_market_hours() -> bool:
+# ── combo_libs 폴더 경로 등록 (Main2/combo_libs/) ───────────────
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "combo_libs"))
+
+# ── tab_chart_libs 폴더 경로 등록은 tab_chart.py 내부에서 처리 ──────
+# (tab_chart.py 는 Main2/ 루트에 위치)
+
+# ── 탭 모듈 ───────────────────────────────────────────────────
+from call_put_tab import CallPutGrid, init_chain_saver
+from watch_dog    import WatchAlertPanel   # SPX 감시 패널
+from tab_sniper  import SniperGrid
+from tab_oi      import OITrackerGrid
+from tab_combo_strategy import ComboStrategyGrid
+from tab_account import BalanceGrid, MultiPriceGrid
+from tab_greeks  import GreeksGrid          # ← Main2/Greeks/tab_greeks.py
+from tab_chart   import ChartGrid           # tab_chart_libs/ 경로는 tab_chart.py 내부 등록
+from tab_trading import TradingGrid
+from tab_kr_futures  import KRFuturesGrid
+from tab_spx_history import SpxHistoryGrid
+from tab_opt_intraday import OptIntradayGrid
+# ── strategy_report 패키지 (IBKR/MAIN2/strategy_report/) ────────────
+# __file__ 이 상대경로일 때도 안전하게 Main2/ 절대경로를 확보
+_MAIN2_DIR = os.path.dirname(os.path.abspath(os.path.join(os.getcwd(), __file__)))
+if _MAIN2_DIR not in sys.path:
+    sys.path.insert(0, _MAIN2_DIR)
+from strategy_report.tab_report import ReportTab
+
+
+# ══════════════════════════════════════════════════════════════
+# 빈 탭 (준비중)
+# ══════════════════════════════════════════════════════════════
+class EmptyGrid(GridTab):
+    def __init__(self, title: str = "준비중"):
+        super().__init__()
+        lbl = QLabel(f"탭 준비중\n\n{title}")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setStyleSheet("color:#333;font-size:18px;border:none;")
+        self.add(lbl, 1, 3, 2, 6)
+
+
+# HistoryGrid 제거 — 복합 전략(ComboStrategyGrid)으로 대체
+
+
+# ══════════════════════════════════════════════════════════════
+# 메인 윈도우
+# ══════════════════════════════════════════════════════════════
+class TradingDashboard(QMainWindow):
     """
-    미국 ET 기준 정규장: 09:30 ~ 16:00
-    16:00 이후 저장 차단.
+    0DTE Master Dashboard v6.1 메인 윈도우.
+    - 하단 탭 10개 (QTabWidget.South)
+    - 전역 IBKR 연결/해제 관리
+    - TickRouter 로 탭 간 tick 간섭 차단
     """
-    try:
-        from call_put_tab.chain_saver.buffer import now_et
-        now = now_et()
-    except ImportError:
-        # fallback: UTC-4 (EDT 근사값)
-        now = datetime.utcnow() - timedelta(hours=4)
-    h, m = now.hour, now.minute
-    # 09:30 ~ 16:00
-    if h < 9:
-        return False
-    if h == 9 and m < 30:
-        return False
-    if h >= 16:
-        return False
-    return True
 
-# ── 저장 ────────────────────────────────────────────────
-def save_snapshot(conn: sqlite3.Connection, rows: List[Dict]) -> None:
-    if not _is_market_hours():
-        log.debug("[GreeksDB] 장외 시간 — 스냅샷 저장 생략 (%s)",
-                  datetime.now().strftime("%H:%M"))
-        return
-    conn.executemany("INSERT INTO greeks VALUES (?,?,?,?,?,?,?,?,?,?)",
-        [(r["ts"],r["sym"],r["expiry"],r["strike"],r["side"],
-          r.get("delta"),r.get("gamma"),r.get("iv"),
-          r.get("vanna"),r.get("und_price")) for r in rows])
-    conn.commit()
+    def __init__(self):
+        super().__init__()
+        self.ib        = IBapi()
+        self.ib_thread = None
+        self.connected = False
+        self.account_id = ""   # ← managedAccounts 콜백에서 자동 설정
 
-def save_event(ec: sqlite3.Connection, ts: str, sym: str, ttype: str,
-               strike: float, value: float, prev: float, und: float) -> None:
-    ec.execute("INSERT INTO events VALUES (?,?,?,?,?,?,?)",
-               (ts, sym, ttype, strike, value, prev, und)); ec.commit()
+        # 탭 인스턴스 (다른 탭에서 참조 가능하도록 속성으로 저장)
+        self.tab_callput  = None
+        self.tab_balance  = None
+        self.tab_sniper   = None
+        self.tab_greeks   = None
+        self.tab_report   = None
 
-def save_baseline(rows: List[Dict], day: Optional[str] = None) -> None:
-    try:
-        from call_put_tab.chain_saver.buffer import today_et
-        day = day or today_et().strftime("%Y%m%d")
-    except ImportError:
-        day = day or date.today().strftime("%Y%m%d")
-    conn = open_baseline_db()
-    conn.executemany("INSERT OR REPLACE INTO baseline VALUES (?,?,?,?,?,?,?)",
-        [(day,r["sym"],r["expiry"],r["strike"],r["side"],
-          r.get("iv_avg",0.0),r.get("gamma_avg",0.0)) for r in rows])
-    conn.commit(); conn.close()
-    log.info("[GreeksDB] 기준선 저장 %d rows (day=%s)", len(rows), day)
+        self._init_ui()
+        self._init_timers()
 
-# ── 조회 ────────────────────────────────────────────────
-_COLS = ["ts","sym","expiry","strike","side","delta","gamma","iv","vanna","und_price"]
+    # ── UI 초기화 ────────────────────────────────────────────────
+    def _init_ui(self):
+        self.setWindowTitle(
+            "0DTE Master Dashboard  v6.5  │  Port 7496  │  "
+            + datetime.today().strftime("%Y-%m-%d"))
+        self.setGeometry(40, 40, 1700, 980)
+        self.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
 
-def load_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[Dict]:
-    path = _db_path(day)
-    if not os.path.exists(path): return []
-    conn = sqlite3.connect(path)
-    q, p = "SELECT * FROM greeks", ()
-    if from_ts and to_ts:
-        q += " WHERE ts BETWEEN ? AND ?"; p = (from_ts, to_ts)
-    rows = conn.execute(q, p).fetchall(); conn.close()
-    return [dict(zip(_COLS, r)) for r in rows]
+        # 탭 위젯 (하단 탭)
+        self.tabs = QTabWidget()
+        self.tabs.setTabPosition(QTabWidget.South)
+        self.setCentralWidget(self.tabs)
 
-def available_days() -> List[str]:
-    return sorted([f[8:16] for f in os.listdir(GREEKS_DIR)
-                   if f.startswith("greeks_") and f.endswith(".db")])
+        # 탭 생성 헬퍼 — tab_name을 TabWrapper에 전달해 설정 저장/복원에 사용
+        def add(grid_cls, label, *args, **kwargs):
+            grid    = grid_cls(*args, **kwargs)
+            tab_name = label.split(".")[0].strip().replace(" ", "_")
+            wrapper = TabWrapper(grid, tab_name=tab_name)
+            self.tabs.addTab(wrapper, label)
+            return grid
 
-def load_timestamps(day: str) -> List[str]:
-    path = _db_path(day)
-    if not os.path.exists(path): return []
-    conn = sqlite3.connect(path)
-    rows = conn.execute("SELECT DISTINCT ts FROM greeks ORDER BY ts").fetchall()
-    conn.close(); return [r[0] for r in rows]
+        # ── 탭 등록 ────────────────────────────────────────────
+        self.tab_callput = add(CallPutGrid,   "1. 콜-풋 (Main)", self)
+        init_chain_saver(self)   # ← chain_saver 초기화 (저장 스레드 + 스케줄러)
+        self.tab_balance = add(BalanceGrid,   "2. 잔고/PnL",     self)
+        self.tab_sniper  = add(SniperGrid,    "3. 스나이퍼",     self)
+        self.tab_combo = add(ComboStrategyGrid, "4. 복합 전략",    self)
+     #   add(MultiPriceGrid,                   "5. 복수 현재가",  self)
+        self.tab_greeks  = add(GreeksGrid,    "6. Greeks Matrix",self)
+        # ★ v6.6: Greeks Matrix → chain_saver 버퍼 연동
+        # init_chain_saver 호출 시점엔 tab_greeks 미생성이므로 여기서 연결
+        _buf = getattr(self, 'chain_buf', None)
+        if _buf and hasattr(self.tab_greeks, 'attach_chain_buffer'):
+            self.tab_greeks.attach_chain_buffer(_buf)
+        add(ChartGrid,                        "7. 1분봉 차트",   self)
+        add(OITrackerGrid,                    "8. OI 추적",      self)
+     #   self.tab_trading = add(TradingGrid,   "9. 주문/잔고",    self)
+        self.tab_kr      = add(KRFuturesGrid, "10. 한국선물옵션", self)
+    #   self.tabs.addTab(SpxHistoryGrid(self),   "📜 SPX 히스토리")
+        self.tabs.addTab(OptIntradayGrid(self),  "📊 옵션 분봉")
 
-def load_baseline(day: str, sym: str) -> List[Dict]:
-    conn = open_baseline_db()
-    cols = ["day","sym","expiry","strike","side","iv_avg","gamma_avg"]
-    rows = conn.execute("SELECT * FROM baseline WHERE day=? AND sym=?",
-                        (day, sym)).fetchall()
-    conn.close(); return [dict(zip(cols, r)) for r in rows]
+        # ── 리포트 탭 ─────────────────────────────────────────────
+        self.tab_report = ReportTab(self)
+        self.tabs.addTab(self.tab_report, "📋 리포트")
 
-# ── 감지 ────────────────────────────────────────────────
-def detect_spike(day: str, sym: str, current_rows: List[Dict],
-                 und_price: float, econn: sqlite3.Connection) -> List[str]:
-    try:
-        from call_put_tab.chain_saver.buffer import now_et
-        _now = now_et()
-    except ImportError:
-        _now = datetime.utcnow() - timedelta(hours=4)  # EDT 근사값
+        # ── Ctrl+1~10 단축키 — 탭 전환 ────────────────────────
+        for i in range(min(10, self.tabs.count())):
+            key = f"Ctrl+{i+1}"
+            sc  = QShortcut(QKeySequence(key), self)
+            sc.activated.connect(lambda idx=i: self.tabs.setCurrentIndex(idx))
 
-    now_str = _now.strftime("%Y-%m-%d %H:%M:%S")
-    win_end = _now
-    win_st  = win_end - timedelta(minutes=20)
-    past    = load_snapshots(day,
-                             win_st.strftime("%Y-%m-%d %H:%M:%S"),
-                             win_end.strftime("%Y-%m-%d %H:%M:%S"))
+        # ── 탭 전환 시 비활성 탭 제어 ───────────────────────────
+        # on_tab_activate() / on_tab_deactivate()를 구현한 탭만 호출됨
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
-    gamma_h: Dict[Tuple, List[float]] = {}
-    iv_h:    Dict[Tuple, List[float]] = {}
-    for r in past:
-        k = (r["expiry"], r["strike"], r["side"])
-        if r["gamma"]: gamma_h.setdefault(k, []).append(r["gamma"])
-        if r["iv"]:    iv_h.setdefault(k, []).append(r["iv"])
+    # ── 탭 전환 제어 ────────────────────────────────────────
+    def _on_tab_changed(self, idx: int):
+        """탭 전환 시 비활성 탭의 타이머/구독 일시 중단, 활성 탭 재개."""
+        for i in range(self.tabs.count()):
+            wrapper = self.tabs.widget(i)
+            # TabWrapper 안의 실제 그리드 위젯 접근
+            grid = getattr(wrapper, '_grid', wrapper)
+            if i == idx:
+                if hasattr(grid, 'on_tab_activate'):
+                    try: grid.on_tab_activate()
+                    except Exception as e:
+                        print(f"[TabChange] activate tab {i} error: {e}")
+            else:
+                if hasattr(grid, 'on_tab_deactivate'):
+                    try: grid.on_tab_deactivate()
+                    except Exception as e:
+                        print(f"[TabChange] deactivate tab {i} error: {e}")
 
-    prev_delta: Dict[Tuple, float] = {}
-    events: List[str] = []
+    # ── 타이머 ──────────────────────────────────────────────────
+    def _init_timers(self):
+        # 연결 상태 감시 (2초)
+        self._conn_timer = QTimer(self)
+        self._conn_timer.timeout.connect(self._check_conn)
+        self._conn_timer.start(2000)
 
-    for r in current_rows:
-        k = (r["expiry"], r["strike"], r["side"])
-        g  = r.get("gamma"); iv = r.get("iv"); d = r.get("delta")
+        # 앱 시작 2초 후 자동 연결 (1회성)
+        QTimer.singleShot(2000, self._auto_connect)
 
-        # ① Gamma 급등
-        if g and k in gamma_h:
-            avg = sum(gamma_h[k]) / len(gamma_h[k])
-            if avg > 0 and g >= avg * GAMMA_SPIKE_MULT:
-                events.append(f"[Gamma↑] {r['side']} {r['strike']} "
-                               f"Gamma={g:.4f}(avg={avg:.4f}×{GAMMA_SPIKE_MULT})")
-                save_event(econn, now_str, sym, "Gamma",
-                           r["strike"], g, avg, und_price)
+    def _auto_connect(self):
+        """앱 시작 2초 후 자동으로 TWS 연결 시도 (팝업 없이)."""
+        if not self.connected:
+            self.connect_ibkr(silent=True)
 
-        # ② IV 급변
-        if iv and k in iv_h and len(iv_h[k]) >= 2:
-            prev_iv = iv_h[k][-1]
-            if prev_iv > 0:
-                pct = abs(iv - prev_iv) / prev_iv * 100
-                if pct >= IV_CHANGE_PCT:
-                    events.append(f"[IV급변] {r['side']} {r['strike']} "
-                                  f"IV={iv:.3f}(Δ{pct:.1f}%)")
-                    save_event(econn, now_str, sym, f"IV_{r['side']}",
-                               r["strike"], iv, prev_iv, und_price)
-
-        # ③ Delta 이상 점프
-        if d is not None and k in prev_delta:
-            jump = abs(d - prev_delta[k])
-            if jump >= DELTA_JUMP:
-                events.append(f"[Delta↑] {r['side']} {r['strike']} "
-                               f"Δdelta={jump:.3f}")
-                save_event(econn, now_str, sym, "Delta",
-                           r["strike"], d, prev_delta[k], und_price)
-        if d is not None:
-            prev_delta[k] = d
-
-    return events
-
-# ── chain_YYYYMMDD.db 조회 ───────────────────────────────────
-def _chain_db_path(day: str) -> str:
-    return os.path.join(GREEKS_DIR, f"chain_{day}.db")
-
-def load_chain_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[Dict]:
-    """chain_YYYYMMDD.db에서 가격+Greeks 로드. 구버전 DB(mid/theo/mispct 없음) 호환."""
-    path = _chain_db_path(day)
-    if not os.path.exists(path):
-        return []
-    conn = sqlite3.connect(path)
-
-    # ★ 구버전 DB 호환: 실제 존재하는 컬럼만 조회
-    existing = {row[1] for row in conn.execute("PRAGMA table_info(chain_data)").fetchall()}
-    base_cols = ["ts", "sym", "expiry", "strike", "side",
-                 "bid", "ask", "last", "iv",
-                 "delta", "gamma", "vega", "theta", "und_price"]
-    extra_cols = [c for c in ["mid", "theo", "mispct"] if c in existing]
-    all_cols = base_cols + extra_cols
-    select = ", ".join(all_cols)
-
-    q = f"SELECT {select} FROM chain_data"
-    p: tuple = ()
-    if from_ts and to_ts:
-        q += " WHERE ts BETWEEN ? AND ?"
-        p = (from_ts, to_ts)
-    elif from_ts:
-        q += " WHERE ts >= ?"
-        p = (from_ts,)
-    elif to_ts:
-        q += " WHERE ts <= ?"
-        p = (to_ts,)
-    q += " ORDER BY ts, strike, side"
-    rows = conn.execute(q, p).fetchall()
-    conn.close()
-    return [dict(zip(all_cols, r)) for r in rows]
-
-
-def available_expiries_for_day(day: str) -> List[str]:
-    """
-    기준일(day)의 chain_*.db + greeks_*.db 에서 만기(expiry) 목록 반환.
-    예: ['20260417', '20260418', '20260425', ...]
-    """
-    expiries: set = set()
-
-    # chain DB
-    chain_path = _chain_db_path(day)
-    if os.path.exists(chain_path):
+    # ── IBKR 연결 / 해제 ────────────────────────────────────────
+    def connect_ibkr(self, silent: bool = False):
+        """TWS 연결.
+        silent=True: 자동 연결 시 — ibapi 미설치/실패 팝업 없이 조용히 처리.
+        """
+        from core import IBAPI_AVAILABLE
+        if not IBAPI_AVAILABLE:
+            if not silent:
+                QMessageBox.critical(self, "ibapi 미설치",
+                    "pip install ibapi\n"
+                    "또는 TWS API 패키지 설치:\n"
+                    "  source/pythonclient → python setup.py install")
+            return
+        if self.connected:
+            return
         try:
-            conn = sqlite3.connect(chain_path)
-            rows = conn.execute(
-                "SELECT DISTINCT expiry FROM chain_data WHERE expiry IS NOT NULL AND expiry != ''"
-            ).fetchall()
-            conn.close()
-            expiries.update(r[0] for r in rows)
-        except Exception:
+            self.ib = IBapi()
+            self.ib.connect(TWS_HOST, TWS_PORT, CLIENT_ID)
+
+            # ── 계좌번호 자동 저장 (managedAccounts 콜백) ──────────
+            _mw = self
+            _orig_managed = getattr(self.ib, 'managedAccounts', lambda accts: None)
+            def _on_managed_accounts(accountsList: str):
+                try: _orig_managed(accountsList)
+                except Exception: pass
+                if accountsList:
+                    acct = accountsList.strip().split(',')[0].strip()
+                    if acct:
+                        _mw.account_id = acct
+                        print(f"[Dashboard] account_id 설정: {acct}")
+            self.ib.managedAccounts = _on_managed_accounts
+
+            self.ib_thread = threading.Thread(target=self.ib.run, daemon=True)
+            self.ib_thread.start()
+        except Exception as e:
+            if not silent:
+                QMessageBox.critical(self, "연결 실패", str(e))
+
+    def disconnect_ibkr(self):
+        try:
+            if self.connected and self.ib:
+                self.ib.disconnect()
+                self.connected = False
+                if self.tab_callput:
+                    self.tab_callput.lbl_status.setText("● 미연결")
+                    self.tab_callput.lbl_status.setStyleSheet(
+                        "color:#ff4444;font-weight:bold;border:none;")
+        except Exception as e:
+            print(f"[Dashboard] 연결 해제 오류: {e}")
+
+    def _check_conn(self):
+        from core import IBAPI_AVAILABLE
+        if not IBAPI_AVAILABLE or not self.ib:
+            return
+        try:
+            prev = self.connected
+            self.connected = self.ib.isConnected()
+            if prev and not self.connected:
+                if self.tab_callput:
+                    self.tab_callput.lbl_status.setText("● 끊김")
+                    self.tab_callput.lbl_status.setStyleSheet(
+                        "color:#ff8800;font-weight:bold;border:none;")
+        except:
             pass
 
-    # greeks DB
-    greeks_path = _db_path(day)
-    if os.path.exists(greeks_path):
-        try:
-            conn = sqlite3.connect(greeks_path)
-            rows = conn.execute(
-                "SELECT DISTINCT expiry FROM greeks WHERE expiry IS NOT NULL AND expiry != ''"
-            ).fetchall()
-            conn.close()
-            expiries.update(r[0] for r in rows)
-        except Exception:
-            pass
-
-    return sorted(expiries)
+    def closeEvent(self, event):
+        self.disconnect_ibkr()
+        event.accept()
 
 
-def load_merged_snapshots(day: str, from_ts: str = "", to_ts: str = "",
-                          expiry: str = "") -> List[Dict]:
-    """
-    greeks_YYYYMMDD.db + chain_YYYYMMDD.db 를 조인해서 반환.
-    - chain DB 기준으로 bid/ask/mid/theo/mispct/vega 추가
-    - greeks DB 기준으로 vanna 추가
-    - 어느 한쪽만 있어도 반환 (outer join 방식)
-    """
-    greeks_rows = load_snapshots(day, from_ts, to_ts)
-    chain_rows  = load_chain_snapshots(day, from_ts, to_ts)
+# ══════════════════════════════════════════════════════════════
+# 실행
+# ══════════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    print("=" * 60)
+    print("0DTE Master Dashboard  v6.5")
+    print(f"저장 경로: {SAVE_DIR.resolve()}")
+    print("=" * 60)
 
-    # ★ 만기 필터
-    if expiry:
-        greeks_rows = [r for r in greeks_rows if r.get("expiry") == expiry]
-        chain_rows  = [r for r in chain_rows  if r.get("expiry") == expiry]
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
 
-    # chain 데이터를 (ts, strike, side) 키로 인덱싱
-    chain_idx: Dict[tuple, dict] = {}
-    for r in chain_rows:
-        key = (r["ts"], r["strike"], r["side"])
-        chain_idx[key] = r
+    default_font = QFont()
+    default_font.setPointSize(10)
+    app.setFont(default_font)
 
-    # greeks 데이터를 (ts, strike, side) 키로 인덱싱
-    greeks_idx: Dict[tuple, dict] = {}
-    for r in greeks_rows:
-        key = (r["ts"], r["strike"], r["side"])
-        greeks_idx[key] = r
-
-    # 두 키셋 합집합으로 머지
-    all_keys = set(chain_idx.keys()) | set(greeks_idx.keys())
-    merged = []
-    for key in sorted(all_keys):
-        c = chain_idx.get(key, {})
-        g = greeks_idx.get(key, {})
-        merged.append({
-            "ts":        key[0],
-            "strike":    key[1],
-            "side":      key[2],
-            "sym":       c.get("sym")    or g.get("sym", ""),
-            "expiry":    c.get("expiry") or g.get("expiry", ""),
-            "bid":       c.get("bid"),
-            "ask":       c.get("ask"),
-            "last":      c.get("last"),
-            "mid":       c.get("mid"),
-            "theo":      c.get("theo"),
-            "mispct":    c.get("mispct"),
-            "iv":        c.get("iv")    or g.get("iv"),
-            "delta":     c.get("delta") or g.get("delta"),
-            "gamma":     c.get("gamma") or g.get("gamma"),
-            "vega":      c.get("vega"),
-            "theta":     c.get("theta"),
-            "vanna":     g.get("vanna"),
-            "und_price": c.get("und_price") or g.get("und_price"),
-        })
-    return merged
-
-
-def available_days_merged() -> List[str]:
-    """chain_*.db 와 greeks_*.db 날짜 합집합 반환."""
-    days = set()
-    for f in os.listdir(GREEKS_DIR):
-        if not f.endswith(".db"):
-            continue
-        if f.startswith("greeks_"):
-            day = f[7:-3]   # greeks_20260416.db -> 20260416
-            if len(day) == 8 and day.isdigit():
-                days.add(day)
-        elif f.startswith("chain_"):
-            day = f[6:-3]   # chain_20260416.db -> 20260416
-            if len(day) == 8 and day.isdigit():
-                days.add(day)
-    return sorted(days)
+    win = TradingDashboard()
+    win.app = app   # chain_saver worker 종료 연결용
+    win.show()
+    sys.exit(app.exec_())

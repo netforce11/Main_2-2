@@ -253,6 +253,20 @@ def make_opt_contract(symbol: str, strike: float, right: str,
                       expiry: str, tag: str = "") -> "Contract":
     sym_up = symbol.upper()
 
+    # ── CL (원유 선물 옵션 FOP) ──────────────────────────────────
+    if sym_up == "CL":
+        c = Contract()
+        c.symbol       = "CL"
+        c.secType      = "FOP"
+        c.exchange     = "NYMEX"
+        c.currency     = "USD"
+        c.strike       = float(strike)
+        c.right        = "C" if right.upper() in ("C", "CALL") else "P"
+        c.multiplier   = "1000"
+        c.lastTradeDateOrContractMonth = expiry
+        c.tradingClass = "LO"   # IBKR CL옵션 tradingClass (TWS에서 확인 권장)
+        return c
+
     # ── NANOS 전용 분기 (최우선) ─────────────────────────────
     # IBKR NANOS 옵션: symbol="SPX", tradingClass="NANOS", exchange="CBOE", multiplier="1"
     if sym_up == "NANOS":
@@ -322,6 +336,14 @@ def make_und_contract(symbol: str) -> "Contract":
     sym = symbol.upper().replace("SPXW", "SPX")
     c = Contract()
     c.currency = "USD"
+
+    # ── 선물 기초자산 (CL 등) ────────────────────────────────────
+    from core import FUT_SYM
+    if sym in FUT_SYM:
+        c.symbol   = sym
+        c.secType  = "FUT"
+        c.exchange = "NYMEX"
+        return c
 
     if sym in INDEX_SYM:
         c.symbol  = sym

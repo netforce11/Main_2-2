@@ -39,26 +39,6 @@ from core import (
     make_opt_contract, make_und_contract,
     auto_mdt, tbl_set,
 )
-
-
-def _make_opt_contract_safe(sym: str, strike: float, right: str,
-                             expiry: str, tag: str):
-    """
-    make_opt_contract 래퍼.
-    FOP 종목(CL 등)은 SYMBOL_CFG의 secType/exchange를 강제 적용한다.
-    make_opt_contract가 OPT/SMART로 만들더라도 여기서 교정.
-    """
-    c = make_opt_contract(sym, strike, right, expiry, tag)
-    sec_type, exchange, multiplier, _ = SYMBOL_CFG.get(sym, DEFAULT_CFG)
-    if sec_type == "FOP":
-        # 선물 옵션 필수 필드 강제 설정
-        c.secType    = "FOP"
-        c.exchange   = exchange        # NYMEX
-        c.multiplier = multiplier      # 1000
-        # tradingClass는 만기 조회로 수신한 tc 값 우선, 없으면 sym 그대로
-        if not getattr(c, 'tradingClass', ''):
-            c.tradingClass = sym       # "CL"
-    return c
 from call_put_tab.core_fetch_pos import CoreFetchPosMixin
 
 
@@ -187,41 +167,22 @@ class CoreFetchMixin(CoreFetchPosMixin):
     def _req_und(self, sym):
         sym = sym.upper().replace("SPXW", "SPX").replace("NANOS", "SPX")
         if not self.mw.connected: return
+        try: self.mw.ib.cancelMktData(REQ_UND)
+        except: pass
+        _mdt_for_sym(sym, self.mw.ib)   # 종목별 MDT 설정 (VIX/CL → 강제 지연)
 
         # ── 선물 종목: FUT + front-month 만기로 현재가 조회 ─────
+        # CONTFUT은 구버전 TWS에서 ERR 321(invalid security type) 발생.
+        # 대신 FUT + _cl_front_month() 로 만기를 직접 지정해 회피.
+        # und_price(ATM 계산·차트용)는 front-month FUT으로,
+        # 옵션 구독은 사용자가 combo_exp에서 선택한 만기를 그대로 사용.
         if sym in self._FUT_UND_CFG:
             contract = self._make_fut_contract(sym)
             self._log(f"📌 {sym} 기초자산: FUT {contract.lastTradeDateOrContractMonth}")
         else:
             contract = make_und_contract(sym)
 
-        # ── MDT 설정 후 cancel → 300ms 딜레이 → reqMktData ──────
-        # ERR 354: reqMarketDataType 직후 바로 reqMktData 하면 MDT 전환
-        #          미완료 상태에서 요청이 도달해 "권한 없음" 거부.
-        # ERR 322: cancel 직후 딜레이 사이에 _req_und 재호출 시
-        #          같은 REQ_UND로 중복 요청 발생.
-        # 해결: cancel + MDT 설정을 먼저 하고,
-        #       _und_pending 세대 카운터로 중복 요청 폐기.
-        _mdt_for_sym(sym, self.mw.ib)
-        try: self.mw.ib.cancelMktData(REQ_UND)
-        except: pass
-
-        gen = getattr(self, '_und_gen', 0) + 1
-        self._und_gen = gen
-
-        def _send(g=gen, c=contract):
-            if getattr(self, '_und_gen', 0) != g: return  # 세대 폐기
-            if not self.mw.connected: return
-            try:
-                self.mw.ib.reqMktData(REQ_UND, c, "232", False, False, [])
-            except Exception as e:
-                self._log(f"⚠ _req_und reqMktData 오류: {e}")
-
-        delay = 300 if sym in _DELAYED_SYMS else 0
-        if delay:
-            QTimer.singleShot(delay, _send)
-        else:
-            _send()
+        self.mw.ib.reqMktData(REQ_UND, contract, "232", False, False, [])
 
     def _refresh_und(self):
         if not self.mw.connected: return
@@ -266,10 +227,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
                 return
             self._fetch_retry = retry + 1
             self._log(f"현재가 수신 중… ({sym}) 잠시 후 재시도합니다. ({self._fetch_retry}/5)")
-            # retry==1(첫 시도)에만 _req_und 호출
-            # 이후 재시도에서는 이미 요청 진행 중이므로 중복 호출 안 함
-            if self._fetch_retry == 1:
-                self._req_und(sym)
+            self._req_und(sym)
             t = getattr(self, '_fetch_retry_timer', None)
             if t is None:
                 self._fetch_retry_timer = QTimer(self)
@@ -338,7 +296,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
 
             ticks = "100,101,106"
             if self.call_strikes:
-                _c0 = _make_opt_contract_safe(sym, self.call_strikes[0], "C", expiry, tag)
+                _c0 = make_opt_contract(sym, self.call_strikes[0], "C", expiry, tag)
                 self._log(
                     f"계약: symbol={_c0.symbol} "
                     f"tc={getattr(_c0,'tradingClass','')} "
@@ -355,11 +313,11 @@ class CoreFetchMixin(CoreFetchPosMixin):
             call_reqs = []
             for i, st in enumerate(self.call_strikes):
                 rid = REQ_CALL + i; self.call_data[rid] = {"row": i}
-                call_reqs.append((rid, _make_opt_contract_safe(sym, st, "C", expiry, tag)))
+                call_reqs.append((rid, make_opt_contract(sym, st, "C", expiry, tag)))
             put_reqs = []
             for i, st in enumerate(self.put_strikes):
                 rid = REQ_PUT + i; self.put_data[rid] = {"row": i}
-                put_reqs.append((rid, _make_opt_contract_safe(sym, st, "P", expiry, tag)))
+                put_reqs.append((rid, make_opt_contract(sym, st, "P", expiry, tag)))
 
             # CALL/PUT 인터리빙
             all_reqs = []
@@ -400,22 +358,14 @@ class CoreFetchMixin(CoreFetchPosMixin):
                         "color:#7c7cff;font-weight:bold;border:none;")
 
                 rid, contract = all_reqs[idx]
-
-                def _do_req(r=rid, c=contract, next_idx=idx+1):
-                    if self._fetch_gen != gen: return
-                    try:
-                        self.mw.ib.reqMktData(r, c, ticks, False, False, [])
-                    except Exception as e:
-                        self._log(f"⚠ reqMktData 오류 rid={r}: {e}")
-                    QTimer.singleShot(150, lambda: _send_req(next_idx))
-
-                # 첫 구독 시 MDT 재설정 → 200ms 딜레이 후 첫 요청
-                # (ERR 354: MDT 전환 완료 전에 reqMktData 도달 방지)
-                if idx == 0 and sym in _DELAYED_SYMS:
+                # 첫 구독 시 MDT 재설정 — _req_und() 이후 MDT가 바뀔 수 있으므로
+                if idx == 0:
                     _mdt_for_sym(sym, self.mw.ib)
-                    QTimer.singleShot(200, _do_req)
-                else:
-                    _do_req()
+                try:
+                    self.mw.ib.reqMktData(rid, contract, ticks, False, False, [])
+                except Exception as e:
+                    self._log(f"⚠ reqMktData 오류 rid={rid}: {e}")
+                QTimer.singleShot(150, lambda: _send_req(idx + 1))
 
             _send_req(0)
 

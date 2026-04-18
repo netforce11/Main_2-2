@@ -97,9 +97,11 @@ SYMBOL_CFG = {
     "QQQ":   ("OPT", "SMART", "100",  1),
     "SPY":   ("OPT", "SMART", "100",  1),
     "IWM":   ("OPT", "SMART", "100",  1),
+    "CL":    ("FOP", "NYMEX", "1000", 1),   # 원유 선물 옵션 (20분 지연)
 }
 DEFAULT_CFG  = ("OPT", "SMART", "100", 1)
 INDEX_SYM    = {"SPX","SPXW","NDX","RUT","VIX","DJX","XSP"}
+FUT_SYM      = {"CL"}   # 선물 기초자산 (secType="FUT", exchange="NYMEX")
 
 ACCT_TAGS = ("NetLiquidation,TotalCashValue,BuyingPower,"
              "UnrealizedPnL,RealizedPnL,GrossPositionValue,"
@@ -248,3 +250,4 @@ from core_ui import (
 )
 from core_tab_wrapper import TabWrapper
 from core_contract import IBapi, make_opt_contract, make_und_contract, _resolve_spx_trading_class
+# FUT_SYM 은 core.py 자체에서 정의 — re-export 불필요
