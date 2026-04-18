@@ -373,18 +373,8 @@ RightPanelMixin._build_spread_chart_panel = _build_spread_chart_panel # type: ig
 RightPanelMixin._show_strat_desc          = _show_strat_desc          # type: ignore[attr-defined]
 RightPanelMixin._toggle_optimizer_panel   = _toggle_optimizer_panel   # type: ignore[attr-defined]
 
-# combo_order_open 핸들러 — 런타임 바인딩
-import types as _types
-def _on_open_orders(self):
-    from combo_order_open import on_open_orders; on_open_orders(self)
-def _on_modify_order(self):
-    from combo_order_open import on_modify_order; on_modify_order(self)
-def _on_cancel_order(self):
-    from combo_order_open import on_cancel_order; on_cancel_order(self)
-
-RightPanelMixin._on_open_orders  = _on_open_orders   # type: ignore[attr-defined]
-RightPanelMixin._on_modify_order = _on_modify_order  # type: ignore[attr-defined]
-RightPanelMixin._on_cancel_order = _on_cancel_order  # type: ignore[attr-defined]
+# combo_order_open 핸들러는 클래스 메서드(_on_open_orders / _on_modify_order / _on_cancel_order)
+# 로 구현되어 있으므로 여기서 별도 바인딩하지 않음.
 
 # combo_ui_leg_logic 핸들러 바인딩
 from combo_ui_leg_logic import (
@@ -732,184 +722,11 @@ def _parse_expiry_display(display: str) -> str:
         pass
     return ""
 
-def _place_combo_legs(self, legs: list, strat: str):
-    """
-    BAG(Combo) 계약으로 묶어서 단일 주문 전송.
-    - 모든 레그를 1개 BAG 계약으로 묶음 → 동시 체결 보장
-    - lmtPrice = net 프리미엄 (데빗 양수 / 크레딧 음수)
-    """
-    try:
-        from core_contract import make_opt_contract
-        from ibapi.order import Order as IbOrder
-        from ibapi.contract import Contract, ComboLeg
-    except ImportError as e:
-        self._log(f"❌ import 오류: {e}")
-        QMessageBox.critical(self, "오류", f"모듈 import 실패: {e}")
-        return
-
-    ib     = self.mw.ib
-    sym_w  = getattr(self, 'edit_sym_combo', None)
-    symbol = sym_w.text().strip().upper() if sym_w else "SPX"
-
-    # ── Step1: 각 레그의 conId 조회 필요 여부 확인 ───────────
-    # BAG 주문은 ComboLeg에 conId가 필요.
-    # conId를 모르면 reqContractDetails로 조회해야 하지만
-    # make_opt_contract()로 만든 contract를 그대로 사용하면
-    # TWS가 자동으로 resolve해줌 (conId=0 허용).
-    # ── Step2: BAG 계약 구성 ─────────────────────────────────
-    bag = Contract()
-    bag.symbol   = symbol.replace("SPXW", "SPX")
-    bag.secType  = "BAG"
-    bag.currency = "USD"
-    bag.exchange = "SMART"
-
-    combo_legs = []
-    for leg in legs:
-        opt_contract = make_opt_contract(
-            symbol=symbol,
-            strike=leg["strike"],
-            right=leg["cp"],
-            expiry=leg["expiry"],
-        )
-        cl = ComboLeg()
-        cl.conId     = 0          # TWS가 자동 resolve
-        cl.ratio     = int(leg["qty"])
-        cl.action    = leg["dir"]  # "BUY" | "SELL"
-        cl.exchange  = "SMART"
-        # conId 없이 strike/right/expiry로 식별하기 위해
-        # contract 정보를 designatedLocation에 인코딩 (대안: reqContractDetails)
-        # → 실용적 방법: conId 조회 후 전송 (아래 _place_bag_with_conids 사용)
-        combo_legs.append((cl, opt_contract))
-
-    # conId가 없으면 TWS가 거부할 수 있으므로
-    # reqContractDetails로 조회 후 전송
-    _place_bag_with_conids(self, bag, combo_legs, legs, strat)
-
-def _place_bag_with_conids(self, bag, combo_legs, legs, strat):
-    """
-    각 레그의 conId를 reqContractDetails로 조회한 뒤 BAG 주문 전송.
-    조회 완료 순서대로 conId를 채우고, 전체 완료 시 placeOrder.
-    """
-    from ibapi.contract import ComboLeg
-    from ibapi.order import Order as IbOrder
-    from PyQt5.QtCore import QTimer as _QT
-    import re as _re
-
-    ib    = self.mw.ib
-    total = len(combo_legs)
-    resolved = {}   # idx → conId
-
-    # reqContractDetails reqId 범위: 9910~9929
-    base_rid = 9910
-
-    def _on_contract_details(reqId, contractDetails):
-        idx = reqId - base_rid
-        if 0 <= idx < total:
-            resolved[idx] = contractDetails.contract.conId
-
-    def _on_contract_details_end(reqId):
-        idx = reqId - base_rid
-        if idx not in resolved:
-            resolved[idx] = 0   # 조회 실패 → 0으로 폴백
-        if len(resolved) >= total:
-            _QT.singleShot(0, _send_bag)
-
-    # 콜백 주입 (bridge 경유 없이 직접 — contractDetails는 bridge에 없음)
-    ib._orig_cd    = getattr(ib, 'contractDetails',    lambda *a: None)
-    ib._orig_cd_end= getattr(ib, 'contractDetailsEnd', lambda *a: None)
-    ib.contractDetails    = _on_contract_details
-    ib.contractDetailsEnd = _on_contract_details_end
-
-    for i, (cl, opt_contract) in enumerate(combo_legs):
-        rid = base_rid + i
-        try:
-            ib.reqContractDetails(rid, opt_contract)
-            self._log(f"🔍 conId 조회: 레그{i+1} "
-                      f"{opt_contract.right} {int(opt_contract.strike)} {opt_contract.lastTradeDateOrContractMonth}")
-        except Exception as e:
-            self._log(f"❌ reqContractDetails 레그{i+1} 오류: {e}")
-            resolved[i] = 0
-
-    # 10초 타임아웃
-    _QT.singleShot(10000, lambda: _on_timeout())
-
-    def _on_timeout():
-        for i in range(total):
-            if i not in resolved:
-                resolved[i] = 0
-        if len(resolved) >= total:
-            _send_bag()
-
-    def _send_bag():
-        # 콜백 원복
-        try:
-            ib.contractDetails    = ib._orig_cd
-            ib.contractDetailsEnd = ib._orig_cd_end
-        except Exception:
-            pass
-
-        # BAG ComboLeg conId 채우기
-        cl_list = []
-        for i, (cl, _) in enumerate(combo_legs):
-            cl.conId = resolved.get(i, 0)
-            cl_list.append(cl)
-            self._log(f"  레그{i+1} conId={cl.conId}  "
-                      f"{legs[i]['dir']} {legs[i]['qty']}  "
-                      f"{legs[i]['cp']} {int(legs[i]['strike'])}")
-
-        bag.comboLegs = cl_list
-
-        # net 프리미엄 계산
-        net = 0.0
-        for leg in legs:
-            try:
-                pm  = float(leg.get("prem", 0) or 0)
-                qty = int(leg.get("qty", 1))
-                mul = 1 if leg["dir"] == "BUY" else -1
-                net += mul * pm * qty
-            except (ValueError, TypeError):
-                pass
-        # IB BAG: 데빗(지불)=양수, 크레딧(수취)=음수
-        lmt_price = round(abs(net), 2) if net >= 0 else round(-abs(net), 2)
-
-        oid = ib.get_next_id()
-        if oid is None:
-            self._log("❌ nextOrderId 없음")
-            return
-
-        ibord = IbOrder()
-        ibord.action        = "BUY"   # BAG는 항상 BUY (방향은 ComboLeg.action으로)
-        ibord.orderType     = "LMT"
-        ibord.totalQuantity = 1       # BAG 단위
-        ibord.lmtPrice      = lmt_price
-        ibord.tif           = "DAY"
-        ibord.eTradeOnly    = False
-        ibord.firmQuoteOnly = False
-        ibord.transmit      = True
-
-        try:
-            ib.placeOrder(oid, bag, ibord)
-            self._log(
-                f"⚡ BAG 주문 전송: OID={oid}  net=${lmt_price:.2f}  "
-                f"({'데빗' if net >= 0 else '크레딧'})  레그{total}개")
-
-            # 합성 잔고 패널 갱신
-            panel = getattr(self, 'synthetic_panel', None)
-            if panel:
-                panel.add_position({
-                    "strategy": strat,
-                    "qty":      1,
-                    "entry":    abs(net),
-                    "current":  abs(net),
-                })
-        except Exception as e:
-            self._log(f"❌ BAG 주문 오류: {e}")
-
+# ── 구버전 _place_combo_legs / _place_bag_with_conids 제거 완료 ──
+# v2.9 이후 combo_order_bag.py 에서 전담. 이 파일에 중복 정의하지 않음.
 
 # 유틸 함수 바인딩
 RightPanelMixin._request_margin_then_order = _request_margin_then_order  # type: ignore[attr-defined]
 RightPanelMixin._parse_legs_from_table = _parse_legs_from_table  # type: ignore[attr-defined]
 RightPanelMixin._calc_required_margin = _calc_required_margin  # type: ignore[attr-defined]
 RightPanelMixin._parse_expiry_display = _parse_expiry_display  # type: ignore[attr-defined]
-RightPanelMixin._place_combo_legs = _place_combo_legs  # type: ignore[attr-defined]
-RightPanelMixin._place_bag_with_conids = _place_bag_with_conids  # type: ignore[attr-defined]

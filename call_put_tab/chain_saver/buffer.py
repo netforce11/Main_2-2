@@ -59,7 +59,7 @@ def et_to_kst(et_str: str) -> str:
     from datetime import timezone, timedelta
     try:
         dt_et = datetime.strptime(et_str, "%Y-%m-%d %H:%M:%S")
-        dt_kst = dt_et + timedelta(hours=_et_offset_hours() + 9)
+        dt_kst = dt_et + timedelta(hours=-_et_offset_hours() + 9)
         return dt_kst.strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return et_str

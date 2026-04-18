@@ -49,7 +49,7 @@ class ChainScheduler(QObject):
         self._file_log.propagate = False   # 콘솔 중복 출력 방지
         self._setup_file_logger()
 
-        self._t5  = QTimer(self); self._t5.setInterval(1_000)   # ★ 기본 1초
+        self._t5  = QTimer(self); self._t5.setInterval(5_000)   # ★ 기본 5초
         self._t60 = QTimer(self); self._t60.setInterval(60_000)
         # 30초마다 수신 통계 로그 출력
         self._t_stat = QTimer(self); self._t_stat.setInterval(30_000)

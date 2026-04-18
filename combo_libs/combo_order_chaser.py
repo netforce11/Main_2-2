@@ -1,5 +1,12 @@
 """
-combo_order_chaser.py — Smart Chaser (체결 추격 주문) + 취소 주문 로직  v2.1
+combo_order_chaser.py — Smart Chaser (체결 추격 주문) + 취소 주문 로직  v2.2
+──────────────────────────────────────────────────────────────────────────────
+변경 (v2.2):
+  - CHASE_INTERVAL_MS: 5초 → 4초 (문서 기준 통일, bag.py 접수확인 타이밍 일치)
+  - Mid 조회 타임아웃: 0.3초 → 0.5초 (BAG 호가 수신 지연 대응)
+  - _fetch_mid_price_sync(): tickPrice 직접 패치 제거
+    → reqId 필터링 방식으로 교체 (멀티 레그 실시간 수신 중 콜백 충돌 방지)
+    → 원본 콜백 항상 먼저 호출하여 다른 실시간 수신 보호
 ──────────────────────────────────────────────────────────────────────────────
 변경 (v2.1):
   - register_chaser()에 qty 파라미터 추가 → _chaser_qty 저장
@@ -24,7 +31,7 @@ from PyQt5.QtWidgets import QMessageBox
 
 
 # ── 상수 ────────────────────────────────────────────────────────
-CHASE_INTERVAL_MS  = 5_000
+CHASE_INTERVAL_MS  = 4_000   # ★ v2.2: 5초 → 4초 (문서 기준 통일, bag.py 접수확인 4초와 일치)
 CHASE_MAX_ATTEMPTS = 3
 CHASE_MIN_TICK     = 0.05
 CHASE_TICK_HIGH    = 0.10
@@ -256,25 +263,31 @@ def _fetch_mid_price_sync(self) -> Optional[float]:
                 return round((bid + ask) / 2, 2)
 
     # 2) BAG contract 실시간 조회
+    # ★ v2.2: tickPrice 직접 패치 제거 → reqId 필터링 방식으로 교체
+    #   (멀티 레그 실시간 호가 수신 중 콜백 충돌 방지)
     ib  = getattr(getattr(self, 'mw', None), 'ib', None)
     bag = getattr(self, '_chaser_bag_contract', None)
     if ib is None or bag is None:
         return None
 
-    result: list = []
+    result: dict = {}   # {tick_type: price}
     _orig = getattr(ib, 'tickPrice', lambda *a: None)
 
     def _on_tick(req_id, tick_type, price, attrib=None):
+        # 원본 콜백 항상 먼저 호출 → 다른 실시간 수신 보호
+        try:
+            _orig(req_id, tick_type, price, attrib) if attrib is not None \
+                else _orig(req_id, tick_type, price)
+        except Exception:
+            pass
+        # Chaser 전용 req_id 만 캡처
         if req_id == _CHASE_TICKER_ID and tick_type in (1, 2) and price > 0:
-            result.append((tick_type, price))
-            if len({t for t, _ in result}) >= 2:
+            result[tick_type] = price
+            if len(result) >= 2:
                 try:
                     ib.cancelMktData(_CHASE_TICKER_ID)
                 except Exception:
                     pass
-                ib.tickPrice = _orig
-        else:
-            _orig(req_id, tick_type, price)
 
     ib.tickPrice = _on_tick
     try:
@@ -283,12 +296,11 @@ def _fetch_mid_price_sync(self) -> Optional[float]:
         ib.tickPrice = _orig
         return None
 
-    deadline = time.monotonic() + 0.3
+    deadline = time.monotonic() + 0.5  # ★ v2.2: 0.3s → 0.5s
     while time.monotonic() < deadline:
-        ticks = {t: p for t, p in result}
-        if 1 in ticks and 2 in ticks:
+        if 1 in result and 2 in result:
             ib.tickPrice = _orig
-            return round((ticks[1] + ticks[2]) / 2, 2)
+            return round((result[1] + result[2]) / 2, 2)
         QTimer.singleShot(0, lambda: None)
 
     ib.tickPrice = _orig

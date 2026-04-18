@@ -94,6 +94,18 @@ def _on_order_status(self, oid: int, status: str,
         msg = f"✅ OID={oid} 체결완료"
         msg += f"  avg=${avg:.2f}" if avg else ""
         self._log(msg)
+
+        # 체결 시점에 합성 잔고에 추가 (주문 시점엔 추가 안 함)
+        pending = getattr(self, '_pending_position', None)
+        if pending and pending.get('oid') == oid:
+            if avg:
+                pending['entry']   = avg
+                pending['current'] = avg
+            pending['status'] = '체결완료'
+            if panel and hasattr(panel, 'add_position'):
+                panel.add_position(pending)
+            self._pending_position = None
+
         _set_panel_filled(panel, oid, avg)
         _deactivate_chaser_safe(self, reason="체결 완료")
 
@@ -102,6 +114,9 @@ def _on_order_status(self, oid: int, status: str,
         self._log(f"✕ OID={oid} 취소 확인됨")
         _set_panel_cancelled(panel, oid)
         _deactivate_chaser_safe(self, reason="취소 확인")
+        # pending 포지션 정리 (합성 잔고에 추가되지 않았으므로 그냥 버림)
+        if getattr(self, '_pending_position', None) and                 getattr(self, '_pending_position', {}).get('oid') == oid:
+            self._pending_position = None
         # 완전 취소 후 재주문 허용
         self._bag_session = None
 

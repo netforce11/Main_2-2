@@ -522,13 +522,10 @@ class SyntheticStatusPanel(QWidget):
             qty     = pos.get("qty", 1)
             entry   = pos.get("entry", 0.0)
             current = pos.get("current", entry)
-            pnl     = (current - entry) * qty * 100
-            total_pnl += pnl
-            pnl_col = "#00ff88" if pnl > 0 else "#ff4444" if pnl < 0 else "#888899"
 
-            status  = pos.get("status", "미체결")
+            status    = pos.get("status", "미체결")
             is_filled = (status == "체결완료")
-            # 미체결이면 손익 계산 제외
+            # 체결 완료된 포지션만 손익 계산
             if is_filled:
                 pnl = (current - entry) * qty * 100
                 total_pnl += pnl

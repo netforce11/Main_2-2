@@ -229,7 +229,7 @@ class GreeksGrid(QWidget):
         for label, ms in [("1초", 1000), ("3초", 3000), ("5초", 5000),
                            ("10초", 10000), ("30초", 30000)]:
             self.cmb_save_interval.addItem(label, ms)
-        self.cmb_save_interval.setCurrentIndex(0)   # 기본값 1초
+        self.cmb_save_interval.setCurrentIndex(2)   # 기본값 5초
         self.cmb_save_interval.currentIndexChanged.connect(self._on_save_interval_changed)
         hb.addWidget(self.cmb_save_interval)
 

@@ -315,23 +315,42 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
         self._chaser_current_oid  = oid
         self._chaser_bag_order    = ibord
 
+        # 체결 후 합성 잔고에 추가하기 위해 주문 정보 캐시 (add_position은 Filled 콜백에서)
+        self._pending_position = {
+            "strategy": strat,
+            "qty":      int(ibord.totalQuantity),
+            "entry":    lmt_price,
+            "current":  lmt_price,
+            "side":     bag_action,
+            "oid":      oid,
+            "legs":     legs,
+            "status":   "미체결",
+        }
+
         # ★ v2.9: qty 파라미터 추가 전달
         register_chaser(
             self, oid=oid, price=lmt_price,
             action=bag_action, qty=int(ibord.totalQuantity))
 
-        panel = getattr(self, 'synthetic_panel', None)
-        if panel:
-            panel.add_position({
-                "strategy": strat,
-                "qty":      int(ibord.totalQuantity),
-                "entry":    lmt_price,
-                "current":  lmt_price,
-                "side":     bag_action,
-                "oid":      oid,
-                "legs":     legs,
-                "status":   "미체결",
-            })
+        # ── 주문 접수 확인: 4초 후 on_open_orders 재사용하여 OID 직접 확인 ──
+        # Chaser 첫 정정(5초)과 겹치지 않도록 4초로 설정
+        def _verify_order(check_oid=oid):
+            from combo_order_open import on_open_orders
+
+            # 조회 완료 후 캐시에서 OID 확인하는 콜백 등록 (6초 후 — 조회 2초 여유)
+            def _check_cache():
+                orders = getattr(self, '_cached_open_orders', [])
+                oids = [o.get('oid') for o in orders]
+                if check_oid in oids:
+                    self._log(f"✅ OID={check_oid} 주문 접수 확인 (TWS 미체결 목록)")
+                else:
+                    self._log(f"⚠ OID={check_oid} 주문 미확인 — TWS에서 직접 확인 필요")
+
+            on_open_orders(self)
+            QTimer.singleShot(2500, _check_cache)  # 조회 완료(2초) 후 0.5초 여유
+
+        QTimer.singleShot(4000, _verify_order)
+
     except Exception as e:
         self._bag_session = None
         self._log(f"❌ BAG 주문 오류: {e}")
