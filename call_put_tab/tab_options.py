@@ -42,6 +42,7 @@ from call_put_tab.core_conn            import CoreConnMixin
 from call_put_tab.core_fetch           import CoreFetchMixin
 from call_put_tab.tab_options_settings import SettingsMixin
 from call_put_tab.tab_options_panels   import PanelsMixin
+from config_ui import ConfigMixin
 
 
 def _mk(text: str, color: str = "#dde0f0") -> QTableWidgetItem:
@@ -62,6 +63,7 @@ class CallPutGrid(
     CoreConnMixin,
     CoreFetchMixin,
     SettingsMixin,
+    ConfigMixin,
     PanelsMixin,
     QWidget,
 ):
@@ -313,6 +315,9 @@ class CallPutGrid(
         self._side_save_status.setStyleSheet(
             "color:#555;font-size:10px;border:none;")
         vu.addWidget(self._side_save_status)
+
+        # ── 저장 주기 설정 위젯 ───────────────────────────────
+        vu.addWidget(self._build_config_widget())
 
         # ── 수직 스플리터 조립 ────────────────────────────────
         spl = self._spl(Qt.Vertical)

@@ -117,8 +117,12 @@ def _on_whatif_result(self, oid, init_before, init_after,
 def _finish_whatif(self, session_id: int):
     if session_id != getattr(self, '_whatif_session', -1):
         return
-    self._whatif_session     = -1
-    self._whatif_in_progress = False
+    # Prevent duplicate on_done if timeout already fired
+    if getattr(self, '_whatif_done_called', False):
+        return
+    self._whatif_done_called  = True
+    self._whatif_session      = -1
+    self._whatif_in_progress  = False
 
     buf  = dict(getattr(self, '_whatif_buf',  {}))
     oids = list(getattr(self, '_whatif_oids', []))
@@ -194,13 +198,15 @@ def _send_whatif_order(self, legs: list, strat: str, cost_str: str, on_done=None
     symbol = sym_w.text().strip().upper() if sym_w else "SPX"
 
     session_id = int(time.time() * 1000)
-    self._whatif_session     = session_id
-    self._whatif_buf         = {}
-    self._whatif_oids        = []
-    self._whatif_on_done     = on_done
-    self._whatif_strat       = strat
-    self._whatif_cost_str    = cost_str
-    self._whatif_legs        = legs
+    self._whatif_session      = session_id
+    self._whatif_buf          = {}
+    self._whatif_oids         = []
+    self._whatif_on_done      = on_done
+    self._whatif_strat        = strat
+    self._whatif_cost_str     = cost_str
+    self._whatif_legs         = legs
+    # Guard: ensures on_done is called exactly once per session
+    self._whatif_done_called  = False
 
     # 브릿지 슬롯 연결 (최초 1회)
     if not getattr(self, '_whatif_slots_connected', False):
@@ -313,14 +319,18 @@ def _send_whatif_order(self, legs: list, strat: str, cost_str: str, on_done=None
             btn.setEnabled(True); btn.setText("💰 증거금")
         return self._log(f"❌ BAG whatIf 전송 오류: {e}")
 
-    # ── 타임아웃 5초 → 로컬 추정값 폴백 ─────────────────────
+    # ── Timeout: 5s → fallback to local estimate ──────────────
     def _check_timeout(sid):
         if sid != getattr(self, '_whatif_session', -1):
-            return   # 이미 정상 완료됨
+            return   # already completed normally
+        # Prevent duplicate if _finish_whatif already ran
+        if getattr(self, '_whatif_done_called', False):
+            return
+        self._whatif_done_called  = True
         local_margin = _calc_required_margin(legs)
-        self._whatif_session     = -1
-        self._whatif_in_progress = False
-        self._whatif_oids        = []
+        self._whatif_session      = -1
+        self._whatif_in_progress  = False
+        self._whatif_oids         = []
         if btn:
             btn.setEnabled(True); btn.setText("💰 증거금")
         self._log(

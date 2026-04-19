@@ -114,8 +114,30 @@ if IBAPI_AVAILABLE:
                 float(execution.price))
 
         def contractDetails(self, reqId, contractDetails):
-            """BAG conId 조회 콜백 — bridge로 emit."""
-            bridge.contract_details_sig.emit(reqId, contractDetails)
+            """
+            BAG conId lookup callback — serialize to dict before emit.
+            Avoids cross-thread crash from passing raw Python objects.
+            Receivers access: cd['conId'], cd['symbol'], cd['right'], etc.
+            """
+            from types import SimpleNamespace
+            try:
+                c = contractDetails.contract
+                # Extract only needed fields — safe for cross-thread transfer
+                cd = SimpleNamespace(
+                    conId   = int(getattr(c, 'conId',   0)),
+                    symbol  = str(getattr(c, 'symbol',  '')),
+                    right   = str(getattr(c, 'right',   '')),
+                    strike  = float(getattr(c, 'strike', 0.0)),
+                    expiry  = str(getattr(c, 'lastTradeDateOrContractMonth', '')),
+                    secType = str(getattr(c, 'secType', '')),
+                )
+                # Compatibility shim: cd.contract.conId still works for
+                # existing receivers that access contractDetails.contract
+                cd.contract = cd
+            except Exception as e:
+                print(f"[contractDetails] serialization error: {e}")
+                return
+            bridge.contract_details_sig.emit(reqId, cd)
 
         def contractDetailsEnd(self, reqId):
             """BAG conId 조회 완료 콜백 — bridge로 emit."""

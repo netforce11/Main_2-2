@@ -163,6 +163,9 @@ class BalanceGrid(GridTab):
         bl.addWidget(self.lbl_time)
         self.add(br, 3, 0, 1, 12)
 
+        # [4,0-11] 매매일지 패널
+        self.add(self._build_trade_journal(), 4, 0, 1, 12)
+
     def _big(self, title, color):
         w = QWidget(); v = QVBoxLayout(w); v.setContentsMargins(4, 2, 4, 2)
         lt = QLabel(title); lt.setStyleSheet("color:#888;font-size:11px;border:none;")
@@ -398,6 +401,206 @@ class BalanceGrid(GridTab):
         self.lbl_tot_pnl.setText(f"누적 손익: ${tot_pnl:,.2f}")
         self.lbl_tot_pnl.setStyleSheet(f"color:{pnl_col};border:none;")
         self.lbl_tot_cnt.setText(f"총 거래: {cnt}건")
+
+    # ══════════════════════════════════════════════════════════════
+    # 매매일지 패널
+    # ══════════════════════════════════════════════════════════════
+    def _build_trade_journal(self) -> QGroupBox:
+        """[4,0-11] 매매일지 패널 — 날짜 선택 + 체결/주문로그/요약 3탭."""
+        from PyQt5.QtWidgets import QTabWidget, QDateEdit, QCalendarWidget
+        from PyQt5.QtCore    import QDate
+
+        gb = QGroupBox("📋 매매일지")
+        gb.setStyleSheet(
+            "QGroupBox{font-size:12px;color:#ffd700;font-weight:bold;"
+            "border:1px solid #2a2a5a;border-radius:4px;"
+            "margin-top:6px;padding-top:4px;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:8px;}")
+        root = QVBoxLayout(gb); root.setSpacing(4); root.setContentsMargins(6,8,6,6)
+
+        # ── 날짜 선택 행 ─────────────────────────────────────
+        ctrl = QHBoxLayout(); ctrl.setSpacing(6)
+        ctrl.addWidget(QLabel("날짜:", styleSheet="color:#aaa;font-size:12px;border:none;"))
+
+        self._jnl_date = QDateEdit()
+        self._jnl_date.setCalendarPopup(True)
+        self._jnl_date.setDate(QDate.currentDate())
+        self._jnl_date.setDisplayFormat("yyyy-MM-dd")
+        self._jnl_date.setFixedHeight(26)
+        self._jnl_date.setStyleSheet(
+            "background:#0a0a1e;color:#ffd700;border:1px solid #444;"
+            "font-size:13px;padding:2px 4px;")
+        ctrl.addWidget(self._jnl_date)
+
+        btn_load = QPushButton("📂 조회")
+        btn_load.setFixedHeight(26)
+        btn_load.setStyleSheet(
+            "background:#1a3a6b;color:#90caf9;font-size:12px;"
+            "font-weight:bold;padding:2px 10px;border-radius:3px;")
+        btn_load.clicked.connect(self._jnl_load)
+        ctrl.addWidget(btn_load)
+
+        btn_today = QPushButton("오늘")
+        btn_today.setFixedHeight(26)
+        btn_today.setStyleSheet(
+            "background:#1a3a1a;color:#00ff88;font-size:11px;padding:2px 8px;border-radius:3px;")
+        btn_today.clicked.connect(lambda: (
+            self._jnl_date.setDate(QDate.currentDate()), self._jnl_load()))
+        ctrl.addWidget(btn_today)
+
+        # 일일 요약 라벨 (날짜 행 우측)
+        self._jnl_summary_lbl = QLabel("")
+        self._jnl_summary_lbl.setStyleSheet(
+            "color:#ffd700;font-size:12px;font-weight:bold;border:none;")
+        ctrl.addStretch(); ctrl.addWidget(self._jnl_summary_lbl)
+        root.addLayout(ctrl)
+
+        # ── 3탭: 체결내역 / 주문로그 / 미청산 ───────────────
+        _tab_s = (
+            "QTabWidget::pane{border:1px solid #2a2a4a;background:#07070f;}"
+            "QTabBar::tab{background:#0a0a1e;color:#aaa;padding:4px 10px;"
+            "border:1px solid #2a2a4a;border-bottom:none;font-size:12px;}"
+            "QTabBar::tab:selected{background:#12122a;color:#ffd700;}"
+            "QTabBar::tab:hover{background:#1a1a3a;color:#fff;}")
+        tabs = QTabWidget(); tabs.setStyleSheet(_tab_s)
+
+        # 탭1: 체결내역
+        self.tbl_jnl_exec = self._jnl_make_table([
+            "시각","방향","종목","만기","CP","행사가",
+            "수량","체결가","지수","5분전","10분전","변동(5m)","변동(10m)"])
+        tabs.addTab(self._wrap(self.tbl_jnl_exec), "💰 체결내역")
+
+        # 탭2: 주문 상태 로그
+        self.tbl_jnl_orders = self._jnl_make_table([
+            "시각","상태","OID","종목","CP","행사가","방향","수량","주문가","지수"])
+        tabs.addTab(self._wrap(self.tbl_jnl_orders), "📋 주문로그")
+
+        # 탭3: 미청산 포지션
+        self.tbl_jnl_open = self._jnl_make_table([
+            "진입일","종목","CP","행사가","수량","진입가","현재손익"])
+        tabs.addTab(self._wrap(self.tbl_jnl_open), "🔓 미청산")
+
+        root.addWidget(tabs)
+        return gb
+
+    def _jnl_make_table(self, headers: list) -> QTableWidget:
+        tbl = QTableWidget(0, len(headers))
+        tbl.setHorizontalHeaderLabels(headers)
+        tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        tbl.verticalHeader().setVisible(False)
+        tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+        tbl.setAlternatingRowColors(True)
+        tbl.setMaximumHeight(200)
+        tbl.setStyleSheet(
+            "QTableWidget{background:#05050f;color:#ccc;"
+            "gridline-color:#1a1a3a;font-size:11px;alternate-background-color:#080818;}"
+            "QHeaderView::section{background:#0a0a1e;color:#90caf9;"
+            "border:1px solid #1a1a3a;font-size:11px;padding:2px;}"
+            "QTableWidget::item:selected{background:#1a3a6b;color:#ffd700;}")
+        return tbl
+
+    @staticmethod
+    def _wrap(widget) -> QWidget:
+        w = QWidget(); v = QVBoxLayout(w)
+        v.setContentsMargins(0,4,0,0); v.addWidget(widget); return w
+
+    def _jnl_load(self):
+        """선택 날짜 매매일지 DB 조회 → 3탭 갱신."""
+        date_str = self._jnl_date.date().toString("yyyy-MM-dd")
+        try:
+            from trade_log import (get_executions_by_date,
+                                   get_order_log_by_date,
+                                   get_open_trades,
+                                   get_daily_summary)
+        except ImportError:
+            self._jnl_summary_lbl.setText("⚠ trade_log 모듈 없음")
+            return
+
+        # ── 탭1: 체결내역 ────────────────────────────────────
+        execs = get_executions_by_date(date_str)
+        self.tbl_jnl_exec.setRowCount(0)
+        for e in execs:
+            r = self.tbl_jnl_exec.rowCount()
+            self.tbl_jnl_exec.insertRow(r)
+            col = "#00ff88" if e["action"] == "BUY" else "#ff6666"
+            vals = [
+                e["ts"][11:],           # 시각 (HH:MM:SS)
+                e["action"],
+                e["sym"],
+                e.get("expiry",""),
+                e.get("right",""),
+                str(int(e["strike"])) if e.get("strike") else "",
+                str(int(e["qty"])),
+                f"{e['price']:.2f}",
+                f"{e['und_price']:.2f}"  if e.get("und_price") else "―",
+                f"{e['und_5m']:.2f}"     if e.get("und_5m")    else "―",
+                f"{e['und_10m']:.2f}"    if e.get("und_10m")   else "―",
+                f"{e['chg_5m']:+.2f}"    if e.get("chg_5m")  is not None else "―",
+                f"{e['chg_10m']:+.2f}"   if e.get("chg_10m") is not None else "―",
+            ]
+            for c, v in enumerate(vals):
+                item = QTableWidgetItem(v)
+                item.setTextAlignment(Qt.AlignCenter)
+                if c == 1:  # 방향 컬럼 색상
+                    item.setForeground(QBrush(QColor(col)))
+                self.tbl_jnl_exec.setItem(r, c, item)
+
+        # ── 탭2: 주문 로그 ───────────────────────────────────
+        orders = get_order_log_by_date(date_str)
+        self.tbl_jnl_orders.setRowCount(0)
+        _status_col = {
+            "Filled": "#00ff88", "Cancelled": "#ff6666",
+            "Submitted": "#ffd700", "PreSubmitted": "#aaa",
+        }
+        for o in orders:
+            r = self.tbl_jnl_orders.rowCount()
+            self.tbl_jnl_orders.insertRow(r)
+            scol = _status_col.get(o["status"], "#ccc")
+            vals = [
+                o["ts"][11:], o["status"], str(o["oid"]),
+                o.get("sym",""), o.get("right",""),
+                str(int(o["strike"])) if o.get("strike") else "",
+                o.get("action",""), str(int(o["qty"])) if o.get("qty") else "",
+                f"{o['price']:.2f}" if o.get("price") else "",
+                f"{o['und_price']:.2f}" if o.get("und_price") else "―",
+            ]
+            for c, v in enumerate(vals):
+                item = QTableWidgetItem(v)
+                item.setTextAlignment(Qt.AlignCenter)
+                if c == 1:
+                    item.setForeground(QBrush(QColor(scol)))
+                self.tbl_jnl_orders.setItem(r, c, item)
+
+        # ── 탭3: 미청산 ──────────────────────────────────────
+        opens = get_open_trades()
+        self.tbl_jnl_open.setRowCount(0)
+        for o in opens:
+            r = self.tbl_jnl_open.rowCount()
+            self.tbl_jnl_open.insertRow(r)
+            for c, v in enumerate([
+                o["open_date"], o["sym"], o.get("right",""),
+                str(int(o["strike"])) if o.get("strike") else "",
+                str(int(o["qty"])), f"{o['entry_price']:.2f}", "―"
+            ]):
+                item = QTableWidgetItem(v)
+                item.setTextAlignment(Qt.AlignCenter)
+                self.tbl_jnl_open.setItem(r, c, item)
+
+        # ── 일일 요약 ─────────────────────────────────────────
+        s = get_daily_summary(date_str)
+        if s["trades"]:
+            col = "#00ff88" if s["net_pnl"] >= 0 else "#ff4444"
+            sign = "+" if s["net_pnl"] >= 0 else ""
+            self._jnl_summary_lbl.setText(
+                f"{date_str}  |  {s['trades']}건  "
+                f"실현손익: {sign}${s['realized_pnl']:,.2f}  "
+                f"수수료: ${s['commission']:.2f}  "
+                f"순손익: {sign}${s['net_pnl']:,.2f}")
+            self._jnl_summary_lbl.setStyleSheet(f"color:{col};font-size:12px;font-weight:bold;border:none;")
+        else:
+            self._jnl_summary_lbl.setText(f"{date_str} — 체결 없음")
+            self._jnl_summary_lbl.setStyleSheet("color:#555;font-size:12px;border:none;")
 
     def _apply_theme(self):
         """TabWrapper 다크/라이트 전환 시 호출 — 테이블 색상 명시 재적용."""

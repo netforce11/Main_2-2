@@ -1,7 +1,11 @@
 """
-report_const.py — 상수 / DB 초기화 / 헬퍼 위젯
-════════════════════════════════════════════════
-위치: IBKR/MAIN2/STRATEGY_REPORT/report_const.py
+report_const.py — 상수 / DB 초기화 / 헬퍼 위젯   v2.0
+════════════════════════════════════════════════════
+위치: IBKR/MAIN2/strategy_report/report_const.py
+
+변경:
+  v2.0 — products 테이블 추가 (상품·전략 메모)
+         rec_type 컬럼으로 복기/상품 구분
 """
 
 from __future__ import annotations
@@ -20,14 +24,20 @@ CHART_DIR  = REPORT_DIR / "charts"
 DB_PATH    = REPORT_DIR / "reports.db"
 
 # ══════════════════════════════════════════════════════════════
-# 폰트 크기 기준 (+3 적용 — 기본 10pt 기준 → 13pt)
+# 레코드 타입
 # ══════════════════════════════════════════════════════════════
-FS_BODY    = "16px"   # 일반 본문 (기존 13px → +3)
-FS_SMALL   = "14px"   # 보조/힌트 (기존 11px → +3)
-FS_SECTION = "16px"   # 섹션 헤더 (기존 13px → +3)
-FS_TITLE   = "17px"   # 타이틀 (기존 14px → +3)
-FS_HINT    = "15px"   # 전략 힌트 (기존 12px → +3)
-FS_LIST    = "14px"   # 리스트 아이템 (기존 11px → +3)
+REC_TRADE   = "trade"    # 매매 복기
+REC_PRODUCT = "product"  # 상품·전략 메모
+
+# ══════════════════════════════════════════════════════════════
+# 폰트 크기
+# ══════════════════════════════════════════════════════════════
+FS_BODY    = "16px"
+FS_SMALL   = "14px"
+FS_SECTION = "16px"
+FS_TITLE   = "17px"
+FS_HINT    = "15px"
+FS_LIST    = "14px"
 
 # ══════════════════════════════════════════════════════════════
 # 전략 목록 + 자동 힌트
@@ -68,7 +78,7 @@ STRATEGY_HINTS = {
 }
 
 # ══════════════════════════════════════════════════════════════
-# 이벤트 태그 목록
+# 이벤트 태그
 # ══════════════════════════════════════════════════════════════
 EVENT_TAGS = [
     "", "FOMC", "CPI", "PPI", "NFP", "OPEX", "QE", "GDP",
@@ -76,15 +86,34 @@ EVENT_TAGS = [
 ]
 
 # ══════════════════════════════════════════════════════════════
+# 상품 카테고리
+# ══════════════════════════════════════════════════════════════
+PRODUCT_CATEGORIES = [
+    "", "SPX 옵션", "SPXW 0DTE", "SPY 옵션", "QQQ 옵션",
+    "NDX 옵션", "VIX 옵션", "개별주 옵션", "선물", "ETF", "주식", "기타",
+]
+
+# 만기 유형
+EXPIRY_TYPES = [
+    "", "0DTE (당일)", "주간 (Weekly)", "월간 (Monthly)",
+    "분기 (Quarterly)", "LEAPS (1년+)", "기타",
+]
+
+# 호가 단위 목록
+TICK_SIZES = ["", "0.01", "0.05", "0.10", "0.25", "0.50", "1.00", "직접입력"]
+
+# ══════════════════════════════════════════════════════════════
 # DB 초기화
 # ══════════════════════════════════════════════════════════════
 def init_db() -> sqlite3.Connection:
-    """DB와 디렉토리를 생성하고 연결 반환."""
+    """DB·디렉토리 생성 후 연결 반환."""
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     CHART_DIR.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
+
+    # ── 매매 복기 테이블 ──────────────────────────────────────
     conn.execute("""
         CREATE TABLE IF NOT EXISTS reports (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,14 +133,41 @@ def init_db() -> sqlite3.Connection:
             created_at     TEXT    DEFAULT ''
         )
     """)
+
+    # ── 상품·전략 메모 테이블 ─────────────────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS products (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            title            TEXT    NOT NULL DEFAULT '',
+            category         TEXT    DEFAULT '',
+            symbol           TEXT    DEFAULT '',
+            contract_unit    TEXT    DEFAULT '',
+            tick_size        TEXT    DEFAULT '',
+            tick_value       TEXT    DEFAULT '',
+            related_products TEXT    DEFAULT '',
+            opposite_product TEXT    DEFAULT '',
+            expiry_type      TEXT    DEFAULT '',
+            expiry_features  TEXT    DEFAULT '',
+            characteristics  TEXT    DEFAULT '',
+            strategy_memo    TEXT    DEFAULT '',
+            risk_memo        TEXT    DEFAULT '',
+            entry_conditions TEXT    DEFAULT '',
+            exit_conditions  TEXT    DEFAULT '',
+            memo             TEXT    DEFAULT '',
+            importance       INTEGER DEFAULT 3,
+            created_at       TEXT    DEFAULT '',
+            updated_at       TEXT    DEFAULT ''
+        )
+    """)
+
     conn.commit()
     return conn
+
 
 # ══════════════════════════════════════════════════════════════
 # 헬퍼 UI 함수
 # ══════════════════════════════════════════════════════════════
 def hline() -> QFrame:
-    """수평 구분선."""
     f = QFrame()
     f.setFrameShape(QFrame.HLine)
     f.setFrameShadow(QFrame.Sunken)
@@ -120,13 +176,35 @@ def hline() -> QFrame:
 
 
 def section_label(text: str) -> QLabel:
-    """섹션 헤더 레이블."""
     lbl = QLabel(text)
     lbl.setStyleSheet(
         f"font-weight:bold;font-size:{FS_SECTION};"
         f"color:#ddd;padding:4px 0 2px 0;"
     )
     return lbl
+
+
+def field_label(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setStyleSheet(f"color:#aaa;font-size:{FS_BODY};")
+    return lbl
+
+
+# ══════════════════════════════════════════════════════════════
+# 공통 스타일 문자열
+# ══════════════════════════════════════════════════════════════
+STYLE_INPUT = (
+    f"background:#1e1e2e;color:#fff;border:1px solid #555;"
+    f"border-radius:4px;padding:4px 8px;font-size:{FS_BODY};"
+)
+STYLE_TEXTEDIT = (
+    f"background:#1a1a2e;color:#ddd;border:1px solid #444;"
+    f"border-radius:4px;padding:6px;font-size:{FS_BODY};"
+)
+STYLE_COMBO = (
+    f"background:#1e1e2e;color:#ccc;border:1px solid #555;"
+    f"border-radius:4px;padding:3px 6px;font-size:{FS_BODY};"
+)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -148,8 +226,8 @@ class StarWidget(QWidget):
             btn.setFixedSize(30, 30)
             btn.setCheckable(True)
             btn.setStyleSheet(
-                f"QToolButton{{border:none;font-size:19px;color:#ccc;}}"
-                f"QToolButton:checked{{color:#f5a623;}}"
+                "QToolButton{border:none;font-size:19px;color:#ccc;}"
+                "QToolButton:checked{color:#f5a623;}"
             )
             btn.clicked.connect(lambda _, v=i: self._set(v))
             layout.addWidget(btn)

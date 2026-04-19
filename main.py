@@ -202,7 +202,7 @@ class TradingDashboard(QMainWindow):
         for i in range(self.tabs.count()):
             wrapper = self.tabs.widget(i)
             # TabWrapper 안의 실제 그리드 위젯 접근
-            grid = getattr(wrapper, '_grid', wrapper)
+            grid = getattr(wrapper, 'grid_tab', getattr(wrapper, '_grid', wrapper))
             if i == idx:
                 if hasattr(grid, 'on_tab_activate'):
                     try: grid.on_tab_activate()

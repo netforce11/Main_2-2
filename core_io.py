@@ -84,3 +84,19 @@ def auto_mdt(ib) -> int:
     except Exception as e:
         print(f"[auto_mdt] reqMarketDataType({mdt}) 실패: {e}")
     return mdt
+
+
+def apply_saved_settings() -> None:
+    """
+    앱 시작 시 1회 호출 — settings.json 읽어 각 모듈에 적용.
+    main.py 의 TradingDashboard.__init__() 에서 호출 권장.
+    """
+    try:
+        cfg = load_json("settings.json", {})
+        # 기초자산 저장 주기
+        interval = cfg.get("und_save_interval", 10)
+        from trade_log.und_saver import set_interval
+        set_interval(interval)
+        print(f"[Settings] 기초자산 저장 주기: {interval}초")
+    except Exception as e:
+        print(f"[Settings] 설정 로드 오류: {e}")

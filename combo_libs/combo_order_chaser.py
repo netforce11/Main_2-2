@@ -225,8 +225,8 @@ def _do_chase(self, reason: str = "") -> None:
     else:
         new_price = round(self._chaser_price + tick, 2)
         self._log(
-            f"   ↳ Mid 조회 실패 → 폴백: ${self._chaser_price:.2f}"
-            f" + 1틱 = ${new_price:.2f}")
+            f"   ↳ Mid unavailable → fallback: ${self._chaser_price:.2f}"
+            f" + tick ${tick} = ${new_price:.2f}")
 
     if new_price > self._chaser_max_price:
         self._log(
@@ -252,7 +252,14 @@ _CHASE_TICKER_ID = 8799
 
 
 def _fetch_mid_price_sync(self) -> Optional[float]:
-    # 1) 캐시된 틱에서 먼저 조회
+    """
+    Fetch BAG mid price for Chaser.
+
+    Step 1: check cached ticks (_mid_ticks 8800-8815).
+    Step 2: snapshot reqMktData with QEventLoop (non-blocking, 500ms timeout).
+            Returns None on failure; _do_chase handles the price-based fallback.
+    """
+    # Step 1 — cached ticks
     mid_ticks: dict = getattr(self, '_mid_ticks', {})
     for tid in range(_TICKER_BASE + 15, _TICKER_BASE - 1, -1):
         entry = mid_ticks.get(tid)
@@ -262,32 +269,36 @@ def _fetch_mid_price_sync(self) -> Optional[float]:
             if bid and ask and bid > 0 and ask > 0:
                 return round((bid + ask) / 2, 2)
 
-    # 2) BAG contract 실시간 조회
-    # ★ v2.2: tickPrice 직접 패치 제거 → reqId 필터링 방식으로 교체
-    #   (멀티 레그 실시간 호가 수신 중 콜백 충돌 방지)
+    # Step 2 — snapshot via reqMktData + QEventLoop (non-blocking)
+    from PyQt5.QtCore import QEventLoop
     ib  = getattr(getattr(self, 'mw', None), 'ib', None)
     bag = getattr(self, '_chaser_bag_contract', None)
     if ib is None or bag is None:
         return None
 
-    result: dict = {}   # {tick_type: price}
+    result: dict = {}
+    loop  = QEventLoop()
     _orig = getattr(ib, 'tickPrice', lambda *a: None)
 
     def _on_tick(req_id, tick_type, price, attrib=None):
-        # 원본 콜백 항상 먼저 호출 → 다른 실시간 수신 보호
+        # Always call original first — protect other live streams
         try:
-            _orig(req_id, tick_type, price, attrib) if attrib is not None \
-                else _orig(req_id, tick_type, price)
+            if attrib is not None:
+                _orig(req_id, tick_type, price, attrib)
+            else:
+                _orig(req_id, tick_type, price)
         except Exception:
             pass
-        # Chaser 전용 req_id 만 캡처
+        # Capture only Chaser-specific reqId
         if req_id == _CHASE_TICKER_ID and tick_type in (1, 2) and price > 0:
             result[tick_type] = price
-            if len(result) >= 2:
+            if 1 in result and 2 in result:
                 try:
                     ib.cancelMktData(_CHASE_TICKER_ID)
                 except Exception:
                     pass
+                if loop.isRunning():
+                    loop.quit()
 
     ib.tickPrice = _on_tick
     try:
@@ -296,20 +307,15 @@ def _fetch_mid_price_sync(self) -> Optional[float]:
         ib.tickPrice = _orig
         return None
 
-    deadline = time.monotonic() + 0.5  # ★ v2.2: 0.3s → 0.5s
-    while time.monotonic() < deadline:
-        if 1 in result and 2 in result:
-            ib.tickPrice = _orig
-            return round((result[1] + result[2]) / 2, 2)
-        QTimer.singleShot(0, lambda: None)
+    # Non-blocking wait: QEventLoop processes Qt events while waiting
+    QTimer.singleShot(500, loop.quit)   # 500ms hard timeout
+    loop.exec_()
 
     ib.tickPrice = _orig
-    return None
 
-
-# ══════════════════════════════════════════════════════════════
-# 정정 주문 전송
-# ══════════════════════════════════════════════════════════════
+    if 1 in result and 2 in result:
+        return round((result[1] + result[2]) / 2, 2)
+    return None   # signals _do_chase to use price-based fallback
 
 def _modify_order(self, oid: int, new_price: float) -> None:
     """

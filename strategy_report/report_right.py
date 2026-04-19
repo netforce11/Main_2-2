@@ -1,16 +1,12 @@
 """
-report_right.py — 우측 상세 폼 UI 빌드
-════════════════════════════════════════════════════════════════
-위치: IBKR/MAIN2/STRATEGY_REPORT/report_right.py
+report_right.py — 우측 매매 복기 폼 UI   v2.0
+════════════════════════════════════════════════
+위치: IBKR/MAIN2/strategy_report/report_right.py
 
-ReportRightPanel: QScrollArea 서브클래스
-  Header     : 날짜 / 제목 / 중요도 / 이벤트태그 / SPX / VIX
-  Section ①  : 이벤트 고찰 (QTextEdit)
-  Section ②  : 전략 체크박스 + 상품 선정 + 힌트
-  Section ③  : 어려운 구간 / 대응 방안
-  Section ④  : 차트 이미지 (파일 선택 + 미리보기)
-  Section ⑤  : 기타 메모
-  Footer     : 저장 / 저장 후 새 리포트 버튼
+변경:
+  v2.0 — 기존 복기 폼 그대로 유지
+         tab_report.py 에서 QTabWidget 으로 감싸
+         (이 파일은 복기 탭 내용만 담당)
 """
 
 from __future__ import annotations
@@ -19,30 +15,20 @@ from PyQt5.QtWidgets import (
     QScrollArea, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QDateEdit, QComboBox, QTextEdit,
     QCheckBox, QGroupBox, QGridLayout,
-    QPushButton, QToolButton, QFrame, QSizePolicy,
+    QPushButton, QFrame, QSizePolicy,
 )
 from PyQt5.QtCore import Qt, QDate
 
 from .report_const import (
     FS_BODY, FS_SMALL, FS_SECTION, FS_TITLE, FS_HINT,
     STRATEGY_LIST, EVENT_TAGS,
-    StarWidget, hline, section_label,
-)
-
-# ── 공통 인풋 스타일 ──────────────────────────────────────────
-_INPUT = (
-    f"background:#1e1e2e;color:#fff;border:1px solid #555;"
-    f"border-radius:4px;padding:4px 8px;font-size:{FS_BODY};"
-)
-_TEXTEDIT = (
-    f"background:#1a1a2e;color:#ddd;border:1px solid #444;"
-    f"border-radius:4px;padding:6px;font-size:{FS_BODY};"
+    StarWidget, hline, section_label, field_label,
+    STYLE_INPUT, STYLE_TEXTEDIT, STYLE_COMBO,
 )
 
 
-# ══════════════════════════════════════════════════════════════
-class ReportRightPanel(QScrollArea):
-    """우측 상세 리포트 편집 패널 (UI 빌드 전담)."""
+class TradeFormPanel(QScrollArea):
+    """매매 복기 상세 편집 패널."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -62,48 +48,42 @@ class ReportRightPanel(QScrollArea):
         self._build_section4()
         self._build_section5()
         self._build_footer()
-
         self._lay.addStretch()
         self.setWidget(container)
 
-    # ── Section: Header ──────────────────────────────────────
+    # ── Header ───────────────────────────────────────────────
     def _build_header(self):
         self._lay.addWidget(section_label("▶ 기본 정보"))
 
-        # 날짜 / 중요도 / 이벤트 태그
         row1 = QHBoxLayout()
-        row1.addWidget(self._lbl("날짜:"))
+        row1.addWidget(field_label("날짜:"))
         self.edt_date = QDateEdit()
         self.edt_date.setCalendarPopup(True)
         self.edt_date.setDate(QDate.currentDate())
         self.edt_date.setDisplayFormat("yyyy-MM-dd")
         self.edt_date.setFixedWidth(140)
-        self.edt_date.setStyleSheet(_INPUT)
+        self.edt_date.setStyleSheet(STYLE_INPUT)
         row1.addWidget(self.edt_date)
 
         row1.addSpacing(12)
-        row1.addWidget(self._lbl("중요도:"))
+        row1.addWidget(field_label("중요도:"))
         self.wgt_stars = StarWidget()
         row1.addWidget(self.wgt_stars)
 
         row1.addSpacing(12)
-        row1.addWidget(self._lbl("이벤트:"))
+        row1.addWidget(field_label("이벤트:"))
         self.cmb_event_tag = QComboBox()
         self.cmb_event_tag.addItems(EVENT_TAGS)
-        self.cmb_event_tag.setFixedWidth(110)
-        self.cmb_event_tag.setStyleSheet(
-            f"background:#1e1e2e;color:#ccc;border:1px solid #555;"
-            f"border-radius:4px;padding:3px 6px;font-size:{FS_BODY};"
-        )
+        self.cmb_event_tag.setFixedWidth(120)
+        self.cmb_event_tag.setStyleSheet(STYLE_COMBO)
         row1.addWidget(self.cmb_event_tag)
         row1.addStretch()
         self._lay.addLayout(row1)
 
-        # 제목
         row2 = QHBoxLayout()
-        row2.addWidget(self._lbl("제목:"))
+        row2.addWidget(field_label("제목:"))
         self.edt_title = QLineEdit()
-        self.edt_title.setPlaceholderText("리포트 제목을 입력하세요")
+        self.edt_title.setPlaceholderText("리포트 제목")
         self.edt_title.setStyleSheet(
             f"background:#1e1e2e;color:#fff;border:1px solid #555;"
             f"border-radius:4px;padding:5px 8px;font-size:17px;"
@@ -111,9 +91,8 @@ class ReportRightPanel(QScrollArea):
         row2.addWidget(self.edt_title, 1)
         self._lay.addLayout(row2)
 
-        # SPX / VIX
         row3 = QHBoxLayout()
-        row3.addWidget(self._lbl("SPX:"))
+        row3.addWidget(field_label("SPX:"))
         self.edt_spx = QLineEdit("0.00")
         self.edt_spx.setFixedWidth(100)
         self.edt_spx.setStyleSheet(
@@ -123,7 +102,7 @@ class ReportRightPanel(QScrollArea):
         row3.addWidget(self.edt_spx)
 
         row3.addSpacing(12)
-        row3.addWidget(self._lbl("VIX:"))
+        row3.addWidget(field_label("VIX:"))
         self.edt_vix = QLineEdit("0.00")
         self.edt_vix.setFixedWidth(80)
         self.edt_vix.setStyleSheet(
@@ -131,7 +110,6 @@ class ReportRightPanel(QScrollArea):
             f"border-radius:4px;padding:3px 6px;font-size:{FS_BODY};"
         )
         row3.addWidget(self.edt_vix)
-
         note = QLabel("(저장 시 자동 기록)")
         note.setStyleSheet(f"color:#666;font-size:{FS_SMALL};")
         row3.addWidget(note)
@@ -139,29 +117,27 @@ class ReportRightPanel(QScrollArea):
         self._lay.addLayout(row3)
         self._lay.addWidget(hline())
 
-    # ── Section ①: 이벤트 고찰 ──────────────────────────────
+    # ── ① 이벤트 고찰 ────────────────────────────────────────
     def _build_section1(self):
         self._lay.addWidget(section_label("① 이벤트 고찰"))
         self.txt_event = QTextEdit()
         self.txt_event.setPlaceholderText(
-            "주요 이벤트에 대한 고찰을 기록하세요.\n"
             "예) FOMC 금리 동결 → 시장 초기 상승 후 반락. VIX 18→14 급락.\n"
             "    → 단기 콜 프리미엄 급감 예상, 풋 스프레드 유리할 듯..."
         )
         self.txt_event.setMinimumHeight(110)
         self.txt_event.setMaximumHeight(170)
-        self.txt_event.setStyleSheet(_TEXTEDIT)
+        self.txt_event.setStyleSheet(STYLE_TEXTEDIT)
         self._lay.addWidget(self.txt_event)
         self._lay.addWidget(hline())
 
-    # ── Section ②: 전략 + 상품 선정 ─────────────────────────
+    # ── ② 전략 + 상품 선정 ───────────────────────────────────
     def _build_section2(self):
         self._lay.addWidget(section_label("② 전략 선택 및 상품 선정"))
 
         s2 = QHBoxLayout()
         s2.setSpacing(12)
 
-        # 전략 체크박스 그룹
         grp = QGroupBox("전략 선택")
         grp.setStyleSheet(
             f"QGroupBox{{color:#aef;border:1px solid #444;border-radius:4px;"
@@ -178,28 +154,22 @@ class ReportRightPanel(QScrollArea):
             self._chk_strategies[key] = chk
         s2.addWidget(grp)
 
-        # 상품 선정 + 힌트 영역
         s2r = QVBoxLayout()
         s2r.setSpacing(6)
-
-        lbl_p = QLabel("상품 선정 및 선정 사유:")
-        lbl_p.setStyleSheet(f"color:#aaa;font-size:{FS_BODY};")
-        s2r.addWidget(lbl_p)
-
+        s2r.addWidget(field_label("상품 선정 및 선정 사유:"))
         self.txt_product = QTextEdit()
         self.txt_product.setPlaceholderText(
             "예) SPXW 5200C / 5190-5200 콜 스프레드\n"
-            "    프리미엄 수취 $8.50, 최대이익 $8.50, 최대손실 $1.50\n"
-            "    근거: VIX 14대 → 프리미엄 적정, 상방 저항선 5210 확인"
+            "    프리미엄 수취 $8.50, 최대이익 $8.50, 최대손실 $1.50"
         )
         self.txt_product.setMinimumHeight(88)
         self.txt_product.setMaximumHeight(140)
-        self.txt_product.setStyleSheet(_TEXTEDIT)
+        self.txt_product.setStyleSheet(STYLE_TEXTEDIT)
         s2r.addWidget(self.txt_product)
 
-        hint_title = QLabel("📌 전략 힌트:")
-        hint_title.setStyleSheet(f"color:#f5a623;font-size:{FS_BODY};margin-top:4px;")
-        s2r.addWidget(hint_title)
+        hint_lbl = QLabel("📌 전략 힌트:")
+        hint_lbl.setStyleSheet(f"color:#f5a623;font-size:{FS_BODY};margin-top:4px;")
+        s2r.addWidget(hint_lbl)
 
         self.lbl_hint = QLabel("전략을 선택하면 리스크 힌트가 표시됩니다.")
         self.lbl_hint.setWordWrap(True)
@@ -210,23 +180,20 @@ class ReportRightPanel(QScrollArea):
         )
         s2r.addWidget(self.lbl_hint)
         s2.addLayout(s2r)
-
         self._lay.addLayout(s2)
         self._lay.addWidget(hline())
 
-    # ── Section ③: 리스크 관리 ──────────────────────────────
+    # ── ③ 리스크 관리 ────────────────────────────────────────
     def _build_section3(self):
         self._lay.addWidget(section_label("③ 리스크 관리"))
-
         s3 = QHBoxLayout()
         s3.setSpacing(12)
 
         s3l = QVBoxLayout()
-        s3l.addWidget(self._lbl("어려운 구간 / 심리적 저항선:"))
+        s3l.addWidget(field_label("어려운 구간 / 심리적 저항선:"))
         self.txt_difficult = QTextEdit()
         self.txt_difficult.setPlaceholderText(
             "예) SPX 5210 돌파 시 → 콜 스프레드 숏 레그 위험\n"
-            "    VIX 18 재차 상승 → 프리미엄 역행 구간\n"
             "    심리적 손실 한도: -$500"
         )
         self.txt_difficult.setMinimumHeight(100)
@@ -239,12 +206,11 @@ class ReportRightPanel(QScrollArea):
         s3.addLayout(s3l)
 
         s3r = QVBoxLayout()
-        s3r.addWidget(self._lbl("대응 방안:"))
+        s3r.addWidget(field_label("대응 방안:"))
         self.txt_response = QTextEdit()
         self.txt_response.setPlaceholderText(
             "예) 5210 돌파 확인 시 → 즉시 롤업 또는 청산\n"
-            "    VIX 18+ 시 → 포지션 50% 축소\n"
-            "    손실 $300 도달 시 → 무조건 청산 (규칙)"
+            "    VIX 18+ 시 → 포지션 50% 축소"
         )
         self.txt_response.setMinimumHeight(100)
         self.txt_response.setMaximumHeight(150)
@@ -254,15 +220,14 @@ class ReportRightPanel(QScrollArea):
         )
         s3r.addWidget(self.txt_response)
         s3.addLayout(s3r)
-
         self._lay.addLayout(s3)
         self._lay.addWidget(hline())
 
-    # ── Section ④: 차트 이미지 ──────────────────────────────
+    # ── ④ 차트 이미지 ────────────────────────────────────────
     def _build_section4(self):
         self._lay.addWidget(section_label("④ 차트 이미지"))
-
         btn_row = QHBoxLayout()
+
         self.btn_chart_pick = QPushButton("📂  이미지 선택")
         self.btn_chart_pick.setStyleSheet(
             f"background:#1a3a5a;color:#7df;border-radius:4px;"
@@ -293,19 +258,17 @@ class ReportRightPanel(QScrollArea):
         self._lay.addWidget(self.lbl_chart_img)
         self._lay.addWidget(hline())
 
-    # ── Section ⑤: 기타 메모 ────────────────────────────────
+    # ── ⑤ 기타 메모 ─────────────────────────────────────────
     def _build_section5(self):
         self._lay.addWidget(section_label("⑤ 기타 메모"))
         self.txt_memo = QTextEdit()
-        self.txt_memo.setPlaceholderText(
-            "기타 메모, 사후 복기, 교훈 등 자유롭게 기록..."
-        )
+        self.txt_memo.setPlaceholderText("기타 메모, 사후 복기, 교훈 등...")
         self.txt_memo.setMinimumHeight(88)
         self.txt_memo.setMaximumHeight(150)
-        self.txt_memo.setStyleSheet(_TEXTEDIT)
+        self.txt_memo.setStyleSheet(STYLE_TEXTEDIT)
         self._lay.addWidget(self.txt_memo)
 
-    # ── Footer: 저장 버튼 ────────────────────────────────────
+    # ── Footer ───────────────────────────────────────────────
     def _build_footer(self):
         self._lay.addSpacing(8)
         row = QHBoxLayout()
@@ -320,7 +283,7 @@ class ReportRightPanel(QScrollArea):
         )
         row.addWidget(self.btn_save)
 
-        self.btn_save_new = QPushButton("＋  저장 후 새 리포트")
+        self.btn_save_new = QPushButton("＋  저장 후 새 복기")
         self.btn_save_new.setFixedWidth(200)
         self.btn_save_new.setFixedHeight(42)
         self.btn_save_new.setStyleSheet(
@@ -330,10 +293,3 @@ class ReportRightPanel(QScrollArea):
         row.addWidget(self.btn_save_new)
         row.addStretch()
         self._lay.addLayout(row)
-
-    # ── 헬퍼 ──────────────────────────────────────────────────
-    @staticmethod
-    def _lbl(text: str) -> QLabel:
-        lbl = QLabel(text)
-        lbl.setStyleSheet(f"color:#aaa;font-size:{FS_BODY};")
-        return lbl

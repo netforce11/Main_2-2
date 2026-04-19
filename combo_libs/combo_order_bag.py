@@ -25,12 +25,31 @@ _CACHE_FILE = Path("data/conid_cache.json")
 
 
 def _load_conid_cache() -> None:
+    """Load cache from disk, then purge keys with past expiry dates."""
     global _CONID_CACHE
     try:
         if _CACHE_FILE.exists():
             _CONID_CACHE = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
     except Exception:
         _CONID_CACHE = {}
+    _purge_stale_conid_keys()
+
+
+def _purge_stale_conid_keys() -> None:
+    """
+    Remove keys whose expiry date (YYYYMMDD, 4th field) is before today.
+    Key format: 'SYMBOL|RIGHT|STRIKE|YYYYMMDD'
+    Runs once at startup — keeps cache lean without touching live entries.
+    """
+    from datetime import date
+    today_str = date.today().strftime("%Y%m%d")
+    stale = [k for k in list(_CONID_CACHE)
+             if len(k.split("|")) == 4 and k.split("|")[3] < today_str]
+    for k in stale:
+        del _CONID_CACHE[k]
+    if stale:
+        _save_conid_cache()
+        print(f"[conid_cache] purged {len(stale)} stale key(s)")
 
 
 def _save_conid_cache() -> None:

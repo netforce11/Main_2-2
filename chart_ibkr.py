@@ -254,13 +254,21 @@ class IbkrHistMixin:
         self._live_init_timer = init_t
 
     def _start_live_render_timer(self, lbl):
-        """[S9] 500ms 스로틀 렌더."""
+        """[S9] 500ms 스로틀 렌더. 탭 숨김 중엔 dirty만 유지, 복귀 시 on_tab_activate가 처리."""
         t = QTimer(); t.setInterval(500)
         def _render():
             if not self._live_dirty: return
-            if not self._live_buf: return  # [S9 bugfix] 빈 버퍼 방어
+            if not self._live_buf: return
 
-            # [S9 bugfix] None/NaN/Inf 포함 봉 필터링 후 pyqtgraph에 전달
+            # ── 탭 가시성 체크: 콜-풋 탭(self) 자체가 숨겨진 상태면 스킵 ──
+            # mini_chart_intra 대신 self(CallPutGrid)의 isVisible() 사용
+            # → 내부 차트탭이 실시간/일봉 탭이어도 콜-풋 탭이 활성이면 렌더 허용
+            try:
+                if not self.isVisible():
+                    return  # dirty 유지 → on_tab_activate()가 복귀 시 처리
+            except Exception:
+                pass  # isVisible 실패 시 렌더 허용 (안전 fallback)
+
             valid_bars = [b for b in self._live_buf if _is_valid_bar(b)]
             if not valid_bars:
                 return

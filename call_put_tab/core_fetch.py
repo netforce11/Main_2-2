@@ -622,6 +622,36 @@ class CoreFetchMixin(CoreFetchPosMixin):
             if hasattr(self, '_chart_tabs'):     self._chart_tabs.setCurrentIndex(1)
             self._log(f"관심종목 선택: {sym}  (장 외 — 일봉+분봉 차트 조회)")
 
+    # ── Tab lifecycle: deactivate / activate ─────────────────────
+    def on_tab_deactivate(self):
+        """
+        Called by TabWrapper when this tab is hidden.
+        Bumps _fetch_gen to abort any in-progress _cancel_seq / _send_req
+        chain, then releases _fetch_busy so re-activation can call _fetch().
+        """
+        old_gen = getattr(self, '_fetch_gen', 0)
+        self._fetch_gen = old_gen + 1          # invalidates running QTimer chain
+        if getattr(self, '_fetch_busy', False):
+            self._fetch_busy = False
+            t = getattr(self, '_fetch_timeout_timer', None)
+            if t:
+                t.stop()
+            self._log("⏸ 탭 비활성화 — 구독 루프 중단, _fetch_busy 해제")
+
+    def on_tab_activate(self):
+        """
+        Called by TabWrapper when this tab becomes visible.
+        Re-subscribe only when connected and und_price is available.
+        """
+        if not getattr(getattr(self, 'mw', None), 'connected', False):
+            return
+        if getattr(self, 'und_price', None) is None:
+            return
+        if getattr(self, '_fetch_busy', False):
+            return
+        self._log("▶ 탭 활성화 — 체인 재구독")
+        self._fetch()
+
     def _notify_sniper_sync(self):
         """_fetch() 완료 후 스나이퍼 탭에 즉시 동기화 요청."""
         try:

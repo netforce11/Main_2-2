@@ -16,9 +16,10 @@ class ConnIbkrMixin:
         self._log("TWS 연결 성공 ✓")
 
         # ✅ 이전 세션 잔류값 초기화
-        self.und_price = None
-        self.und_prev  = None
-        self._last_tick_time = None   # [v6.5-1] 타임스탬프 리셋
+        self.und_price     = None
+        self.und_prev      = None
+        self._last_tick_time  = None   # [v6.5-1] 타임스탬프 리셋
+        self._err354_count = 0         # reset: clean session, MDT state unknown
         if hasattr(self, 'lbl_und'):
             self.lbl_und.setText("조회 중…")
 
@@ -70,8 +71,10 @@ class ConnIbkrMixin:
             return
         self._err354_count = 0
 
-        # ── [v6.5-4] 치명적 에러 → 자동 재연결 흐름 ────────────
+        # ── [v6.5-4] Fatal error → auto-reconnect flow ──────────
         if code in (1100, 100):
+            if getattr(self, '_reconnecting', False):
+                return   # reconnect already in progress, skip duplicate
             self._log(f"🚨 ERR {code}: {msg} — 자동 재연결 시작")
             QTimer.singleShot(1000, self._reconnect_flow)
             return
@@ -95,6 +98,7 @@ class ConnIbkrMixin:
         mdt = 1 if self.radio_live.isChecked() else 3
         self._requested_live  = (mdt == 1)   # [v6.5-3] 검증용 플래그
         self._mdt_verify_mode = True          # [v6.5-3] 다음 틱에서 검증
+        self._err354_count = 0   # reset: new MDT subscription starts fresh
         try:
             self.mw.ib.reqMarketDataType(mdt)
             self._log(f"시세모드 전환: {'실시간(1)' if mdt==1 else '지연(3)'} — 첫 틱 수신 후 검증")

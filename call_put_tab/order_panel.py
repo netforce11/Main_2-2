@@ -263,6 +263,9 @@ class OrderPanelMixin:
         root_v.addStretch()
         tab_w.addTab(new_w, "⚡ 신규")
 
+        # ── 단축키 / Enter 포커스 체인 설정 ─────────────────────
+        self._setup_quick_order_shortcuts()
+
         # ── 정정/취소 공통 ────────────────────────────────────
         _tbl_s = (
             "QTableWidget{background:#05050f;color:#ccc;"
@@ -514,7 +517,27 @@ class OrderPanelMixin:
         self._kst_timer.timeout.connect(self._update_kst_labels)
         self._kst_timer.start()
 
+        # ── 체결 감지 → 잔고 자동 갱신 연결 ─────────────────
+        # mw.ib 연결 완료 후 실행되어야 하므로 500ms 지연
+        QTimer.singleShot(500, self._try_connect_exec_refresh)
+
         return gb
+
+    def _try_connect_exec_refresh(self):
+        """연결 상태 확인 후 _connect_exec_auto_refresh 호출.
+        미연결 상태면 _on_connected 에서 재시도 예약."""
+        if getattr(getattr(self, 'mw', None), 'connected', False):
+            self._connect_exec_auto_refresh()
+        else:
+            # 연결 시점에 자동 호출되도록 예약 (이미 등록되어 있으면 중복 무시)
+            if not getattr(self, '_exec_refresh_hook_set', False):
+                self._exec_refresh_hook_set = True
+                _orig = getattr(self, '_on_connected', None)
+                if _orig:
+                    def _hooked_on_connected(*a, **kw):
+                        _orig(*a, **kw)
+                        self._connect_exec_auto_refresh()
+                    self._on_connected = _hooked_on_connected
 
     # ── KST 시각 갱신 ───────────────────────────────────────
     def _update_kst_labels(self):
@@ -1005,3 +1028,56 @@ class OrderPanelMixin:
                 self._log(f"🚨 취소 전송: OID={o['oid']} {o['action']} {o['symbol']}")
             except Exception as e:
                 self._log(f"❌ 취소 오류 OID={o['oid']}: {e}")
+
+    # ── 빠른 주문 단축키 / Enter 포커스 체인 ─────────────────────
+    def _setup_quick_order_shortcuts(self):
+        """
+        단축키 등록 + Enter 포커스 흐름 설정.
+          Alt+[     → 가격 필드 포커스
+          Alt+]     → 수량 필드 포커스
+          Alt+Enter → 매수 버튼 클릭
+          가격 Enter → 수량 이동 → 매수 버튼 포커스 → Enter = 주문
+        """
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui     import QKeySequence
+
+        sc_price = QShortcut(QKeySequence("Alt+["), self)
+        sc_price.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_price.activated.connect(self._sc_focus_price)
+
+        sc_qty = QShortcut(QKeySequence("Alt+]"), self)
+        sc_qty.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_qty.activated.connect(self._sc_focus_qty)
+
+        sc_buy = QShortcut(QKeySequence("Alt+Return"), self)
+        sc_buy.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_buy.activated.connect(self.btn_qord_buy.click)
+
+        # 가격 Enter → 수량 / 수량 Enter → 매수 버튼
+        self._install_enter_next(self.qord_price, self.qord_qty)
+        self._install_enter_next(self.qord_qty,   self.btn_qord_buy)
+
+    def _sc_focus_price(self):
+        self.qord_price.setFocus(); self.qord_price.selectAll()
+
+    def _sc_focus_qty(self):
+        self.qord_qty.setFocus(); self.qord_qty.selectAll()
+
+    @staticmethod
+    def _install_enter_next(src, dst):
+        """src 위젯에서 Enter/Return 키 → dst 위젯으로 포커스 이동."""
+        from PyQt5.QtCore    import QObject, QEvent
+
+        class _Filter(QObject):
+            def eventFilter(self, obj, ev):
+                if ev.type() == QEvent.KeyPress and ev.key() in (
+                        Qt.Key_Return, Qt.Key_Enter):
+                    dst.setFocus()
+                    if hasattr(dst, 'selectAll'):
+                        dst.selectAll()
+                    return True
+                return False
+
+        f = _Filter(src)
+        src.installEventFilter(f)
+        src._ef_enter = f   # GC 방지

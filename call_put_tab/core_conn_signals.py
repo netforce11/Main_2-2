@@ -31,6 +31,7 @@ class ConnSignalsMixin:
         self._last_tick_time  = None          # 마지막 틱 수신 시각
         self._mdt_verify_mode = False         # MDT 검증 대기 중 플래그
         self._exec_id_cache   = deque(maxlen=20)  # [v6.5-2] 중복 체결 방지
+        self._reconnecting    = False              # guard: prevent duplicate reconnect
 
         self._watchdog_timer = QTimer(self)
         self._watchdog_timer.setInterval(3000)
@@ -67,9 +68,15 @@ class ConnSignalsMixin:
     # ── [v6.5-4] 자동 재연결 흐름 ───────────────────────────────
     def _reconnect_flow(self):
         """
-        ERR 1100/100 발생 시 호출.
-        전체 구독 해지 → 5초 후 재연결 → 3초 후 재구독.
+        Called on ERR 1100/100.
+        Guard: _reconnecting flag prevents duplicate runs.
+        Flow: cancel all → reconnect after 5s → resubscribe after 10s.
         """
+        if getattr(self, '_reconnecting', False):
+            self._log("⚠ 재연결 이미 진행 중 — 중복 요청 무시")
+            return
+        self._reconnecting = True
+
         self._log("🔄 재연결 흐름 시작: 전체 구독 해지 중…")
         self.lbl_status.setText("● 재연결 중…")
         self.lbl_status.setStyleSheet(
@@ -96,6 +103,8 @@ class ConnSignalsMixin:
 
         # ③ 재연결 후 3초 뒤 재구독
         def _do_resubscribe():
+            # Clear flag regardless of success so future errors can re-trigger
+            self._reconnecting = False
             if not self.mw.connected:
                 self._log("⚠ 재연결 실패 — 수동으로 연결 버튼을 눌러주세요.")
                 return
@@ -193,4 +202,3 @@ class ConnSignalsMixin:
                     "color:#ff9800;font-weight:bold;border:none;")
             elif is_live_tick:
                 self._log("✅ 실시간 시세 정상 수신")
-

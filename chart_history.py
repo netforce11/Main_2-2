@@ -322,6 +322,47 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
                             getattr(self, '_intra_cache_tf', 1),
                             getattr(self, '_intra_cache_maxbars', 300))
 
+    def on_tab_activate(self):
+        """
+        탭 복귀 시 main.py _on_tab_changed()에서 호출됨.
+        - 실시간 스트림 중이면 dirty 플래그 강제 설정 → 즉시 재렌더
+        - 캐시 데이터가 있으면 강제 redraw (matplotlib 숨김 억제 해소)
+        - live_render_timer 재시작 보장
+        """
+        # ① 실시간 스트림 중 → dirty 강제 설정 후 즉시 렌더
+        if getattr(self, '_live_render_timer', None):
+            self._live_dirty = True
+            live_buf = getattr(self, '_live_buf', [])
+            # _is_valid_bar와 동일 로직: o/h/l/c/v/t 모두 유효한 것만
+            import math as _math
+            def _ok(b):
+                for k in ("o", "h", "l", "c", "v", "t"):
+                    v = b.get(k)
+                    if v is None: return False
+                    try:
+                        f = float(v)
+                        if _math.isnan(f) or _math.isinf(f): return False
+                    except (TypeError, ValueError): return False
+                return True
+            valid_bars = [b for b in live_buf if _ok(b)]
+            if valid_bars:
+                try:
+                    self._on_intra_done(
+                        valid_bars,
+                        getattr(self, '_live_sym', ""),
+                        getattr(self, '_intra_cache_tf', 1),
+                        getattr(self, '_intra_cache_maxbars', 399))
+                except Exception as e:
+                    print(f"[on_tab_activate] live redraw 오류: {e}")
+            # 타이머가 살아있지만 멈춘 경우 재시작
+            t = self._live_render_timer
+            if t and not t.isActive():
+                t.start()
+            return
+
+        # ② 실시간 아님 → 캐시 데이터로 강제 redraw
+        self._redraw_intraday_cache()
+
     # ── Tick Chart (변경 없음) ────────────────────────────────
     def _fetch_tick_chart(self):
         if not getattr(self, 'mw', None) or not self.mw.connected:

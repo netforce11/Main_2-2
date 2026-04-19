@@ -204,6 +204,14 @@ class PricePanelMixin:
         sym   = self.edit_sym.text().strip().upper() if hasattr(self, 'edit_sym') else "―"
         price = getattr(self, 'und_price', None)
         prev  = getattr(self, 'und_prev',  None)
+
+        # ── 기초자산 가격 버퍼 push (5분/20분 전 추적용) ────────
+        if price:
+            try:
+                from trade_log.und_saver import push as und_push
+                und_push(price)
+            except Exception:
+                pass
         self._pp_lbl_sym.setText(sym); self._pp_lbl_sym.setStyleSheet(_S_SYM)
         if price:
             self._pp_lbl_price.setText(f"{price:,.2f}")
