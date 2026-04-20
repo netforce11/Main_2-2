@@ -501,6 +501,20 @@ class CoreFetchMixin(CoreFetchPosMixin):
                 side, str(int(strikes[row])),
                 None, cur_price, cur_delta)
 
+        # ── 스나이퍼 탭 자동 입력 ────────────────────────────
+        # 빠른주문 패널 🎯 스나이퍼 탭에 행사가/C-P/만기 자동 입력
+        # (CallPutGrid 자신이 set_sniper_target 을 order_logic 에서 mixin)
+        try:
+            expiry_sn, _ = self._get_expiry()
+            if expiry_sn and hasattr(self, 'set_sniper_target'):
+                self.set_sniper_target(
+                    strike=str(int(strikes[row])),
+                    right=side,
+                    expiry=expiry_sn,
+                )
+        except Exception:
+            pass
+
     def _tbl_dbl(self, row, col, side):
         strikes = self.call_strikes if side=="C" else self.put_strikes
         if row >= len(strikes): return

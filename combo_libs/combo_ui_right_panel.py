@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QGroupBox, QSplitter, QSpinBox,
 )
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt
 
 try:
     import pyqtgraph as pg; PG = True
@@ -49,12 +49,6 @@ class RightPanelMixin:
         self._mid_hsplit.setSizes([1, 1])
         cv.addWidget(self._mid_hsplit, 1)
 
-        self._opt_wrapper = QWidget()
-        self._opt_wrapper.setMaximumHeight(0)
-        ow = QVBoxLayout(self._opt_wrapper)
-        ow.setContentsMargins(0, 4, 0, 0)
-        ow.addWidget(self._build_optimizer_panel())
-        cv.addWidget(self._opt_wrapper)
         return container
 
     # ── 전략 설정 패널 ────────────────────────────────────────
@@ -493,12 +487,16 @@ def _request_margin_then_order(self, legs, strat, cost_str, confirm=False):
         raw_log = "  ".join(f"{k}={v:,.2f}" for k, v in _buf.get("_raw", {}).items())
         self._log(f"💰 수신 태그: {raw_log}" if raw_log else "💰 수신된 계좌 태그 없음")
 
-        # ── 필요 증거금: 전략 구조 기반 계산 ────────────────────
+        # ── 필요 증거금: 전략 구조 기반 계산 + 장외 할증 ──────────
         # IB의 InitMarginReq는 보유 포지션 기준이라 주문 전엔 0.
         # 전략별 실질 위험 기준으로 직접 산출.
         required = 0.0
         if legs:
+            from combo_order_logic import _is_after_hours, _AFTER_HOURS_SURCHARGE
             required = _calc_required_margin(legs)
+            if _is_after_hours():
+                required = round(required * (1 + _AFTER_HOURS_SURCHARGE), 2)
+                self._log("⚠ 장외 시간 — 증거금 25% 할증 적용")
 
         if panel:
             panel.update_margin(
@@ -568,165 +566,21 @@ def _request_margin_then_order(self, legs, strat, cost_str, confirm=False):
                 pass
     _QT2.singleShot(5000, _timeout)
 
-def _parse_legs_from_table(self) -> list:
-    """
-    tbl_legs 에서 레그 정보 파싱.
-    반환: [{"dir","cp","strike","prem","qty","expiry"}, ...]
-    빈 행 또는 행사가 미입력 행은 제외.
-    """
-    legs = []
-    for r in range(self.tbl_legs.rowCount()):
-        def cell(c):
-            it = self.tbl_legs.item(r, c)
-            return it.text().strip() if it else ""
-
-        direction = cell(1)
-        cp        = cell(2)
-        strike    = cell(3)
-        prem      = cell(4)
-        qty       = cell(5)
-        expiry    = cell(6)
-
-        if not strike or strike in ("―", ""):
-            continue   # 행사가 미입력 → 건너뜀
-
-        # 만기: MM/DD → 오늘 연도 기반 YYYYMMDD 복원
-        raw_expiry = _parse_expiry_display(expiry)
-        if not raw_expiry:
-            self._log(f"⚠ 레그{r+1} 만기 파싱 실패: '{expiry}'")
-            continue
-
-        try:
-            qty_int = int(qty) if qty else 1
-        except ValueError:
-            qty_int = 1
-
-        try:
-            strike_f = float(strike)
-        except ValueError:
-            self._log(f"⚠ 레그{r+1} 행사가 파싱 실패: '{strike}'")
-            continue
-
-        legs.append({
-            "dir":    direction.upper() if direction else "BUY",
-            "cp":     cp.upper() if cp else "C",
-            "strike": strike_f,
-            "prem":   prem or "0",
-            "qty":    qty_int,
-            "expiry": raw_expiry,
-        })
-    return legs
-
-def _calc_required_margin(legs: list) -> float:
-    """
-    전략 구조 기반 증거금 추정.
-    IB InitMarginReq는 주문 전에는 0이므로 직접 계산.
-
-    규칙:
-      1. 매도 레그와 매수 레그를 C/P별로 분리
-      2. 매수가 매도를 완전 커버하는 스프레드 → 행사가 차이 × 커버수 × 100
-      3. 매수가 매도보다 많은 백 스프레드 → 초과 매수분 프리미엄 + 스프레드 증거금
-      4. 커버 없는 네이키드 매도 → 행사가 × 0.20 × 100 (표준 20% 룰)
-    """
-    import math
-
-    # C/P별로 분리
-    calls_sell = sorted([l for l in legs if l["cp"].upper()=="C" and l["dir"]=="SELL"],
-                        key=lambda x: x["strike"])
-    calls_buy  = sorted([l for l in legs if l["cp"].upper()=="C" and l["dir"]=="BUY"],
-                        key=lambda x: x["strike"])
-    puts_sell  = sorted([l for l in legs if l["cp"].upper()=="P" and l["dir"]=="SELL"],
-                        key=lambda x: x["strike"], reverse=True)
-    puts_buy   = sorted([l for l in legs if l["cp"].upper()=="P" and l["dir"]=="BUY"],
-                        key=lambda x: x["strike"], reverse=True)
-
-    total_margin = 0.0
-
-    for sell_legs, buy_legs, is_call in [
-        (calls_sell, calls_buy, True),
-        (puts_sell,  puts_buy,  False),
-    ]:
-        sell_qty = sum(int(l.get("qty", 1)) for l in sell_legs)
-        buy_qty  = sum(int(l.get("qty", 1)) for l in buy_legs)
-
-        if sell_qty == 0:
-            continue  # 매도 없음 → 증거금 없음
-
-        if buy_qty >= sell_qty:
-            # 매수가 매도를 완전 커버 (스프레드 or 백 스프레드)
-            # 증거금 = 행사가 차이 × 커버된 매도수 × 100
-            if sell_legs and buy_legs:
-                s_strike = sell_legs[0]["strike"]
-                b_strike = buy_legs[0]["strike"]
-                spread   = abs(s_strike - b_strike)
-                covered  = min(sell_qty, buy_qty)
-                total_margin += spread * covered * 100
-                # 초과 매수분(백 스프레드) → 프리미엄 비용 추가
-                excess = buy_qty - sell_qty
-                if excess > 0:
-                    avg_prem = sum(
-                        float(l.get("prem", 0) or 0) * int(l.get("qty", 1))
-                        for l in buy_legs
-                    ) / buy_qty
-                    total_margin += avg_prem * excess * 100
-        else:
-            # 매수가 매도보다 적음 (레이쇼 스프레드 매도쪽 초과)
-            # 커버된 부분: 스프레드 증거금
-            if buy_legs:
-                s_strike = sell_legs[0]["strike"]
-                b_strike = buy_legs[0]["strike"]
-                spread   = abs(s_strike - b_strike)
-                total_margin += spread * buy_qty * 100
-            # 커버 안 된 네이키드 매도: 행사가 × 20% × 100
-            naked_qty = sell_qty - buy_qty
-            naked_strike = sell_legs[0]["strike"]
-            total_margin += naked_strike * 0.20 * naked_qty * 100
-
-    return total_margin
-
-def _parse_expiry_display(display: str) -> str:
-    """
-    다양한 만기 입력 형식 → YYYYMMDD 복원.
-    지원 형식:
-      MM/DD   → 04/13  (앞 0 있음)
-      M/DD    → 4/13   (앞 0 없음)
-      MM/D    → 04/3
-      YYYYMMDD → 20260413 (이미 완성)
-      YYYY-MM-DD → 2026-04-13
-    """
-    from datetime import date
-    if not display or display in ("―", ""):
-        return ""
-    # 이미 완성된 YYYYMMDD (숫자 8자리)
-    digits = "".join(c for c in display if c.isdigit())
-    if len(digits) == 8:
-        return digits
-    # 구분자(/ - .) 기준으로 분리 시도
-    import re
-    parts = re.split(r"[/\-\.]", display.strip())
-    today = date.today()
-    try:
-        if len(parts) == 3:          # YYYY/MM/DD 또는 MM/DD/YYYY
-            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
-            if y > 1000:             # YYYY/MM/DD
-                return date(y, m, d).strftime("%Y%m%d")
-            else:                    # MM/DD/YYYY
-                return date(d, y, m).strftime("%Y%m%d")
-        if len(parts) == 2:          # MM/DD 또는 M/DD 또는 MM/D
-            mm, dd = int(parts[0]), int(parts[1])
-            candidate = date(today.year, mm, dd)
-            if candidate < today:
-                candidate = date(today.year + 1, mm, dd)
-            return candidate.strftime("%Y%m%d")
-    except (ValueError, TypeError):
-        pass
-    return ""
+# ── v2.8: 유틸 함수 중복 정의 제거 ──────────────────────────────
+# _parse_legs_from_table / _parse_expiry_display / _calc_required_margin 은
+# combo_order_utils.py 가 정본(데빗 스프레드 버그픽스 + [0DTE] 형식 지원 완료).
+# 이 파일에 중복 정의하지 않음.
+from combo_order_utils import (  # noqa: F401
+    _parse_legs_from_table,
+    _parse_expiry_display,
+    _calc_required_margin,
+)
 
 # ── 구버전 _place_combo_legs / _place_bag_with_conids 제거 완료 ──
 # v2.9 이후 combo_order_bag.py 에서 전담. 이 파일에 중복 정의하지 않음.
 
 # 유틸 함수 바인딩
 RightPanelMixin._request_margin_then_order = _request_margin_then_order  # type: ignore[attr-defined]
-RightPanelMixin._parse_legs_from_table = _parse_legs_from_table  # type: ignore[attr-defined]
-RightPanelMixin._calc_required_margin = _calc_required_margin  # type: ignore[attr-defined]
-RightPanelMixin._parse_expiry_display = _parse_expiry_display  # type: ignore[attr-defined]
+RightPanelMixin._parse_legs_from_table     = _parse_legs_from_table      # type: ignore[attr-defined]
+RightPanelMixin._calc_required_margin      = _calc_required_margin       # type: ignore[attr-defined]
+RightPanelMixin._parse_expiry_display      = _parse_expiry_display       # type: ignore[attr-defined]

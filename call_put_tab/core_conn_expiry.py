@@ -6,6 +6,8 @@ CL/VIX: IBKR reqContractDetails로 실제 만기 조회
 from datetime import datetime, timedelta, timezone, date
 from PyQt5.QtCore import QDate, QTimer
 from call_put_tab.core_conn_spxw import _today_et
+# core_conn_expiry.py 상단에 추가
+from core import build_expiry_list
 
 class ConnExpiryMixin:
     """만기 목록·Zone·행사가 계산. CoreConnMixin에 통합된다."""

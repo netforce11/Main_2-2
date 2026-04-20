@@ -268,3 +268,359 @@ class OrderLogicMixin:
         qty = max(1, int(budget / contract_cost))
         self.qord_qty.setValue(qty)
         self._log(f"💵 $200 수량: ${budget:.0f} ÷ 계약비용 ${contract_cost:.0f} → {qty}계약")
+
+    # ═════════════════════════════════════════════════════════
+    # 스나이퍼 주문 로직  (order_panel.py 탭5 "🎯 스나이퍼" 연동)
+    # ═════════════════════════════════════════════════════════
+
+    # ── 콜풋탭 행사가 클릭 → 자동 입력 ──────────────────────
+    def set_sniper_target(self, strike: str, right: str, expiry: str):
+        """
+        core_fetch._tbl_click() 에서 호출.
+        행사가·C/P·만기를 스나이퍼 탭 입력 필드에 자동 입력한다.
+        """
+        if not hasattr(self, 'snp_strike'):
+            return
+        self.snp_strike.setText(str(strike))
+        idx = 0 if right.upper() == "C" else 1
+        self.snp_right.setCurrentIndex(idx)
+        self.snp_expiry.setText(str(expiry))
+        # 스나이퍼 탭으로 자동 전환
+        tab_w = getattr(self, '_qord_tab_widget', None)
+        if tab_w:
+            for i in range(tab_w.count()):
+                if "스나이퍼" in tab_w.tabText(i):
+                    tab_w.setCurrentIndex(i)
+                    break
+        if hasattr(self, 'snp_status'):
+            self.snp_status.setText(
+                f"✅ 자동 입력: {strike}{right}  만기={expiry}")
+            self.snp_status.setStyleSheet(
+                "color:#00ff88;font-size:11px;border:1px solid #333;"
+                "border-radius:3px;padding:2px;")
+
+    # ── 조건 등록 ─────────────────────────────────────────────
+    def _sniper_add(self):
+        """입력값 검증 → 시세 구독 → 활성 목록 추가."""
+        from PyQt5.QtWidgets import QMessageBox
+        from PyQt5.QtGui import QColor, QBrush
+        from PyQt5.QtWidgets import QTableWidgetItem
+
+        strike_txt = self.snp_strike.text().strip()
+        right      = self.snp_right.currentText()
+        expiry     = self.snp_expiry.text().strip()
+        price_txt  = self.snp_price.text().strip()
+        time_txt   = self.snp_time.text().strip()
+        margin     = self.snp_margin.value()
+        action     = self.snp_action.currentText()
+        otype      = self.snp_otype.currentText()
+        oprice_txt = self.snp_oprice.text().strip()
+        qty        = self.snp_qty.value()
+        cmp_idx    = self.snp_cmp.currentIndex()
+
+        # 검증
+        if not strike_txt:
+            QMessageBox.warning(self, "입력 오류", "행사가를 입력하세요."); return
+        try:
+            strike = float(strike_txt)
+        except ValueError:
+            QMessageBox.warning(self, "입력 오류", "행사가는 숫자여야 합니다."); return
+        if not expiry or len(expiry) != 8:
+            QMessageBox.warning(self, "입력 오류", "만기일을 YYYYMMDD 형식으로 입력하세요."); return
+        if not price_txt:
+            QMessageBox.warning(self, "입력 오류", "목표가를 입력하세요."); return
+        try:
+            target_price = float(price_txt)
+        except ValueError:
+            QMessageBox.warning(self, "입력 오류", "목표가는 숫자여야 합니다."); return
+        if otype == "LMT" and not oprice_txt:
+            QMessageBox.warning(self, "입력 오류", "LMT 주문가격을 입력하세요."); return
+        try:
+            order_price = float(oprice_txt) if oprice_txt else 0.0
+        except ValueError:
+            QMessageBox.warning(self, "입력 오류", "주문가격은 숫자여야 합니다."); return
+        if len(self._snipers) >= 20:
+            QMessageBox.warning(self, "한도 초과", "최대 20개까지 등록 가능합니다."); return
+
+        cmp_op = "<=" if cmp_idx == 0 else ">="
+
+        # 시세 구독
+        rid = self._sniper_next_rid
+        self._sniper_next_rid += 1
+        if self._sniper_next_rid >= 8120:
+            self._sniper_next_rid = 8100
+
+        sym = self.edit_sym.text().strip().upper() if hasattr(self, 'edit_sym') else "SPX"
+        try:
+            contract = make_opt_contract(sym, strike, right, expiry)
+            if self.mw.connected:
+                from core import router
+                self.mw.ib.reqMktData(rid, contract, "232", False, False, [])
+                router.register_price(rid, rid, self._sniper_tick)
+        except Exception as e:
+            self._log(f"[스나이퍼] 시세 요청 오류: {e}")
+
+        # 테이블 행 추가
+        def _mk_item(text, color="#ccc"):
+            it = QTableWidgetItem(str(text))
+            it.setTextAlignment(0x0004)  # AlignCenter
+            it.setForeground(QBrush(QColor(color)))
+            return it
+
+        row_idx = self.snp_tbl.rowCount()
+        self.snp_tbl.insertRow(row_idx)
+        self.snp_tbl.setItem(row_idx, 0, _mk_item(f"{int(strike)}{right}", "#ffd700"))
+        cmp_disp = f"{cmp_op} ${target_price:.2f}"
+        self.snp_tbl.setItem(row_idx, 1, _mk_item(cmp_disp, "#00ff88"))
+        self.snp_tbl.setItem(row_idx, 2, _mk_item("―"))
+        time_disp = f"{time_txt} ±{margin}분" if time_txt else "항상"
+        self.snp_tbl.setItem(row_idx, 3, _mk_item(time_disp, "#5dade2"))
+        self.snp_tbl.setItem(row_idx, 4, _mk_item("👁 감시중", "#aaa"))
+
+        self._snipers[rid] = {
+            "sym": sym, "strike": strike, "right": right, "expiry": expiry,
+            "target_price": target_price, "cmp_op": cmp_op,
+            "time_kst": time_txt, "time_margin": margin,
+            "qty": qty, "action": action, "order_type": otype,
+            "order_price": order_price, "triggered": False,
+            "row_idx": row_idx, "cur_price": None,
+        }
+
+        if not self._sniper_timer.isActive():
+            self._sniper_timer.start()
+
+        cmp_lbl = "이하" if cmp_op == "<=" else "이상"
+        self._log(
+            f"[스나이퍼 등록] {sym} {int(strike)}{right}  "
+            f"목표 ${target_price:.2f} {cmp_lbl}  "
+            f"시간={time_disp}  {action} {qty}계약 {otype}"
+        )
+        self.snp_status.setText(f"✅ 등록: {int(strike)}{right}  {cmp_disp}  {time_disp}")
+        self.snp_status.setStyleSheet(
+            "color:#00ff88;font-size:11px;border:1px solid #333;"
+            "border-radius:3px;padding:2px;")
+
+    # ── 시세 틱 수신 ─────────────────────────────────────────
+    def _sniper_tick(self, rid: int, tt: int, price: float):
+        if rid not in self._snipers or price <= 0: return
+        if tt not in (4, 68, 75, 14): return
+        from PyQt5.QtWidgets import QTableWidgetItem
+        from PyQt5.QtGui import QColor, QBrush
+        sn = self._snipers[rid]
+        sn["cur_price"] = price
+        ri = sn.get("row_idx")
+        if ri is not None:
+            it = QTableWidgetItem(f"{price:.2f}")
+            it.setForeground(QBrush(QColor("#00cfff")))
+            self.snp_tbl.setItem(ri, 2, it)
+
+    # ── 2초 타이머: 조건 평가 → 자동 발주 ────────────────────
+    def _sniper_check(self):
+        from datetime import datetime, timedelta
+
+        for rid, sn in list(self._snipers.items()):
+            if sn["triggered"]: continue
+            cur = sn.get("cur_price")
+
+            # 1) 시간 조건
+            time_ok = True
+            if sn["time_kst"]:
+                try:
+                    h, m = map(int, sn["time_kst"].split(":"))
+                    margin = sn["time_margin"]
+                    now_kst = datetime.utcnow() + timedelta(hours=9)
+
+                    if margin == 0:
+                        # 0분 = 해당 분 정확히 (HH:MM:00 ~ HH:MM:59)
+                        time_ok = (now_kst.hour == h and now_kst.minute == m)
+                    else:
+                        # N분 = 설정 시각 기준 ±N분 이내 (초 단위)
+                        target_dt = now_kst.replace(
+                            hour=h, minute=m, second=0, microsecond=0)
+                        diff_sec  = abs((now_kst - target_dt).total_seconds())
+                        time_ok   = diff_sec <= margin * 60
+                except Exception:
+                    time_ok = False
+
+            # 2) 프리미엄 조건
+            price_ok = False
+            if cur is not None and cur > 0:
+                price_ok = (cur <= sn["target_price"] if sn["cmp_op"] == "<="
+                            else cur >= sn["target_price"])
+
+            # 3) 두 조건 모두 충족 → 발주
+            if time_ok and price_ok:
+                sn["triggered"] = True
+                ri = sn.get("row_idx")
+                if ri is not None:
+                    from PyQt5.QtWidgets import QTableWidgetItem
+                    from PyQt5.QtGui import QColor, QBrush
+                    it = QTableWidgetItem("🔥 조건 달성!")
+                    it.setForeground(QBrush(QColor("#ff4444")))
+                    self.snp_tbl.setItem(ri, 4, it)
+                cmp_lbl = "이하" if sn["cmp_op"] == "<=" else "이상"
+                self._log(
+                    f"[스나이퍼 발동] {sn['sym']} {int(sn['strike'])}{sn['right']}  "
+                    f"현재가={cur:.2f}  목표 {sn['target_price']:.2f} {cmp_lbl}")
+                self.snp_status.setText(f"🔥 발동: {int(sn['strike'])}{sn['right']} @ {cur:.2f}")
+                self.snp_status.setStyleSheet(
+                    "color:#ff4444;font-size:11px;font-weight:bold;"
+                    "border:1px solid #ff4444;border-radius:3px;padding:2px;")
+                self._sniper_fire(rid, sn)
+
+        # 모두 triggered면 타이머 중지
+        if all(s["triggered"] for s in self._snipers.values()):
+            self._sniper_timer.stop()
+
+    # ── 주문 전송 ─────────────────────────────────────────────
+    def _sniper_fire(self, rid: int, sn: dict):
+        if not self.mw.connected:
+            self._log("[스나이퍼] TWS 미연결 — 주문 전송 불가"); return
+        try:
+            from ibapi.order import Order as IbOrder
+            contract = make_opt_contract(
+                sn["sym"], sn["strike"], sn["right"], sn["expiry"])
+            ibord = IbOrder()
+            ibord.action        = sn["action"]
+            ibord.orderType     = sn["order_type"]
+            ibord.totalQuantity = sn["qty"]
+            ibord.tif           = "DAY"
+            ibord.eTradeOnly    = False
+            ibord.firmQuoteOnly = False
+            if sn["order_type"] == "LMT" and sn["order_price"] > 0:
+                ibord.lmtPrice = sn["order_price"]
+            oid = self.mw.ib.get_next_id()
+            if oid is None:
+                self._log("[스나이퍼] OrderID 없음"); return
+            self.mw.ib.placeOrder(oid, contract, ibord)
+            self._log(
+                f"[스나이퍼 주문전송] oid={oid}  "
+                f"{sn['action']} {sn['qty']}계약  "
+                f"{sn['order_type']}  ${sn['order_price']:.2f}")
+            ri = sn.get("row_idx")
+            if ri is not None:
+                from PyQt5.QtWidgets import QTableWidgetItem
+                from PyQt5.QtGui import QColor, QBrush
+                it = QTableWidgetItem(f"📤 전송 oid={oid}")
+                it.setForeground(QBrush(QColor("#00e676")))
+                self.snp_tbl.setItem(ri, 4, it)
+        except Exception as e:
+            self._log(f"[스나이퍼] 주문 오류: {e}")
+
+    # ── 행 클릭 → 개별 해제 ──────────────────────────────────
+    def _sniper_row_click(self, row: int, col: int):
+        from PyQt5.QtWidgets import QMessageBox
+        target_rid = None
+        for rid, sn in self._snipers.items():
+            if sn.get("row_idx") == row:
+                target_rid = rid; break
+        if target_rid is None: return
+        sn = self._snipers[target_rid]
+        label = f"{int(sn['strike'])}{sn['right']}"
+        ret = QMessageBox.question(
+            self, "스나이퍼 해제",
+            f"{label} 스나이퍼를 해제하시겠습니까?",
+            QMessageBox.Yes | QMessageBox.No)
+        if ret != QMessageBox.Yes: return
+        self._sniper_remove(target_rid)
+        self._log(f"[스나이퍼 해제] {label}")
+        self.snp_status.setText(f"해제됨: {label}")
+        self.snp_status.setStyleSheet(
+            "color:#aaa;font-size:11px;border:1px solid #333;"
+            "border-radius:3px;padding:2px;")
+
+    def _sniper_remove(self, rid: int):
+        if rid not in self._snipers: return
+        sn = self._snipers.pop(rid)
+        try:
+            if self.mw.connected:
+                self.mw.ib.cancelMktData(rid)
+            from core import router
+            router.unregister_price(self._sniper_tick)
+        except Exception:
+            pass
+        ri = sn.get("row_idx")
+        if ri is not None and ri < self.snp_tbl.rowCount():
+            self.snp_tbl.removeRow(ri)
+            for s in self._snipers.values():
+                if s.get("row_idx", 0) > ri:
+                    s["row_idx"] -= 1
+
+    # ── 전체 해제 ─────────────────────────────────────────────
+    def _sniper_clear_all(self):
+        from PyQt5.QtWidgets import QMessageBox
+        if not self._snipers: return
+        ret = QMessageBox.question(
+            self, "전체 해제",
+            f"스나이퍼 조건 {len(self._snipers)}개를 모두 해제하시겠습니까?",
+            QMessageBox.Yes | QMessageBox.No)
+        if ret != QMessageBox.Yes: return
+        for rid in list(self._snipers.keys()):
+            try:
+                if self.mw.connected: self.mw.ib.cancelMktData(rid)
+            except Exception: pass
+        self._snipers.clear()
+        self.snp_tbl.setRowCount(0)
+        self._sniper_timer.stop()
+        self._log("[스나이퍼] 전체 해제")
+        self.snp_status.setText("전체 해제됨")
+        self.snp_status.setStyleSheet(
+            "color:#aaa;font-size:11px;border:1px solid #333;"
+            "border-radius:3px;padding:2px;")
+
+    # ── JSON 저장 ─────────────────────────────────────────────
+    def _sniper_save(self):
+        import json
+        from pathlib import Path
+        save_path = Path("data") / "sniper_conditions.json"
+        data = []
+        for sn in self._snipers.values():
+            data.append({
+                "sym": sn["sym"], "strike": sn["strike"],
+                "right": sn["right"], "expiry": sn["expiry"],
+                "target_price": sn["target_price"], "cmp_op": sn["cmp_op"],
+                "time_kst": sn["time_kst"], "time_margin": sn["time_margin"],
+                "qty": sn["qty"], "action": sn["action"],
+                "order_type": sn["order_type"], "order_price": sn["order_price"],
+            })
+        try:
+            save_path.parent.mkdir(exist_ok=True)
+            save_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            self._log(f"[스나이퍼] {len(data)}개 저장 → {save_path}")
+            self.snp_status.setText(f"💾 {len(data)}개 저장 완료")
+            self.snp_status.setStyleSheet(
+                "color:#00cfff;font-size:11px;border:1px solid #333;"
+                "border-radius:3px;padding:2px;")
+        except Exception as e:
+            self._log(f"[스나이퍼] 저장 오류: {e}")
+
+    # ── JSON 복원 ─────────────────────────────────────────────
+    def _sniper_load(self):
+        import json
+        from pathlib import Path
+        save_path = Path("data") / "sniper_conditions.json"
+        if not save_path.exists(): return
+        try:
+            data = json.loads(save_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            self._log(f"[스나이퍼] 복원 오류: {e}"); return
+        for item in data:
+            self.snp_strike.setText(str(int(item.get("strike", 0))))
+            self.snp_right.setCurrentIndex(0 if item.get("right", "C") == "C" else 1)
+            self.snp_expiry.setText(item.get("expiry", ""))
+            self.snp_price.setText(str(item.get("target_price", "")))
+            self.snp_cmp.setCurrentIndex(0 if item.get("cmp_op", "<=") == "<=" else 1)
+            self.snp_time.setText(item.get("time_kst", ""))
+            self.snp_margin.setValue(item.get("time_margin", 1))
+            self.snp_action.setCurrentText(item.get("action", "BUY"))
+            self.snp_otype.setCurrentText(item.get("order_type", "LMT"))
+            self.snp_oprice.setText(str(item.get("order_price", "")) if item.get("order_price") else "")
+            self.snp_qty.setValue(item.get("qty", 1))
+            self._sniper_add()
+        self._log(f"[스나이퍼] {len(data)}개 조건 복원 완료")
+        if data:
+            self.snp_status.setText(f"📂 {len(data)}개 복원됨")
+            self.snp_status.setStyleSheet(
+                "color:#00cfff;font-size:11px;border:1px solid #333;"
+                "border-radius:3px;padding:2px;")

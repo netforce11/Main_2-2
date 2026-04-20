@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
     QMessageBox,
 )
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont as _QFont
 
 try:
@@ -141,6 +141,13 @@ def _calc_pnl(self):
     max_loss     = min(total_pnl)
     breakevens   = _find_breakevens(price_range, total_pnl)
     margin       = _calc_required_margin(legs)
+    # 장외 시간이면 25% 할증 표시 (combo_order_logic 과 동일 로직)
+    try:
+        from combo_order_logic import _is_after_hours, _AFTER_HOURS_SURCHARGE
+        if _is_after_hours():
+            margin = round(margin * (1 + _AFTER_HOURS_SURCHARGE), 2)
+    except Exception:
+        pass
     rr = abs(max_profit / max_loss) if max_loss < 0 else float('inf')
 
     kw = self._kpi_widgets
@@ -199,17 +206,23 @@ def _show_strat_desc(self):
     dlg.exec_()
 
 
-# ── Optimizer 슬라이드 토글 ─────────────────────────────────────
+# ── Optimizer 팝업 토글 (v2.3 — 슬라이드 방식 → 독립 창 방식으로 교체) ──
 
 def _toggle_optimizer_panel(self):
-    collapsed = (self._opt_wrapper.maximumHeight() == 0)
-    anim = QPropertyAnimation(self._opt_wrapper, b"maximumHeight")
-    anim.setDuration(220)
-    anim.setStartValue(self._opt_wrapper.maximumHeight())
-    anim.setEndValue(420 if collapsed else 0)
-    anim.setEasingCurve(
-        QEasingCurve.OutCubic if collapsed else QEasingCurve.InCubic)
-    self._opt_anim = anim; anim.start()
-    if hasattr(self, "_btn_opt_toggle"):
-        self._btn_opt_toggle.setText(
-            "🔍 Cost Optimiser  ▲" if collapsed else "🔍 Cost Optimiser  ▼")
+    """
+    🔍 Optimiser 버튼 핸들러.
+    메인 화면 안에서 펼쳐지는 슬라이드 방식 대신
+    완전히 별도의 독립 창(QDialog)을 띄운다.
+    이미 열려 있으면 앞으로 가져오고, 없으면 새로 생성.
+    """
+    from combo_op.combo_op_dialog import OptimizerDialog
+
+    dlg = getattr(self, '_optimizer_dialog', None)
+    if dlg is not None and dlg.isVisible():
+        dlg.raise_()
+        dlg.activateWindow()
+        return
+
+    dlg = OptimizerDialog(self)
+    self._optimizer_dialog = dlg
+    dlg.show()

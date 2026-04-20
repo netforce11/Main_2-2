@@ -26,6 +26,12 @@ main.py — 0DTE Master Dashboard  v6.5  메인 진입점
   tab_kr_futures.py     ← Tab10 한국선물옵션
   tab_combo_strategy.py ← Tab4 복합전략
 
+  [텔레그램 공통 모듈]
+  telegram_bot/tg_config.py        ← 설정값 JSON 저장/로드 (싱글톤)
+  telegram_bot/tg_client.py        ← 봇 싱글톤 (송신·polling·콜백)
+  telegram_bot/tg_command_router.py← 수신 명령 → 각 탭 라우팅
+  telegram_bot/tg_config_widget.py ← [📡 텔레그램] 탭 UI + 채팅창
+
 실행:
   python main.py
 
@@ -45,6 +51,7 @@ main.py — 0DTE Master Dashboard  v6.5  메인 진입점
   10 한국선물옵션
   11 SPX 히스토리
   12 옵션 분봉 차트
+  13 텔레그램 설정
 ════════════════════════════════════════════════════════════════
 """
 
@@ -80,6 +87,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "combo_libs"))
 # ── 탭 모듈 ───────────────────────────────────────────────────
 from call_put_tab import CallPutGrid, init_chain_saver
 from watch_dog    import WatchAlertPanel   # SPX 감시 패널
+from telegram_bot import TgConfigWidget    # 텔레그램 설정 탭
+from telegram_bot.tg_client import TelegramClient
 from tab_sniper  import SniperGrid
 from tab_oi      import OITrackerGrid
 from tab_combo_strategy import ComboStrategyGrid
@@ -90,6 +99,8 @@ from tab_trading import TradingGrid
 from tab_kr_futures  import KRFuturesGrid
 from tab_spx_history import SpxHistoryGrid
 from tab_opt_intraday import OptIntradayGrid
+
+
 # ── strategy_report 패키지 (IBKR/MAIN2/strategy_report/) ────────────
 # __file__ 이 상대경로일 때도 안전하게 Main2/ 절대경로를 확보
 _MAIN2_DIR = os.path.dirname(os.path.abspath(os.path.join(os.getcwd(), __file__)))
@@ -137,6 +148,7 @@ class TradingDashboard(QMainWindow):
         self.tab_sniper   = None
         self.tab_greeks   = None
         self.tab_report   = None
+        self.tab_telegram = None   # 텔레그램 설정 탭
 
         self._init_ui()
         self._init_timers()
@@ -166,7 +178,7 @@ class TradingDashboard(QMainWindow):
         self.tab_callput = add(CallPutGrid,   "1. 콜-풋 (Main)", self)
         init_chain_saver(self)   # ← chain_saver 초기화 (저장 스레드 + 스케줄러)
         self.tab_balance = add(BalanceGrid,   "2. 잔고/PnL",     self)
-        self.tab_sniper  = add(SniperGrid,    "3. 스나이퍼",     self)
+     ##   self.tab_sniper  = add(SniperGrid,    "3. 스나이퍼",     self)
         self.tab_combo = add(ComboStrategyGrid, "4. 복합 전략",    self)
      #   add(MultiPriceGrid,                   "5. 복수 현재가",  self)
         self.tab_greeks  = add(GreeksGrid,    "6. Greeks Matrix",self)
@@ -185,6 +197,10 @@ class TradingDashboard(QMainWindow):
         # ── 리포트 탭 ─────────────────────────────────────────────
         self.tab_report = ReportTab(self)
         self.tabs.addTab(self.tab_report, "📋 리포트")
+
+        # ── 텔레그램 탭 ───────────────────────────────────────────
+        self.tab_telegram = TgConfigWidget()
+        self.tabs.addTab(self.tab_telegram, "📡 텔레그램")
 
         # ── Ctrl+1~10 단축키 — 탭 전환 ────────────────────────
         for i in range(min(10, self.tabs.count())):
@@ -223,6 +239,9 @@ class TradingDashboard(QMainWindow):
 
         # 앱 시작 2초 후 자동 연결 (1회성)
         QTimer.singleShot(2000, self._auto_connect)
+
+        # 텔레그램 polling 시작 (백그라운드 스레드, daemon)
+        TelegramClient.get().start_polling()
 
     def _auto_connect(self):
         """앱 시작 2초 후 자동으로 TWS 연결 시도 (팝업 없이)."""
@@ -295,6 +314,7 @@ class TradingDashboard(QMainWindow):
             pass
 
     def closeEvent(self, event):
+        TelegramClient.get().stop_polling()   # 텔레그램 수신 루프 종료
         self.disconnect_ibkr()
         event.accept()
 

@@ -86,10 +86,15 @@ class ConnAccountMixin:
         cp = "C" if side.upper() in ("C", "CALL") else "P"
 
         entry = (str(oid), cp, sym, action, str(int(qty)), f"{price:.2f}", status)
-        # 동일 oid 갱신
+        # 동일 oid 갱신 — dict / tuple 혼재 방어
         updated = False
         for i, row in enumerate(buf):
-            if row[0] == str(oid):
+            try:
+                # dict 형식 (order_panel._fetch_open_orders 가 넣은 경우)
+                row_oid = str(row["oid"]) if isinstance(row, dict) else str(row[0])
+            except (KeyError, IndexError, TypeError):
+                continue
+            if row_oid == str(oid):
                 buf[i] = entry; updated = True; break
         if not updated:
             buf.append(entry)

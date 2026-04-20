@@ -41,9 +41,9 @@ def _build_leg_left(self) -> QWidget:
     self.combo_strat.addItems(STRATEGIES)
     self.combo_strat.setStyleSheet(
         "QComboBox{background:#12122a;color:#ffd700;border:1px solid #3a3a6a;"
-        "border-radius:3px;font-size:12px;padding:3px;}"
+        "border-radius:3px;font-size:14px;padding:3px;}"
         "QComboBox QAbstractItemView{background:#12122a;color:#ffd700;"
-        "selection-background-color:#1c3a6a;}"
+        "selection-background-color:#1c3a6a;font-size:14px;}"
         "QComboBox::drop-down{border:none;}")
     self.combo_strat.currentIndexChanged.connect(self._on_strat_change)
     row.addWidget(self.combo_strat, 1)

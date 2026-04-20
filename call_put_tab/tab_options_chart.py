@@ -113,6 +113,27 @@ class ChartMixin(HistoryMixin):
                 self.und_price = price
                 if tt == 9: self.und_prev = price
                 self._update_und_display()
+
+                # ── 텔레그램 감시 연동 ─────────────────────────────
+                sym = getattr(self, 'edit_sym', None)
+                sym_txt = sym.text().strip().upper().replace("SPXW","SPX") if sym else ""
+
+                # 조건C: VIX 종목 tick 수신 → push_vix
+                if sym_txt == "VIX" and tt in (4, 68, 75, 14):
+                    vix_prev = getattr(self, '_vix_prev', None)
+                    if vix_prev is not None and hasattr(self, 'feed_vix_to_watch'):
+                        self.feed_vix_to_watch(price, vix_prev)
+                    self._vix_prev = price  # 매 tick 갱신 (다음 비교 기준)
+
+                # 조건A: SPX/SPXW 종목 tick 수신 → push_spx
+                # AlertEngine v2: 1분 롤링 버퍼를 엔진 내부에서 관리
+                # → tick 수신 시마다 push_spx(price) 호출하면 됨
+                # minutes_ago/price_then 은 엔진이 내부적으로 deque 로 계산
+                if sym_txt in ("SPX", "SPXW", "") and tt in (4, 68, 75, 14):
+                    if hasattr(self, 'feed_spx_to_watch'):
+                        # 엔진 내부 deque 가 N분치 쌓이면 자동 평가
+                        self.feed_spx_to_watch(price)
+                # ──────────────────────────────────────────────────
             # Bid/Ask 호가를 현재가 패널에 저장
             # tt=1(Bid Live), tt=2(Ask Live), tt=66(DelayedBid), tt=67(DelayedAsk)
             if tt in (1, 66) and hasattr(self, '_pp_bid'):
@@ -139,6 +160,13 @@ class ChartMixin(HistoryMixin):
                 for idx,rule in enumerate(self._watch_rules):
                     if rule["side"]=="C" and abs(float(rule["strike"])-self.call_strikes[row])<0.5:
                         self._watch_prev.setdefault(idx,{})["price"] = price
+                # ── 조건B: 콜 등락률 → AlertEngine ──────────────
+                if hasattr(self, 'feed_opt_to_watch'):
+                    prev = self.call_data[rid].get("_prev_last")
+                    if prev is not None:
+                        self.feed_opt_to_watch(self.call_strikes[row], "C", price, prev)
+                    self.call_data[rid]["_prev_last"] = price
+                # ─────────────────────────────────────────────────
             elif tt in (1, 66):
                 self.call_data[rid]["bid"] = price
                 self._buf_update_price(rid, "C", row, bid=price)
@@ -164,6 +192,13 @@ class ChartMixin(HistoryMixin):
                 for idx,rule in enumerate(self._watch_rules):
                     if rule["side"]=="P" and abs(float(rule["strike"])-self.put_strikes[row])<0.5:
                         self._watch_prev.setdefault(idx,{})["price"] = price
+                # ── 조건B: 풋 등락률 → AlertEngine ──────────────
+                if hasattr(self, 'feed_opt_to_watch'):
+                    prev = self.put_data[rid].get("_prev_last")
+                    if prev is not None:
+                        self.feed_opt_to_watch(self.put_strikes[row], "P", price, prev)
+                    self.put_data[rid]["_prev_last"] = price
+                # ─────────────────────────────────────────────────
             elif tt in (1, 66):
                 self.put_data[rid]["bid"] = price
                 self._buf_update_price(rid, "P", row, bid=price)

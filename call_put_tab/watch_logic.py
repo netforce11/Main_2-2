@@ -248,6 +248,15 @@ class WatchLogicMixin:
 
             self._log(msg)
             self._play_alert_sound()
+
+            # ── 텔레그램 전송 ──────────────────────────────
+            try:
+                from telegram_bot.tg_client import TelegramClient
+                TelegramClient.get().send("watch_alert", f"🔔 {msg}")
+            except Exception:
+                pass
+            # ──────────────────────────────────────────────
+
             self._qord_fill(side, rule["strike"], cur_price,
                             source=f"🔔 감시 성립 [{now_str}] P={p_str} Δ={d_str}")
             self._watch_tabs.setCurrentIndex(1)   # 알람 로그 탭으로

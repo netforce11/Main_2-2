@@ -463,8 +463,218 @@ class OrderPanelMixin:
             "color:#888;font-size:12px;border:1px solid #333;border-radius:3px;padding:2px;")
         sv.addWidget(self.lbl_sell_status)
 
+
         sv.addStretch()
         tab_w.addTab(sell_w, "▼ 빠른매도")
+
+        # ── 탭5: 스나이퍼 주문 ───────────────────────────────
+        sniper_w = QWidget()
+        sn_v = QVBoxLayout(sniper_w)
+        sn_v.setSpacing(4); sn_v.setContentsMargins(6, 6, 6, 6)
+
+        _sn_ls = "color:#aaa;font-size:13px;border:none;"
+        _sn_es = ("color:#ffd700;font-weight:bold;font-size:14px;"
+                  "background:#0a0a1e;border:1px solid #444;")
+
+        # ── 행사가 / C-P / 만기 (콜풋탭 클릭 시 자동 입력) ──
+        sn_v.addWidget(QLabel("▶ 조건 설정  (콜-풋 체인 클릭 시 자동 입력)",
+            styleSheet="color:#5dade2;font-size:12px;font-weight:bold;border:none;"))
+
+        sn_g1 = QGridLayout(); sn_g1.setSpacing(4)
+        sn_g1.addWidget(QLabel("행사가:", styleSheet=_sn_ls), 0, 0)
+        self.snp_strike = QLineEdit()
+        self.snp_strike.setPlaceholderText("콜풋탭 클릭 시 자동 입력")
+        self.snp_strike.setStyleSheet(_sn_es)
+        sn_g1.addWidget(self.snp_strike, 0, 1, 1, 3)
+
+        sn_g1.addWidget(QLabel("C/P:", styleSheet=_sn_ls), 1, 0)
+        self.snp_right = QComboBox()
+        self.snp_right.addItems(["C", "P"])
+        self.snp_right.setStyleSheet(
+            "QComboBox{background:#0a0a1e;color:#ffd700;border:1px solid #444;"
+            "font-size:14px;font-weight:bold;}"
+            "QComboBox QAbstractItemView{background:#0a0a1e;color:#ffd700;font-size:14px;}"
+            "QComboBox::drop-down{border:none;}")
+        sn_g1.addWidget(self.snp_right, 1, 1)
+
+        sn_g1.addWidget(QLabel("만기:", styleSheet=_sn_ls), 1, 2)
+        self.snp_expiry = QLineEdit()
+        self.snp_expiry.setPlaceholderText("YYYYMMDD")
+        self.snp_expiry.setStyleSheet(_sn_es)
+        sn_g1.addWidget(self.snp_expiry, 1, 3)
+        sn_v.addLayout(sn_g1)
+
+        # ── 목표가 + 비교 조건 ────────────────────────────────
+        sep_sn1 = QLabel(); sep_sn1.setFixedHeight(1)
+        sep_sn1.setStyleSheet("background:#2a3a2a;border:none;")
+        sn_v.addWidget(sep_sn1)
+
+        sn_g2 = QGridLayout(); sn_g2.setSpacing(4)
+        sn_g2.addWidget(QLabel("목표가($):", styleSheet=_sn_ls), 0, 0)
+        self.snp_price = QLineEdit()
+        self.snp_price.setPlaceholderText("예: 0.20")
+        self.snp_price.setStyleSheet(
+            "color:#00ff88;font-weight:bold;font-size:14px;"
+            "background:#0a0a1e;border:1px solid #2a6a2a;")
+        sn_g2.addWidget(self.snp_price, 0, 1)
+
+        self.snp_cmp = QComboBox()
+        self.snp_cmp.addItems(["<=  이하일 때", ">=  이상일 때"])
+        self.snp_cmp.setStyleSheet(
+            "QComboBox{background:#0a0a1e;color:#00ff88;border:1px solid #2a6a2a;"
+            "font-size:12px;font-weight:bold;}"
+            "QComboBox QAbstractItemView{background:#0a0a1e;color:#00ff88;font-size:12px;}"
+            "QComboBox::drop-down{border:none;}")
+        sn_g2.addWidget(self.snp_cmp, 0, 2, 1, 2)
+
+        # ── 한국시간 조건 ─────────────────────────────────────
+        sn_g2.addWidget(QLabel("한국시간(KST):", styleSheet=_sn_ls), 1, 0)
+        self.snp_time = QLineEdit()
+        self.snp_time.setPlaceholderText("HH:MM  예) 04:46 / 18:30")
+        self.snp_time.setMaxLength(5)
+        self.snp_time.setStyleSheet(_sn_es)
+        # ── ":" 자동 입력 이벤트 필터 ─────────────────────────
+        from PyQt5.QtCore import QObject, QEvent
+        class _TimeFilter(QObject):
+            def eventFilter(self_, obj, ev):
+                if ev.type() == QEvent.KeyPress:
+                    from PyQt5.QtCore import Qt as _Qt
+                    key = ev.key()
+                    txt = obj.text()
+                    # 숫자 2자리 입력 후 자동 ":" 삽입
+                    if (len(txt) == 2 and key not in (
+                            _Qt.Key_Backspace, _Qt.Key_Delete,
+                            _Qt.Key_Left, _Qt.Key_Right, _Qt.Key_Colon)
+                            and ":" not in txt):
+                        obj.setText(txt + ":")
+                        obj.setCursorPosition(3)
+                return False
+        _tf = _TimeFilter(self.snp_time)
+        self.snp_time.installEventFilter(_tf)
+        self.snp_time._time_filter = _tf   # GC 방지
+        sn_g2.addWidget(self.snp_time, 1, 1)
+        sn_g2.addWidget(QLabel("허용오차(분):", styleSheet=_sn_ls), 1, 2)
+        self.snp_margin = QSpinBox()
+        self.snp_margin.setRange(0, 60); self.snp_margin.setValue(0)
+        self.snp_margin.setFixedHeight(26)
+        self.snp_margin.setToolTip(
+            "0분 = 해당 분(HH:MM:00 ~ HH:MM:59) 안에만 발동\n"
+            "1분 = ±1분 허용 (설정시각 전후 1분)")
+        self.snp_margin.setStyleSheet(
+            "background:#0a0a1e;color:#fff;border:1px solid #444;font-size:13px;")
+        sn_g2.addWidget(self.snp_margin, 1, 3)
+        sn_v.addLayout(sn_g2)
+
+        # ── 주문 방향 / 유형 / 가격 / 수량 ───────────────────
+        sep_sn2 = QLabel(); sep_sn2.setFixedHeight(1)
+        sep_sn2.setStyleSheet("background:#2a2a4a;border:none;")
+        sn_v.addWidget(sep_sn2)
+
+        sn_g3 = QGridLayout(); sn_g3.setSpacing(4)
+        sn_g3.addWidget(QLabel("방향:", styleSheet=_sn_ls), 0, 0)
+        self.snp_action = QComboBox()
+        self.snp_action.addItems(["BUY", "SELL"])
+        self.snp_action.setStyleSheet(
+            "QComboBox{background:#0a0a1e;color:#ffd700;border:1px solid #444;"
+            "font-size:13px;font-weight:bold;}"
+            "QComboBox QAbstractItemView{background:#0a0a1e;color:#ffd700;font-size:13px;}"
+            "QComboBox::drop-down{border:none;}")
+        sn_g3.addWidget(self.snp_action, 0, 1)
+
+        sn_g3.addWidget(QLabel("유형:", styleSheet=_sn_ls), 0, 2)
+        self.snp_otype = QComboBox()
+        self.snp_otype.addItems(["LMT", "MKT"])
+        self.snp_otype.setStyleSheet(
+            "QComboBox{background:#0a0a1e;color:#ffd700;border:1px solid #444;"
+            "font-size:13px;font-weight:bold;}"
+            "QComboBox QAbstractItemView{background:#0a0a1e;color:#ffd700;font-size:13px;}"
+            "QComboBox::drop-down{border:none;}")
+        sn_g3.addWidget(self.snp_otype, 0, 3)
+
+        sn_g3.addWidget(QLabel("주문가:", styleSheet=_sn_ls), 1, 0)
+        self.snp_oprice = QLineEdit()
+        self.snp_oprice.setPlaceholderText("LMT 가격 (MKT=생략)")
+        self.snp_oprice.setStyleSheet(_sn_es)
+        sn_g3.addWidget(self.snp_oprice, 1, 1)
+
+        sn_g3.addWidget(QLabel("수량:", styleSheet=_sn_ls), 1, 2)
+        self.snp_qty = QSpinBox()
+        self.snp_qty.setRange(1, 9999); self.snp_qty.setValue(1)
+        self.snp_qty.setFixedHeight(26)
+        self.snp_qty.setStyleSheet(
+            "background:#0a0a1e;color:#fff;border:1px solid #444;font-size:13px;")
+        sn_g3.addWidget(self.snp_qty, 1, 3)
+        sn_v.addLayout(sn_g3)
+
+        # ── 버튼 행 ───────────────────────────────────────────
+        sn_btn_row = QHBoxLayout(); sn_btn_row.setSpacing(4)
+        btn_snp_add  = QPushButton("＋ 등록")
+        btn_snp_save = QPushButton("💾 저장")
+        btn_snp_clr  = QPushButton("🗑 전체해제")
+        btn_snp_add.setStyleSheet(
+            "QPushButton{background:#1a6b3c;color:#00ff88;font-size:13px;"
+            "font-weight:bold;padding:6px;border-radius:3px;}"
+            "QPushButton:hover{background:#2a8b5c;}"
+            "QPushButton:pressed{background:#0a4b1c;}")
+        btn_snp_save.setStyleSheet(
+            "QPushButton{background:#1a3a6b;color:#90caf9;font-size:13px;"
+            "font-weight:bold;padding:6px;border-radius:3px;}"
+            "QPushButton:hover{background:#2a4a8b;}"
+            "QPushButton:pressed{background:#0a2a4b;}")
+        btn_snp_clr.setStyleSheet(
+            "QPushButton{background:#6b1a1a;color:#ff6666;font-size:13px;"
+            "font-weight:bold;padding:6px;border-radius:3px;}"
+            "QPushButton:hover{background:#8b2a2a;}"
+            "QPushButton:pressed{background:#4b0a0a;}")
+        btn_snp_add.clicked.connect(self._sniper_add)
+        btn_snp_save.clicked.connect(self._sniper_save)
+        btn_snp_clr.clicked.connect(self._sniper_clear_all)
+        sn_btn_row.addWidget(btn_snp_add, 2)
+        sn_btn_row.addWidget(btn_snp_save, 2)
+        sn_btn_row.addWidget(btn_snp_clr, 2)
+        sn_v.addLayout(sn_btn_row)
+
+        # ── 활성 스나이퍼 목록 ────────────────────────────────
+        sn_v.addWidget(QLabel("▼ 활성 스나이퍼  (행 클릭 → 개별 해제)",
+            styleSheet="color:#5dade2;font-size:11px;font-weight:bold;border:none;"))
+
+        self.snp_tbl = QTableWidget(0, 5)
+        self.snp_tbl.setHorizontalHeaderLabels(
+            ["행사가", "조건", "현재가", "시간(KST)", "상태"])
+        _snp_hh = self.snp_tbl.horizontalHeader()
+        _snp_hh.setSectionResizeMode(QHeaderView.Stretch)
+        self.snp_tbl.verticalHeader().setVisible(False)
+        self.snp_tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.snp_tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.snp_tbl.setMaximumHeight(150)
+        self.snp_tbl.setStyleSheet(
+            "QTableWidget{background:#05050f;color:#ccc;"
+            "gridline-color:#1a1a3a;font-size:12px;}"
+            "QHeaderView::section{background:#0a0a1e;color:#5dade2;"
+            "border:1px solid #1a1a3a;font-size:11px;}"
+            "QTableWidget::item:selected{background:#1a3a2a;color:#00ff88;}")
+        self.snp_tbl.cellClicked.connect(self._sniper_row_click)
+        sn_v.addWidget(self.snp_tbl)
+
+        # 상태 라벨
+        self.snp_status = QLabel("대기 중")
+        self.snp_status.setAlignment(Qt.AlignCenter)
+        self.snp_status.setStyleSheet(
+            "color:#aaa;font-size:11px;border:1px solid #333;"
+            "border-radius:3px;padding:2px;")
+        sn_v.addWidget(self.snp_status)
+        sn_v.addStretch()
+
+        tab_w.addTab(sniper_w, "🎯 스나이퍼")
+
+        # ── 스나이퍼 내부 상태 초기화 ────────────────────────
+        self._snipers: dict = {}
+        self._sniper_next_rid = 8100   # REQ_TRADE_SNP
+        self._sniper_timer = QTimer(self)
+        self._sniper_timer.setInterval(2000)
+        self._sniper_timer.timeout.connect(self._sniper_check)
+        # JSON 복원은 연결 후 실행 (500ms 지연)
+        QTimer.singleShot(800, self._sniper_load)
 
         gb_v.addWidget(tab_w)
         gb_v.setSpacing(0)   # tab_w ↔ pos_sell_panel 간격 제거 → 패널 위로 올라옴
