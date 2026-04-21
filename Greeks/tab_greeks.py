@@ -20,9 +20,10 @@ except ImportError:
     def et_to_kst(s): return s
     def today_et():
         from datetime import date; return date.today()
-from greeks_render  import (init_table, init_row, render_rows,
-                              init_table_replay, init_row_replay, render_rows_replay,
-                              REPLAY_NCOLS, RCOL_STRIKE)
+from greeks_render        import (init_table, init_row, render_rows)
+from greeks_render_replay import (init_table_replay, init_row_replay,
+                                   render_rows_replay, apply_view_mode,
+                                   REPLAY_NCOLS, RCOL_STRIKE)
 from greeks_chart   import GexSkewPanel, NormalBandPanel
 from greeks_replay  import ReplayPanel
 from greeks_context import ContextDetector
@@ -125,29 +126,19 @@ class GreeksGrid(QWidget):
         rt_v.addWidget(sp)
         self._stack.addWidget(rt_page)   # index 0 = 실시간
 
-        # 리플레이 페이지 (실시간과 동일한 9컬럼 테이블 + 차트)
-        rp_page = QWidget(); rp_v = QVBoxLayout(rp_page)
-        rsp2 = QSplitter(Qt.Horizontal)
-        self._replay_table = QTableWidget()
-        init_table(self._replay_table)   # 9컬럼 — 실시간과 동일
-        rsp2.addWidget(self._replay_table)
-        rsp3 = QSplitter(Qt.Vertical)
-        self._replay_gex  = GexSkewPanel()
-        self._replay_band = NormalBandPanel()
-        rsp3.addWidget(self._replay_gex)
-        rsp3.addWidget(self._replay_band)
-        rsp2.addWidget(rsp3)
-        rp_v.addWidget(rsp2)
-        self._stack.addWidget(rp_page)   # index 1 = 리플레이
+        # 리플레이 페이지 — ReplayPanel (라디오버튼+23컬럼 통합)
+        self._replay_panel = ReplayPanel()
+        # _replay_table / _replay_gex / _replay_band 를 ReplayPanel 내부로 위임
+        self._replay_table = self._replay_panel.tbl
+        self._replay_gex   = getattr(self._replay_panel, '_gex',  GexSkewPanel())
+        self._replay_band  = getattr(self._replay_panel, '_band', NormalBandPanel())
+        self._stack.addWidget(self._replay_panel)   # index 1 = 리플레이
 
         root.addWidget(self._stack)
 
         self._banner = QLabel("")
         self._banner.setStyleSheet("color:orange;font-weight:bold;")
         root.addWidget(self._banner)
-
-        # 별도 리플레이 탭 유지 (19컬럼 상세용)
-        self._replay_panel = ReplayPanel()
 
         # 리플레이 상태
         self._replay_mode    = False
@@ -921,10 +912,10 @@ class GreeksGrid(QWidget):
                 "vanna":  r.get("vanna")  or 0.0,
             }
 
-        # 테이블 초기화 (실시간과 동일한 9컬럼)
+        # 테이블 초기화 (23컬럼 리플레이용)
         self._replay_table.setRowCount(len(strikes_set))
         for i, st in enumerate(strikes_set):
-            init_row(self._replay_table, i, st, self._replay_atm)
+            init_row_replay(self._replay_table, i, st, self._replay_atm)
 
         # 슬라이더
         self._rp_slider.setMaximum(max(0, len(self._replay_ts_list) - 1))
@@ -979,8 +970,14 @@ class GreeksGrid(QWidget):
         kst    = et_to_kst(ts)
         self.rp_lbl_ts.setText(f"{kst} (KST)  /  {ts} (ET)")
 
-        render_rows(self._replay_table, self._replay_strikes,
-                    self._replay_atm, cell_d, self._replay_prev)
+        # ReplayPanel 뷰 모드(라디오버튼) 적용 렌더
+        from greeks_render_replay import render_rows_replay, apply_view_mode
+        from greeks_replay_ctrl   import VIEW_MODES
+        mode = getattr(self._replay_panel, '_cur_view', 'greeks')
+        apply_view_mode(self._replay_table, mode)
+        render_rows_replay(self._replay_table, self._replay_strikes,
+                           self._replay_atm, cell_d, self._replay_prev,
+                           view_cols=VIEW_MODES[mode]['cols'])
 
         # 차트도 갱신
         try:

@@ -12,25 +12,25 @@
     "font": 21,
     "sym": "SPY",
     "expiry": "CUSTOM",
-    "zone": "OTM",
+    "zone": "ATM",
     "n": 20,
     "h_main_split": [
       98,
       1803
     ],
     "ctrl_split": [
-      329,
-      203,
-      186,
-      371,
-      221,
-      184,
-      255
+      301,
+      185,
+      170,
+      339,
+      309,
+      212,
+      233
     ],
     "v_split": [
-      52,
-      395,
-      565
+      51,
+      389,
+      557
     ],
     "tbl_split": [
       332,
@@ -46,8 +46,7 @@
       1327,
       467
     ],
-    "alert_sound": "",
-    "watch_font_size": 13
+    "alert_sound": ""
   },
   "3": {
     "dark": true,
@@ -115,5 +114,21 @@
   "6": {
     "dark": true,
     "font": 21
+  },
+  "🇰🇷_Korea_1분": {
+    "dark": true,
+    "font": 16,
+    "h_split": [
+      320,
+      1585
+    ],
+    "v_split": [
+      368,
+      683
+    ],
+    "tbl_split": [
+      791,
+      790
+    ]
   }
 }

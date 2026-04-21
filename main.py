@@ -84,6 +84,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "combo_libs"))
 # ── tab_chart_libs 폴더 경로 등록은 tab_chart.py 내부에서 처리 ──────
 # (tab_chart.py 는 Main2/ 루트에 위치)
 
+# ── korea_chart_tab 경로 등록 ────────────────────────────────
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "korea_chart_tab"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "korea_chart_tab", "kr_chart_libs"))
+
 # ── 탭 모듈 ───────────────────────────────────────────────────
 from call_put_tab import CallPutGrid, init_chain_saver
 from watch_dog    import WatchAlertPanel   # SPX 감시 패널
@@ -99,6 +103,7 @@ from tab_trading import TradingGrid
 from tab_kr_futures  import KRFuturesGrid
 from tab_spx_history import SpxHistoryGrid
 from tab_opt_intraday import OptIntradayGrid
+from kr_chart_tab import KoreaChartGrid       # ← Korea_1분 차트 탭
 
 
 # ── strategy_report 패키지 (IBKR/MAIN2/strategy_report/) ────────────
@@ -149,6 +154,7 @@ class TradingDashboard(QMainWindow):
         self.tab_greeks   = None
         self.tab_report   = None
         self.tab_telegram = None   # 텔레그램 설정 탭
+        self.tab_kr_chart = None   # Korea_1분 차트 탭
 
         self._init_ui()
         self._init_timers()
@@ -190,9 +196,12 @@ class TradingDashboard(QMainWindow):
         add(ChartGrid,                        "7. 1분봉 차트",   self)
         add(OITrackerGrid,                    "8. OI 추적",      self)
      #   self.tab_trading = add(TradingGrid,   "9. 주문/잔고",    self)
-        self.tab_kr      = add(KRFuturesGrid, "10. 한국선물옵션", self)
+     #   self.tab_kr      = add(KRFuturesGrid, "10. 한국선물옵션", self)
     #   self.tabs.addTab(SpxHistoryGrid(self),   "📜 SPX 히스토리")
-        self.tabs.addTab(OptIntradayGrid(self),  "📊 옵션 분봉")
+     #   self.tabs.addTab(OptIntradayGrid(self),  "📊 옵션 분봉")
+
+        # ── Korea_1분 차트 탭 (키움증권 API) ──────────────────────
+        self.tab_kr_chart = add(KoreaChartGrid, "🇰🇷 Korea_1분", self)
 
         # ── 리포트 탭 ─────────────────────────────────────────────
         self.tab_report = ReportTab(self)
