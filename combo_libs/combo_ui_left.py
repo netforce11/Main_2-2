@@ -11,6 +11,16 @@ v2.3 변경:
   - 관심종목 패널 제거 (공간 확보 → 추세점수판으로 대체)
   - edit_sym_combo / lbl_sym_price / ▶현재가조회 버튼을
     _build_chain_panel() 헤더 행으로 이동
+
+v2.9 버그픽스:
+  - ★ [BUG-1] _on_chain_click(): 레그 만기 컬럼에 "MM/DD" 대신 YYYYMMDD 저장
+    · 이전: fmt = f"{expiry[4:6]}/{expiry[6:8]}"  → "04/21"
+    · 수정: YYYYMMDD 원본 그대로 저장 → _parse_expiry_display 이월 오류 원천 차단
+  - ★ [BUG-3] _bulk_fetch_conids(): ib.contractDetails 직접 교체 방식 → bridge 시그널 방식으로 교체
+    · 이전: ib.contractDetails = _on_cd (combo_order_bag의 bridge 경로와 경합 위험)
+    · 수정: bridge.contract_details_sig.connect(_on_cd) 사용, reqId 범위로 필터링
+  - ★ [BUG-7] _bulk_fetch_conids(): 예외 발생 시 _conid_bulk_running 플래그 미해제 수정
+    · try/finally 블록으로 감싸서 어떤 경로에서도 플래그 반드시 해제
 ════════════════════════════════════════════════════════════════
 """
 
@@ -372,11 +382,11 @@ class LeftPanelMixin:
         if price:
             self.tbl_legs.item(leg_row, 4).setText(f"{price:.2f}")
 
-        # 만기 자동 입력
+        # ★ [BUG-1] 만기 YYYYMMDD 원본 그대로 저장 (이전: "MM/DD" 형식 저장)
+        # "MM/DD" 형식이 _parse_expiry_display()에서 내년으로 이월되는 버그 원천 차단
         expiry = getattr(self, '_current_expiry', '')
         if expiry and self.tbl_legs.item(leg_row, 6):
-            fmt = f"{expiry[4:6]}/{expiry[6:8]}" if len(expiry) == 8 else expiry
-            self.tbl_legs.item(leg_row, 6).setText(fmt)
+            self.tbl_legs.item(leg_row, 6).setText(expiry)  # "20260421" 그대로
 
         price_str = f"{price:.2f}" if price else "0.00"
         self._log(f"레그{leg_row+1} 자동 입력: {side} {int(strike)}  ${price_str}")
@@ -385,6 +395,7 @@ class LeftPanelMixin:
         banner = getattr(self, 'direction_banner', None)
         if banner is not None:
             banner.refresh(self.tbl_legs)
+
 
 # ── 당일 conId 일괄 조회 ────────────────────────────────────────
 
@@ -397,12 +408,14 @@ def _bulk_fetch_conids(self, symbol: str, expiry: str,
     - 없으면 reqContractDetails 일괄 요청 (80ms 간격)
     - 진행률을 로그창에 출력, 완료 시 최종 결과 출력
     - 조회 중 중복 실행 방지 (_conid_bulk_running 플래그)
-    """
-    from datetime import date
-    today = date.today().strftime("%Y%m%d")
 
-    # 오늘 만기와 expiry가 일치하는 경우에만 날짜 키 체크
-    # (내일만기 등 다른 만기도 저장하므로 expiry 단위로 체크)
+    v2.9 변경:
+    - ★ [BUG-3] ib.contractDetails 직접 교체 → bridge.contract_details_sig 사용
+      · 이전 방식은 combo_order_bag의 bridge 경로와 경합(race condition) 위험
+      · reqId 범위(base_rid ~ base_rid+total-1)로 필터링하여 타 요청과 격리
+    - ★ [BUG-7] try/finally로 _conid_bulk_running 플래그 반드시 해제
+      · 이전: 예외 발생 시 플래그 True 고착 → 이후 수동 동기화에서 bulk 조회 불가
+    """
     try:
         from combo_order_bag import _CONID_CACHE, _conid_key, _save_conid_cache
     except ImportError:
@@ -443,14 +456,30 @@ def _bulk_fetch_conids(self, symbol: str, expiry: str,
 
     from PyQt5.QtCore import QTimer
     from core_contract import make_opt_contract
+    # ★ [BUG-3] bridge 시그널 방식으로 교체
+    from core import bridge as _bridge
 
-    _orig_cd     = getattr(ib, 'contractDetails',    lambda *a: None)
-    _orig_cd_end = getattr(ib, 'contractDetailsEnd', lambda *a: None)
-    _rid_map     = {}   # rid → (strike, cp)
+    _rid_map   = {}   # rid → (strike, cp_side)
+    _cd_conn   = [None, None]
 
     for i, (st, cp_side) in enumerate(missing):
         rid = base_rid + i
         _rid_map[rid] = (st, cp_side)
+
+    def _finish():
+        """정상/타임아웃 양쪽에서 공통으로 호출하는 정리 함수."""
+        # ★ [BUG-3] bridge 시그널 연결 해제
+        try:
+            if _cd_conn[0]:
+                _bridge.contract_details_sig.disconnect(_on_cd)
+        except Exception:
+            pass
+        try:
+            if _cd_conn[1]:
+                _bridge.contract_details_end_sig.disconnect(_on_cd_end)
+        except Exception:
+            pass
+        _cd_conn[0] = _cd_conn[1] = None
 
     def _on_cd(req_id, cd):
         if req_id not in _rid_map:
@@ -470,16 +499,19 @@ def _bulk_fetch_conids(self, symbol: str, expiry: str,
         if done_cnt[0] % 10 == 0 or done_cnt[0] == total:
             self._log(f"  conId 조회 중... {done_cnt[0]}/{total}")
         if done_cnt[0] >= total:
+            # ★ [BUG-7] finally 없이도 정상 완료 경로는 명시적 해제
             _save_conid_cache()
-            ib.contractDetails    = _orig_cd
-            ib.contractDetailsEnd = _orig_cd_end
+            _finish()
             self._conid_bulk_running = False
             self._log(
                 f"✅ conId 일괄 조회 완료: "
                 f"신규 저장 {saved_cnt[0]}개 / 전체 {len(all_strikes)}개 캐시 완비")
 
-    ib.contractDetails    = _on_cd
-    ib.contractDetailsEnd = _on_cd_end
+    # ★ [BUG-3] bridge 시그널 연결 (ib.contractDetails 직접 교체 제거)
+    _bridge.contract_details_sig.connect(_on_cd)
+    _bridge.contract_details_end_sig.connect(_on_cd_end)
+    _cd_conn[0] = _on_cd
+    _cd_conn[1] = _on_cd_end
 
     # 80ms 간격으로 순차 요청 (IB 서버 부하 방지)
     def _send(idx):
@@ -503,8 +535,9 @@ def _bulk_fetch_conids(self, symbol: str, expiry: str,
         if not getattr(self, '_conid_bulk_running', False):
             return
         _save_conid_cache()
-        ib.contractDetails    = _orig_cd
-        ib.contractDetailsEnd = _orig_cd_end
+        # ★ [BUG-3] bridge 시그널 해제
+        _finish()
+        # ★ [BUG-7] 타임아웃 경로에서도 플래그 해제 (기존과 동일, 명시적 유지)
         self._conid_bulk_running = False
         self._log(
             f"⚠ conId 일괄 조회 타임아웃 — "

@@ -56,13 +56,38 @@ def _hist_what_rth(sym: str):
     return ("TRADES", 0)  # Index도 TRADES 사용 — MIDPOINT는 SPX/IND 미지원
 
 
-def _make_hist_contract(sym: str, is_weekend: bool = False):
+def _make_hist_contract(sym: str, is_weekend: bool = False,
+                        use_futures: bool = False, fut_expiry: str = ""):
+    """
+    IBKR 히스토리 조회용 계약 생성.
+
+    [장외 선물 차트 지원]
+    use_futures=True 이면 FUT(/ES) 계약으로 생성한다.
+    fut_expiry: 'YYYYMM' 형식 최근월물 만기 (비어있으면 현재 달)
+
+    use_futures=False (기본): 기존 IND/STK 계약 그대로.
+    """
     try:
         from ibapi.contract import Contract
     except ImportError:
         class Contract: pass
+
     sym_up = sym.upper().replace("SPXW", "SPX")
     c = Contract(); c.currency = "USD"; c.primaryExch = ""
+
+    # ── /ES 선물 계약 ────────────────────────────────────────
+    if use_futures and sym_up in ("SPX",):
+        from datetime import date
+        c.symbol   = "ES"
+        c.secType  = "FUT"
+        c.exchange = "CME"
+        c.lastTradeDateOrContractMonth = (
+            fut_expiry if fut_expiry
+            else f"{date.today().year}{date.today().month:02d}"
+        )
+        return c
+
+    # ── 기존 IND / STK 계약 ──────────────────────────────────
     if sym_up in _INDEX:
         c.symbol = sym_up; c.secType = "IND"
         c.exchange = "SMART" if is_weekend else "CBOE"
@@ -165,19 +190,35 @@ class IbkrHistMixin:
         self._live_slot_installed = True
 
     def _ibkr_hist(self, sym, duration, bar_size, req_id, on_done, lbl,
-                   on_timeout=None, end_date_time: str = ""):
-        """과거 분봉/일봉 조회 (keepUpToDate=False)."""
+                   on_timeout=None, end_date_time: str = "",
+                   use_futures: bool = False, fut_expiry: str = ""):
+        """과거 분봉/일봉 조회 (keepUpToDate=False).
+
+        [장외 선물 차트]
+        use_futures=True 이면 /ES FUT 계약으로 요청한다.
+        fut_expiry: 'YYYYMM' 최근월물 만기 문자열
+        """
         if not self.mw.connected:
             lbl.setText("❌ TWS/Gateway 연결 필요")
             if callable(on_timeout): QTimer.singleShot(0, on_timeout)
             return
         self._ensure_hist_router()
         is_wkd = datetime.now(_ET).weekday() >= 5
-        what, use_rth = _hist_what_rth(sym)
+
+        # 선물 조회 시 whatToShow = TRADES (FUT는 MIDPOINT/BID_ASK 미지원)
+        if use_futures:
+            what, use_rth = "TRADES", 0
+        else:
+            what, use_rth = _hist_what_rth(sym)
+
         is_daily = "day" in bar_size
-        c = _make_hist_contract(sym, is_wkd)
+        c = _make_hist_contract(sym, is_wkd,
+                                use_futures=use_futures,
+                                fut_expiry=fut_expiry)
         self._hist_router[req_id] = {"buf": [], "done": False, "is_daily": is_daily}
-        lbl.setText(f"⏳ IBKR {bar_size} 조회 중… {sym}")
+
+        sym_label = f"/ES({fut_expiry})" if use_futures else sym
+        lbl.setText(f"⏳ IBKR {bar_size} 조회 중… {sym_label}")
         try: self.mw.ib.reqMarketDataType(4)
         except Exception: pass
         try:
@@ -190,65 +231,83 @@ class IbkrHistMixin:
         self._poll_hist(req_id, on_done, lbl, on_timeout)
 
     def _poll_hist(self, req_id, on_done, lbl, on_timeout, ms=10_000):
-        """공통 폴링 타이머."""
-        elapsed = [0]; timer = QTimer(); timer.setInterval(50)
+        """공통 폴링 타이머. QTimer에 부모(self) 지정 → 위젯 파괴 시 자동 정리."""
+        elapsed = [0]
+        timer = QTimer(self)   # ← 부모 지정: 위젯 파괴 시 자동 stop/delete
+        timer.setInterval(50)
         def _poll():
             elapsed[0] += 50
             s = self._hist_router.get(req_id)
-            if s is None: timer.stop(); return
+            if s is None:
+                timer.stop(); timer.deleteLater(); return
             if s["done"]:
-                timer.stop()
+                timer.stop(); timer.deleteLater()
                 buf = self._hist_router.pop(req_id, {}).get("buf", [])
                 if buf: on_done(list(buf))
                 else:
                     lbl.setText("❌ 데이터 없음")
                     if callable(on_timeout): QTimer.singleShot(0, on_timeout)
             elif elapsed[0] >= ms:
-                timer.stop(); self._hist_router.pop(req_id, None)
+                timer.stop(); timer.deleteLater()
+                self._hist_router.pop(req_id, None)
                 lbl.setText("❌ 타임아웃")
                 if callable(on_timeout): QTimer.singleShot(0, on_timeout)
         timer.timeout.connect(_poll); timer.start()
 
-    def _ibkr_hist_live(self, sym, bar_size, on_initial_done, lbl):
-        """[S9] 장중 실시간 분봉 (keepUpToDate=True)."""
-        # _ibkr_hist_live() 상단에 임시 추가
-        print(f"[DEBUG] bar_size={repr(bar_size)}, sym={sym}")
+    def _ibkr_hist_live(self, sym, bar_size, on_initial_done, lbl,
+                        use_futures: bool = False, fut_expiry: str = ""):
+        """[S9] 장중 실시간 분봉 (keepUpToDate=True).
 
+        [장외 선물 지원]
+        use_futures=True 이면 /ES FUT 계약으로 요청한다.
+        whatToShow=TRADES, useRTH=0 강제 적용.
+        """
         if not self.mw.connected:
             lbl.setText("❌ TWS/Gateway 연결 필요"); return
         self._stop_live()
         self._ensure_hist_router(); self._ensure_live_slot()
         is_wkd = datetime.now(_ET).weekday() >= 5
-        what, use_rth = _hist_what_rth(sym)
-        c = _make_hist_contract(sym, is_wkd)
-        self._live_buf = []; self._live_dirty = False; self._live_sym = sym
+
+        if use_futures:
+            what, use_rth = "TRADES", 0
+        else:
+            what, use_rth = _hist_what_rth(sym)
+
+        c = _make_hist_contract(sym, is_wkd,
+                                use_futures=use_futures,
+                                fut_expiry=fut_expiry)
+        self._live_buf = []; self._live_dirty = False
+        self._live_sym = f"/ES({fut_expiry})" if use_futures else sym
         self._hist_router[_LIVE_ID] = {"buf": [], "done": False, "is_daily": False}
-        lbl.setText(f"⏳ 실시간 {bar_size} 수신 중… {sym}")
+
+        sym_label = f"/ES({fut_expiry})" if use_futures else sym
+        lbl.setText(f"⏳ 실시간 {bar_size} 수신 중… {sym_label}")
         try: self.mw.ib.reqMarketDataType(4)
         except Exception: pass
         try:
             self.mw.ib.reqHistoricalData(_LIVE_ID, c, "", "1 D", bar_size,
-                what, use_rth, 1, True, [])  # keepUpToDate=True
+                what, use_rth, 1, True, [])   # keepUpToDate=True
         except Exception as e:
             lbl.setText(f"❌ 실시간 요청 실패: {e}"); return
-        elapsed = [0]; init_t = QTimer(); init_t.setInterval(50)
+
+        elapsed = [0]; init_t = QTimer(self); init_t.setInterval(50)
         def _poll_init():
             elapsed[0] += 50
             s = self._hist_router.get(_LIVE_ID)
-            if s is None: init_t.stop(); return
+            if s is None: init_t.stop(); init_t.deleteLater(); return
             if s["done"]:
-                init_t.stop()
-                # [S9 bugfix] 초기 배치에서 None/NaN 봉 필터링
+                init_t.stop(); init_t.deleteLater()
                 self._live_buf = [b for b in s["buf"] if _is_valid_bar(b)]
                 self._hist_router.pop(_LIVE_ID, None)
                 if self._live_buf:
                     on_initial_done(list(self._live_buf))
-                    lbl.setText(f"🟢 실시간 {bar_size} — {sym}  자동갱신 중")
+                    lbl.setText(f"🟢 실시간 {bar_size} — {sym_label}  자동갱신 중")
                     self._start_live_render_timer(lbl)
                 else:
                     lbl.setText("❌ 유효한 초기 데이터 없음")
             elif elapsed[0] >= 15_000:
-                init_t.stop(); self._hist_router.pop(_LIVE_ID, None)
+                init_t.stop(); init_t.deleteLater()
+                self._hist_router.pop(_LIVE_ID, None)
                 lbl.setText("❌ 실시간 초기 로딩 타임아웃")
         init_t.timeout.connect(_poll_init); init_t.start()
         self._live_init_timer = init_t
@@ -334,20 +393,23 @@ class IbkrHistMixin:
             lbl.setText(f"❌ 틱 요청 실패: {e}"); self._tick_router.pop(req_id, None)
             if callable(on_timeout): QTimer.singleShot(0, on_timeout)
             return
-        elapsed = [0]; timer = QTimer(); timer.setInterval(50)
+        elapsed = [0]
+        timer = QTimer(self)   # 부모 지정
+        timer.setInterval(50)
         def _poll():
             elapsed[0] += 50
             s = self._tick_router.get(req_id)
-            if s is None: timer.stop(); return
+            if s is None: timer.stop(); timer.deleteLater(); return
             if s["done"]:
-                timer.stop()
+                timer.stop(); timer.deleteLater()
                 buf = self._tick_router.pop(req_id, {}).get("buf", [])
                 if buf: on_done(list(buf))
                 else:
                     lbl.setText("❌ 틱 데이터 없음")
                     if callable(on_timeout): QTimer.singleShot(0, on_timeout)
             elif elapsed[0] >= 10_000:
-                timer.stop(); self._tick_router.pop(req_id, None)
+                timer.stop(); timer.deleteLater()
+                self._tick_router.pop(req_id, None)
                 lbl.setText("❌ 틱 타임아웃")
                 if callable(on_timeout): QTimer.singleShot(0, on_timeout)
         timer.timeout.connect(_poll); timer.start()

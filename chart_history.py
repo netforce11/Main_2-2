@@ -83,8 +83,28 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
         days  = days_map.get(self.combo_daily_period.currentText(), 365)
         end   = datetime.today().date()
         start = end - timedelta(days=days)
-        self.lbl_daily_status.setText(f"조회 중… {sym} 일봉")
 
+        # ── 장외 선물 모드: /ES 일봉 직접 조회 ──────────────────
+        use_fut = getattr(self, '_und_is_futures', False) and sym == "SPX"
+        if use_fut:
+            fut_expiry = getattr(self, '_es_front_month', lambda: "")()
+            self.lbl_daily_status.setText(f"⏳ IBKR 일봉 조회 중… /ES({fut_expiry})")
+            days_map2 = {"1개월": "1 M", "3개월": "3 M", "6개월": "6 M", "1년": "1 Y"}
+            dur = days_map2.get(self.combo_daily_period.currentText(), "6 M")
+
+            def _on_fut_daily(bars):
+                self._on_daily_done(bars, f"/ES({fut_expiry})")
+                if callable(on_done_extra):
+                    on_done_extra()
+
+            self._ibkr_hist(sym, dur, "1 day", 9800,
+                            _on_fut_daily, self.lbl_daily_status,
+                            on_timeout=on_done_extra,
+                            use_futures=True, fut_expiry=fut_expiry)
+            return
+
+        # ── 기존 Polygon → IBKR 폴백 ────────────────────────────
+        self.lbl_daily_status.setText(f"조회 중… {sym} 일봉")
         sig = _FetchSignal()
 
         def _done(bars):
@@ -122,7 +142,8 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
 
         self._ibkr_hist(sym, dur, "1 day", 9800,
                         _after_ibkr, self.lbl_daily_status,
-                        on_timeout=on_done_extra)
+                        on_timeout=on_done_extra,
+                        use_futures=False, fut_expiry="")
 
     def _get_chart_sym(self) -> str:
         for attr in ("edit_sym",):
@@ -176,6 +197,23 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
 
             self._ibkr_hist_live(sym, bar_size, _on_initial,
                                  self.lbl_intra_status)
+            return
+
+        # ── 장외 선물 모드: /ES 분봉 실시간 스트림 (keepUpToDate=True) ──
+        use_fut = getattr(self, '_und_is_futures', False) and sym == "SPX"
+        if use_fut and not end_date:
+            self._stop_live()
+            fut_expiry = getattr(self, '_es_front_month', lambda: "")()
+            sym_label  = f"/ES({fut_expiry})"
+
+            def _on_fut_initial(bars):
+                self._intra_cache_bars  = bars
+                self._intra_cache_sym   = sym_label
+                self._on_intra_done(bars, sym_label, tf, max_bars)
+
+            self._ibkr_hist_live(sym, bar_size, _on_fut_initial,
+                                 self.lbl_intra_status,
+                                 use_futures=True, fut_expiry=fut_expiry)
             return
 
         # ── 장외 or 캘린더 날짜 지정 조회 (기존 로직) ────────

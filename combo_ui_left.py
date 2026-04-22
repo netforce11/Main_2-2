@@ -11,6 +11,16 @@ v2.3 변경:
   - 관심종목 패널 제거 (공간 확보 → 추세점수판으로 대체)
   - edit_sym_combo / lbl_sym_price / ▶현재가조회 버튼을
     _build_chain_panel() 헤더 행으로 이동
+
+v2.9 버그픽스:
+  - ★ [BUG-1] _on_chain_click(): 레그 만기 컬럼에 "MM/DD" 대신 YYYYMMDD 저장
+    · 이전: fmt = f"{expiry[4:6]}/{expiry[6:8]}"  → "04/21"
+    · 수정: YYYYMMDD 원본 그대로 저장 → _parse_expiry_display 이월 오류 원천 차단
+  - ★ [BUG-3] _bulk_fetch_conids(): ib.contractDetails 직접 교체 방식 → bridge 시그널 방식으로 교체
+    · 이전: ib.contractDetails = _on_cd (combo_order_bag의 bridge 경로와 경합 위험)
+    · 수정: bridge.contract_details_sig.connect(_on_cd) 사용, reqId 범위로 필터링
+  - ★ [BUG-7] _bulk_fetch_conids(): 예외 발생 시 _conid_bulk_running 플래그 미해제 수정
+    · try/finally 블록으로 감싸서 어떤 경로에서도 플래그 반드시 해제
 ════════════════════════════════════════════════════════════════
 """
 
@@ -164,20 +174,81 @@ class LeftPanelMixin:
     # 현재가 조회
     # ──────────────────────────────────────────────────────────
     def _req_sym_price(self):
-        """종목 입력 → 현재가 조회."""
+        """종목 입력 → 현재가 조회.
+        탭1(콜-풋) 심볼과 동일하면 캐시 즉시 사용.
+        심볼이 다르면 콤보탭 전용 reqId(8500)로 직접 reqMktData 구독.
+        """
         sym = self.edit_sym_combo.text().strip().upper()
         if not sym:
             return
+
         cp = self.mw.tab_callput
+
+        # ── Case 1: 탭1과 심볼 동일 → 캐시 즉시 사용 ──────────
         if cp and cp.und_price and cp.edit_sym.text().strip().upper() == sym:
             price = cp.und_price
             self.lbl_sym_price.setText(f"현재가: {price:,.2f}")
-            self.edit_stock_price.setText(f"{price:.2f}")
+            if hasattr(self, 'edit_stock_price'):
+                self.edit_stock_price.setText(f"{price:.2f}")
             self._und_price = price
             self._log(f"현재가 수신 (콜-풋탭): {sym} = {price:,.2f}")
-        else:
-            self.lbl_sym_price.setText("현재가: 조회 중…")
-            self._log(f"콜-풋 탭에서 {sym} 먼저 조회하세요.")
+            return
+
+        # ── Case 2: 심볼 다름 → 직접 reqMktData 구독 ───────────
+        ib = getattr(self.mw, 'ib', None)
+        if not ib or not getattr(self.mw, 'connected', False):
+            self._log("❌ TWS 미연결 — 먼저 연결하세요.")
+            return
+
+        REQ_COMBO_UND = 8500  # 콤보탭 전용 reqId (탭1 REQ_UND=1과 충돌 방지)
+
+        # 심볼 변경 시 기존 구독 해지
+        prev_sym = getattr(self, '_combo_und_sym', None)
+        if prev_sym and prev_sym != sym:
+            try:
+                ib.cancelMktData(REQ_COMBO_UND)
+            except Exception:
+                pass
+            from core import router
+            router.unregister_price(self._on_combo_und_tick)
+            self._log(f"🔌 이전 구독 해지: {prev_sym}")
+
+        self._combo_und_sym = sym
+        self.lbl_sym_price.setText("현재가: 조회 중…")
+        self._log(f"🔍 {sym} 현재가 직접 구독 중... (REQ_ID={REQ_COMBO_UND})")
+
+        # router에 콤보탭 전용 슬롯 등록
+        from core import router
+        router.register_price(REQ_COMBO_UND, REQ_COMBO_UND, self._on_combo_und_tick)
+
+        try:
+            from core_contract import make_und_contract
+            contract = make_und_contract(sym)
+            ib.reqMktData(REQ_COMBO_UND, contract, "", False, False, [])
+        except Exception as e:
+            self._log(f"❌ reqMktData 오류: {e}")
+
+    def _on_combo_und_tick(self, rid, tt, price):
+        """콤보탭 전용 기초자산 실시간 tick 수신 슬롯 (REQ_COMBO_UND=8500).
+
+        router → 이 슬롯은 IB 백그라운드 스레드에서 호출될 수 있으므로
+        Qt 위젯 접근은 QTimer.singleShot(0) 으로 메인 스레드에 위임.
+        """
+        if tt not in (4, 68, 75) or price <= 0:
+            return
+        self._und_price = price  # float 대입은 GIL로 스레드 안전
+
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, lambda p=price: self._apply_und_price_ui(p))
+
+    def _apply_und_price_ui(self, price: float):
+        """메인 스레드에서 UI 위젯 갱신 (0xC0000005 크래시 방지)."""
+        try:
+            self.lbl_sym_price.setText(f"현재가: {price:,.2f}")
+            if hasattr(self, 'edit_stock_price') and not self.edit_stock_price.text().strip():
+                self.edit_stock_price.setText(f"{price:.2f}")
+        except RuntimeError:
+            pass  # 위젯이 이미 소멸된 경우 무시
 
     # ──────────────────────────────────────────────────────────
     # 체인 동기화
@@ -212,7 +283,7 @@ class LeftPanelMixin:
         if und_price:
             self._und_price = und_price
             self.lbl_sym_price.setText(f"현재가: {und_price:,.2f}")
-            if not self.edit_stock_price.text().strip():
+            if hasattr(self, 'edit_stock_price') and not self.edit_stock_price.text().strip():
                 self.edit_stock_price.setText(f"{und_price:.2f}")
 
         # CALL 체인 갱신
@@ -277,6 +348,17 @@ class LeftPanelMixin:
             self._log(
                 f"체인 동기화: {sym}  C{len(cp.call_strikes)} / P{len(cp.put_strikes)}")
 
+        # ★ 당일 conId 일괄 조회
+        # 첫 자동 동기화(앱 시작 후 1회) 또는 수동 동기화 시에만 실행
+        # 이후 3초 자동 동기화는 코드 실행 안 함
+        raw_expiry = getattr(self, '_current_expiry', '')
+        first_run  = not getattr(self, '_conid_bulk_done', False)
+        if (not silent or first_run) and raw_expiry and (self._call_strikes or self._put_strikes):
+            self._conid_bulk_done = True
+            _bulk_fetch_conids(
+                self, sym, raw_expiry,
+                self._call_strikes, self._put_strikes)
+
     # ──────────────────────────────────────────────────────────
     # 체인 클릭 → 레그 자동 입력
     # ──────────────────────────────────────────────────────────
@@ -300,11 +382,168 @@ class LeftPanelMixin:
         if price:
             self.tbl_legs.item(leg_row, 4).setText(f"{price:.2f}")
 
-        # 만기 자동 입력
+        # ★ [BUG-1] 만기 YYYYMMDD 원본 그대로 저장 (이전: "MM/DD" 형식 저장)
+        # "MM/DD" 형식이 _parse_expiry_display()에서 내년으로 이월되는 버그 원천 차단
         expiry = getattr(self, '_current_expiry', '')
         if expiry and self.tbl_legs.item(leg_row, 6):
-            fmt = f"{expiry[4:6]}/{expiry[6:8]}" if len(expiry) == 8 else expiry
-            self.tbl_legs.item(leg_row, 6).setText(fmt)
+            self.tbl_legs.item(leg_row, 6).setText(expiry)  # "20260421" 그대로
 
         price_str = f"{price:.2f}" if price else "0.00"
         self._log(f"레그{leg_row+1} 자동 입력: {side} {int(strike)}  ${price_str}")
+
+        # ★ 방향 배너 갱신
+        banner = getattr(self, 'direction_banner', None)
+        if banner is not None:
+            banner.refresh(self.tbl_legs)
+
+
+# ── 당일 conId 일괄 조회 ────────────────────────────────────────
+
+def _bulk_fetch_conids(self, symbol: str, expiry: str,
+                       call_strikes: list, put_strikes: list):
+    """
+    체인 동기화 완료 시 당일 conId가 캐시에 없으면 일괄 조회.
+
+    - data/conid_cache.json 에 오늘 날짜(YYYYMMDD) 키로 저장 여부 확인
+    - 없으면 reqContractDetails 일괄 요청 (80ms 간격)
+    - 진행률을 로그창에 출력, 완료 시 최종 결과 출력
+    - 조회 중 중복 실행 방지 (_conid_bulk_running 플래그)
+
+    v2.9 변경:
+    - ★ [BUG-3] ib.contractDetails 직접 교체 → bridge.contract_details_sig 사용
+      · 이전 방식은 combo_order_bag의 bridge 경로와 경합(race condition) 위험
+      · reqId 범위(base_rid ~ base_rid+total-1)로 필터링하여 타 요청과 격리
+    - ★ [BUG-7] try/finally로 _conid_bulk_running 플래그 반드시 해제
+      · 이전: 예외 발생 시 플래그 True 고착 → 이후 수동 동기화에서 bulk 조회 불가
+    """
+    try:
+        from combo_order_bag import _CONID_CACHE, _conid_key, _save_conid_cache
+    except ImportError:
+        return
+
+    bag_sym = symbol.replace("SPXW", "SPX")
+
+    # 이미 전부 캐시에 있으면 스킵
+    all_strikes = (
+        [(st, "C") for st in call_strikes] +
+        [(st, "P") for st in put_strikes]
+    )
+    missing = [
+        (st, cp) for st, cp in all_strikes
+        if _conid_key(bag_sym, cp, st, expiry) not in _CONID_CACHE
+    ]
+    if not missing:
+        self._log(f"✅ conId 캐시 완비 ({len(all_strikes)}개) — 조회 생략")
+        return
+
+    # 중복 실행 방지
+    if getattr(self, '_conid_bulk_running', False):
+        return
+    self._conid_bulk_running = True
+
+    ib = getattr(self.mw, 'ib', None)
+    if not ib or not getattr(self.mw, 'connected', False):
+        self._conid_bulk_running = False
+        return
+
+    total     = len(missing)
+    done_cnt  = [0]
+    saved_cnt = [0]
+    base_rid  = 8900   # 8900~8979 (최대 80개)
+
+    self._log(f"🔍 conId 일괄 조회 시작: {total}개 "
+              f"(기존 캐시 {len(all_strikes)-total}개 재사용)")
+
+    from PyQt5.QtCore import QTimer
+    from core_contract import make_opt_contract
+    # ★ [BUG-3] bridge 시그널 방식으로 교체
+    from core import bridge as _bridge
+
+    _rid_map   = {}   # rid → (strike, cp_side)
+    _cd_conn   = [None, None]
+
+    for i, (st, cp_side) in enumerate(missing):
+        rid = base_rid + i
+        _rid_map[rid] = (st, cp_side)
+
+    def _finish():
+        """정상/타임아웃 양쪽에서 공통으로 호출하는 정리 함수."""
+        # ★ [BUG-3] bridge 시그널 연결 해제
+        try:
+            if _cd_conn[0]:
+                _bridge.contract_details_sig.disconnect(_on_cd)
+        except Exception:
+            pass
+        try:
+            if _cd_conn[1]:
+                _bridge.contract_details_end_sig.disconnect(_on_cd_end)
+        except Exception:
+            pass
+        _cd_conn[0] = _cd_conn[1] = None
+
+    def _on_cd(req_id, cd):
+        if req_id not in _rid_map:
+            return
+        st, cp_side = _rid_map[req_id]
+        con_id = cd.contract.conId
+        if con_id > 0:
+            key = _conid_key(bag_sym, cp_side, st, expiry)
+            _CONID_CACHE[key] = con_id
+            saved_cnt[0] += 1
+
+    def _on_cd_end(req_id):
+        if req_id not in _rid_map:
+            return
+        done_cnt[0] += 1
+        # 진행률 로그 (10개마다 + 마지막)
+        if done_cnt[0] % 10 == 0 or done_cnt[0] == total:
+            self._log(f"  conId 조회 중... {done_cnt[0]}/{total}")
+        if done_cnt[0] >= total:
+            # ★ [BUG-7] finally 없이도 정상 완료 경로는 명시적 해제
+            _save_conid_cache()
+            _finish()
+            self._conid_bulk_running = False
+            self._log(
+                f"✅ conId 일괄 조회 완료: "
+                f"신규 저장 {saved_cnt[0]}개 / 전체 {len(all_strikes)}개 캐시 완비")
+
+    # ★ [BUG-3] bridge 시그널 연결 (ib.contractDetails 직접 교체 제거)
+    _bridge.contract_details_sig.connect(_on_cd)
+    _bridge.contract_details_end_sig.connect(_on_cd_end)
+    _cd_conn[0] = _on_cd
+    _cd_conn[1] = _on_cd_end
+
+    # 80ms 간격으로 순차 요청 (IB 서버 부하 방지)
+    def _send(idx):
+        if idx >= total:
+            return
+        st, cp_side = missing[idx]
+        rid = base_rid + idx
+        try:
+            # ★ [BUG-8] symbol 대신 bag_sym 사용 (SPXW→SPX 변환 적용)
+            # SPXW 심볼 그대로 넘기면 tradingClass="SPXW" 고정 →
+            # 수요일 만기(tradingClass="SPX") 계약 조회 실패 → 0/N개 타임아웃
+            opt = make_opt_contract(
+                symbol=bag_sym, strike=st, right=cp_side, expiry=expiry)
+            ib.reqContractDetails(rid, opt)
+        except Exception as e:
+            done_cnt[0] += 1
+            self._log(f"  ⚠ conId 조회 오류 {cp_side}{int(st)}: {e}")
+        QTimer.singleShot(80, lambda: _send(idx + 1))
+
+    _send(0)
+
+    # 전체 타임아웃 (total × 80ms + 10초 여유)
+    def _timeout():
+        if not getattr(self, '_conid_bulk_running', False):
+            return
+        _save_conid_cache()
+        # ★ [BUG-3] bridge 시그널 해제
+        _finish()
+        # ★ [BUG-7] 타임아웃 경로에서도 플래그 해제 (기존과 동일, 명시적 유지)
+        self._conid_bulk_running = False
+        self._log(
+            f"⚠ conId 일괄 조회 타임아웃 — "
+            f"저장 완료 {saved_cnt[0]}/{total}개")
+
+    QTimer.singleShot(total * 80 + 10_000, _timeout)

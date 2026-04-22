@@ -45,6 +45,10 @@ class TelegramClient:
         #   tag       : 'ORDER' | 'ALERT' | 'CONFIRM' | 'INFO'
         self._chat_callbacks: List[Callable] = []
 
+        # "정보" 명령 후 번호 입력 대기 상태
+        # key: chat_id(str), value: "info_menu"
+        self._pending_menu: dict = {}
+
     # ──────────────────────────────────────────
     # 외부 API (각 탭에서 호출)
     # ──────────────────────────────────────────
@@ -94,7 +98,7 @@ class TelegramClient:
     def _poll_loop(self):
         while self._polling_active:
             try:
-                if self._cfg.enabled and self._cfg.token:
+                if self._cfg.token:  # enabled는 채팅창 표시용 — polling은 항상 실행
                     updates = self._get_updates()
                     for upd in updates:
                         self._handle_update(upd)
@@ -118,6 +122,33 @@ class TelegramClient:
 
     def _handle_update(self, upd: dict):
         self._last_update_id = upd.get("update_id", self._last_update_id)
+
+        # ── 인라인 버튼 콜백 처리 ────────────────────────────────
+        cq = upd.get("callback_query")
+        if cq:
+            self._answer_callback_query(cq.get("id", ""))
+            from_id    = str(cq.get("from", {}).get("id", ""))
+            chat_id    = str(cq.get("message", {}).get("chat", {}).get("id", ""))
+            message_id = cq.get("message", {}).get("message_id")
+            data       = cq.get("data", "")
+            if self._cfg.chat_id and chat_id != str(self._cfg.chat_id):
+                return
+            # spread_tele 콜백 먼저 시도
+            try:
+                from spread_tele.spread_tele_bot import handle_callback
+                if handle_callback(data, chat_id, message_id):
+                    return
+            except Exception as e:
+                import traceback
+                err_msg = f"⚠️ 스프레드 오류:\n{type(e).__name__}: {e}"
+                print(f"[TG] spread callback error:\n{traceback.format_exc()}")
+                try:
+                    self._edit_inline_message(chat_id, message_id, err_msg)
+                except Exception:
+                    self._send_raw(err_msg)
+            # 다른 콜백 라우터 확장 가능
+            return
+
         msg = upd.get("message") or upd.get("edited_message")
         if not msg:
             return
@@ -146,6 +177,11 @@ class TelegramClient:
                 self._fire_callback("outgoing", "INFO", reply, text)
                 return
 
+            # "/정보" 명령도 정보 메뉴로 처리
+            if text.strip() in ("/정보",):
+                self._router.dispatch_info(from_id)
+                return
+
             reply = self._router.dispatch(text, from_id)
             confirm = f"주인님으로부터 수신 완료.\n원문: {text}"
             self._send_raw(confirm)
@@ -155,6 +191,36 @@ class TelegramClient:
                 self._send_raw(reply)
                 self._fire_callback("outgoing", "INFO", reply, "")
         else:
+            # ── "정보" 명령 처리 ──────────────────────────────────
+            if text.strip() in ("00", "/정보", "정보"):
+                self._router.dispatch_info(from_id)
+                return
+
+            # ── 대기 중인 메뉴 번호 선택 처리 ───────────────────
+            if self._pending_menu.get(str(from_id)) == "info_menu":
+                del self._pending_menu[str(from_id)]
+                # 7번: 스프레드 인라인 버튼 직접 처리
+                if text.strip() == "7":
+                    try:
+                        from spread_tele.spread_config import CB_CALL, CB_PUT, CB_CANCEL
+                        self._send_inline_keyboard(
+                            "스프레드 종류를 선택하세요:",
+                            [
+                                [
+                                    {"text": "📈 콜 스프레드", "callback_data": CB_CALL},
+                                    {"text": "📉 풋 스프레드", "callback_data": CB_PUT},
+                                ],
+                                [{"text": "❌ 취소", "callback_data": CB_CANCEL}],
+                            ]
+                        )
+                    except Exception as e:
+                        self._send_raw(f"⚠️ 스프레드 모듈 오류: {e}")
+                    return
+                handled = self._router.dispatch_info_select(text.strip(), from_id)
+                if handled:
+                    return
+                # 번호 아닌 입력 → fall-through → 일반 자동 답장
+
             # 일반 텍스트 수신
             confirm = f"주인님으로부터 수신 완료.\n원문: {text}"
             self._send_raw(confirm)
@@ -163,9 +229,47 @@ class TelegramClient:
     # ──────────────────────────────────────────
     # Internal helpers
     # ──────────────────────────────────────────
+    def _send_photo_raw(self, image_bytes: bytes, caption: str = "") -> bool:
+        """PNG bytes를 sendPhoto API로 전송. 성공 시 True."""
+        if not self._cfg.token or not self._cfg.chat_id:
+            return False
+        url = f"https://api.telegram.org/bot{self._cfg.token}/sendPhoto"
+        boundary = "----TgPhotoBoundary"
+        def _field(name, value):
+            return (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n"
+            ).encode()
+        body = (
+            _field("chat_id", self._cfg.chat_id)
+            + _field("caption", caption)
+            + (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="photo"; filename="chart.png"\r\n'
+                f"Content-Type: image/png\r\n\r\n"
+            ).encode()
+            + image_bytes
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
+        try:
+            req = urllib.request.Request(
+                url, data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            )
+            with urllib.request.urlopen(req, timeout=15):
+                pass
+            return True
+        except Exception as e:
+            print(f"[TG] _send_photo_raw error: {e}")
+            return False
+
     def _send_raw(self, text: str) -> bool:
         if not self._cfg.token or not self._cfg.chat_id:
             return False
+        # 버그④: 4096자 초과 시 앞부분만 전송
+        if len(text) > 4096:
+            text = text[:4090] + "\n..."
         try:
             url = f"https://api.telegram.org/bot{self._cfg.token}/sendMessage"
             payload = json.dumps({
@@ -173,6 +277,81 @@ class TelegramClient:
                 "text": text,
                 "parse_mode": "HTML",
             }).encode()
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+            return True
+        except Exception as e:
+            print(f"[TG] _send_raw error: {e}")  # 버그⑤: 로그 추가
+            return False
+
+    def _send_inline_keyboard(self, text: str, buttons: list) -> bool:
+        """
+        인라인 버튼 메시지 전송.
+        buttons: [[{"text": "라벨", "callback_data": "값"}, ...], ...]
+        예) [[{"text":"📈 콜","callback_data":"spread_call"},
+              {"text":"📉 풋","callback_data":"spread_put"}],
+             [{"text":"❌ 취소","callback_data":"spread_cancel"}]]
+        """
+        if not self._cfg.token or not self._cfg.chat_id:
+            return False
+        try:
+            url = f"https://api.telegram.org/bot{self._cfg.token}/sendMessage"
+            payload = json.dumps({
+                "chat_id": self._cfg.chat_id,
+                "text": text,
+                "reply_markup": {"inline_keyboard": buttons},
+            }).encode()
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+            return True
+        except Exception as e:
+            print(f"[TG] _send_inline_keyboard error: {e}")
+            return False
+
+    def _edit_inline_message(self, chat_id: str, message_id: int,
+                              text: str, buttons=None) -> bool:
+        """
+        콜백 쿼리 응답 후 메시지 수정 (버튼 교체용).
+        buttons=None 이면 버튼 제거.
+        """
+        if not self._cfg.token:
+            return False
+        try:
+            url = f"https://api.telegram.org/bot{self._cfg.token}/editMessageText"
+            body: dict = {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": text,
+            }
+            if buttons is not None:
+                body["reply_markup"] = {"inline_keyboard": buttons}
+            payload = json.dumps(body).encode()
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+            return True
+        except Exception as e:
+            print(f"[TG] _edit_inline_message error: {e}")
+            return False
+
+    def _answer_callback_query(self, callback_query_id: str) -> bool:
+        """callback_query 에 대한 응답 ack 전송 (로딩 스피너 제거)."""
+        if not self._cfg.token:
+            return False
+        try:
+            url = f"https://api.telegram.org/bot{self._cfg.token}/answerCallbackQuery"
+            payload = json.dumps({"callback_query_id": callback_query_id}).encode()
             req = urllib.request.Request(
                 url, data=payload,
                 headers={"Content-Type": "application/json"}

@@ -255,6 +255,13 @@ def update_display(self, force_regular=False):
                       else (C["row_mid"] if eok >= 200 else C["row_lo"]))
                 self.table_l.item(ri, ci).setBackground(QColor(bg))
 
+    # 오버레이 복원 (차트 재렌더링 후)
+    try:
+        from kr_chart_overlay import redraw_overlays
+        redraw_overlays(self)
+    except Exception as ex:
+        print(f"[KrChart] 오버레이 복원 오류: {ex}")
+
 
 def push_trend_df(self):
     if not PANDAS or self.df is None or self.df.empty: return

@@ -15,6 +15,19 @@ v2.8 변경:
     - 전략 판별 로직 명확화:
         debit  → max_loss = buy_prem - sell_prem  (프리미엄 기준)
         credit → max_loss = strike_diff           (행사가 차이 기준)
+
+v2.9 버그픽스:
+  _parse_expiry_display:
+    - ★ [BUG-2] MM/DD 일반 분기 이월 로직 제거
+      · 이전: candidate < today → +1년 (어제 만기 "04/21" → "20270421")
+      · 수정: 이월 없이 현재 연도 그대로 반환
+      · 0DTE/오늘 키워드 포함 분기에서만 이월 유지
+    - ★ [BUG-5] digits 8자리 유효성 검증 추가
+      · "04/21/2026" → digits="04212026" → month=42 오류 방지
+      · date() 생성 실패 시 하위 분기로 낙하
+    - ★ [BUG-6] 3-part 파싱 형식 판별 로직 수정
+      · 이전: y>1000이면 Y/M/D, 아니면 D/Y/M (MM/DD/YYYY 미지원)
+      · 수정: parts[2]>1000이면 MM/DD/YYYY, parts[0]>1000이면 YYYY/MM/DD
 ────────────────────────────────────────────────────────
 """
 
@@ -55,15 +68,18 @@ def _parse_expiry_display(display: str) -> str:
     """
     다양한 만기 형식 → YYYYMMDD.
     지원:
-      '[0DTE] 오늘 MM/DD(Wed)' 형식
-      '오늘 MM/DD(...)' 형식
-      MM/DD, YYYYMMDD, YYYY-MM-DD, YYYY/MM/DD
-    지나간 날짜면 내년으로 자동 이월.
+      YYYYMMDD (8자리 숫자)
+      YYYY-MM-DD, YYYY/MM/DD  (연도 우선 3-part)
+      MM/DD/YYYY              (미국식 3-part)
+      MM/DD                   (연도 생략, 현재 연도 사용 — 이월 없음)
+      '[0DTE] 오늘 MM/DD(...)' 또는 '오늘 MM/DD(...)' 형식
+        → 지나간 날짜면 내년으로 자동 이월 (0DTE/오늘 전용)
     """
     if not display or display in ("―", ""):
         return ""
 
-    # ── '[0DTE] 오늘 MM/DD(...)' 또는 '오늘 MM/DD(...)' 형식 처리 ──
+    # ── '[0DTE] 오늘 MM/DD(...)' 또는 '오늘 MM/DD(...)' 형식 ──────────
+    # 이 분기만 이월 로직 적용 (당일 만기 자동 롤 전용)
     _dte_match = re.search(r"(\d{1,2})/(\d{1,2})", display)
     if _dte_match and ("오늘" in display or "0DTE" in display or "DTE" in display):
         today = date.today()
@@ -77,21 +93,37 @@ def _parse_expiry_display(display: str) -> str:
         except (ValueError, TypeError):
             pass
 
+    # ── ★ [BUG-5] YYYYMMDD 8자리: date() 유효성 검증 후 반환 ──────────
     digits = "".join(c for c in display if c.isdigit())
     if len(digits) == 8:
-        return digits
+        try:
+            y, m, d = int(digits[:4]), int(digits[4:6]), int(digits[6:8])
+            return date(y, m, d).strftime("%Y%m%d")  # 유효하지 않으면 ValueError → 낙하
+        except (ValueError, TypeError):
+            pass  # 잘못된 날짜(예: month=42)면 하위 분기로 진행
+
+    # ── 3-part / 2-part 파싱 ─────────────────────────────────────────
     parts = re.split(r"[/\-\.]", display.strip())
     today = date.today()
     try:
         if len(parts) == 3:
-            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
-            return (date(y, m, d) if y > 1000 else date(d, y, m)).strftime("%Y%m%d")
+            a, b, c = int(parts[0]), int(parts[1]), int(parts[2])
+            # ★ [BUG-6] 연도(>1000) 위치로 형식 판별
+            if a > 1000:
+                # YYYY/MM/DD 또는 YYYY-MM-DD
+                return date(a, b, c).strftime("%Y%m%d")
+            elif c > 1000:
+                # MM/DD/YYYY (미국식)
+                return date(c, a, b).strftime("%Y%m%d")
+            # 연도 없는 3-part는 파싱 포기
+            return ""
+
         if len(parts) == 2:
             mm, dd = int(parts[0]), int(parts[1])
-            candidate = date(today.year, mm, dd)
-            if candidate < today:
-                candidate = date(today.year + 1, mm, dd)
-            return candidate.strftime("%Y%m%d")
+            # ★ [BUG-2] 이월 로직 제거 — 현재 연도 그대로 사용
+            # 이월이 필요한 케이스는 위의 0DTE/오늘 분기에서만 처리
+            return date(today.year, mm, dd).strftime("%Y%m%d")
+
     except (ValueError, TypeError):
         pass
     return ""

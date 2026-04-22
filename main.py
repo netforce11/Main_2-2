@@ -62,7 +62,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QTabWidget, QLabel, QMessageBox
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtGui import QFont, QKeySequence
 from PyQt5.QtWidgets import QShortcut
 
@@ -106,6 +106,9 @@ from tab_opt_intraday import OptIntradayGrid
 from kr_chart_tab import KoreaChartGrid       # ← Korea_1분 차트 탭
 
 
+# ── spread_tele 경로 등록 (Main2/spread_tele/) ───────────────────────
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "spread_tele"))
+
 # ── strategy_report 패키지 (IBKR/MAIN2/strategy_report/) ────────────
 # __file__ 이 상대경로일 때도 안전하게 Main2/ 절대경로를 확보
 _MAIN2_DIR = os.path.dirname(os.path.abspath(os.path.join(os.getcwd(), __file__)))
@@ -132,6 +135,11 @@ class EmptyGrid(GridTab):
 # ══════════════════════════════════════════════════════════════
 # 메인 윈도우
 # ══════════════════════════════════════════════════════════════
+class _ChartGrabBridge(QObject):
+    """백그라운드 스레드 → 메인스레드로 grab 요청을 전달하는 시그널 브릿지."""
+    request = pyqtSignal()
+
+
 class TradingDashboard(QMainWindow):
     """
     0DTE Master Dashboard v6.1 메인 윈도우.
@@ -156,6 +164,9 @@ class TradingDashboard(QMainWindow):
         self.tab_telegram = None   # 텔레그램 설정 탭
         self.tab_kr_chart = None   # Korea_1분 차트 탭
 
+        # 텔레그램 차트 grab 용 시그널 브릿지 (백그라운드→메인스레드)
+        self._chart_grab_bridge = _ChartGrabBridge()
+
         self._init_ui()
         self._init_timers()
 
@@ -167,59 +178,234 @@ class TradingDashboard(QMainWindow):
         self.setGeometry(40, 40, 1700, 980)
         self.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
 
-        # 탭 위젯 (하단 탭)
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.South)
         self.setCentralWidget(self.tabs)
 
-        # 탭 생성 헬퍼 — tab_name을 TabWrapper에 전달해 설정 저장/복원에 사용
         def add(grid_cls, label, *args, **kwargs):
-            grid    = grid_cls(*args, **kwargs)
+            grid     = grid_cls(*args, **kwargs)
             tab_name = label.split(".")[0].strip().replace(" ", "_")
-            wrapper = TabWrapper(grid, tab_name=tab_name)
+            wrapper  = TabWrapper(grid, tab_name=tab_name)
             self.tabs.addTab(wrapper, label)
             return grid
 
         # ── 탭 등록 ────────────────────────────────────────────
-        self.tab_callput = add(CallPutGrid,   "1. 콜-풋 (Main)", self)
-        init_chain_saver(self)   # ← chain_saver 초기화 (저장 스레드 + 스케줄러)
-        self.tab_balance = add(BalanceGrid,   "2. 잔고/PnL",     self)
-     ##   self.tab_sniper  = add(SniperGrid,    "3. 스나이퍼",     self)
-        self.tab_combo = add(ComboStrategyGrid, "4. 복합 전략",    self)
-     #   add(MultiPriceGrid,                   "5. 복수 현재가",  self)
-        self.tab_greeks  = add(GreeksGrid,    "6. Greeks Matrix",self)
-        # ★ v6.6: Greeks Matrix → chain_saver 버퍼 연동
-        # init_chain_saver 호출 시점엔 tab_greeks 미생성이므로 여기서 연결
+        self.tab_callput = add(CallPutGrid,        "1. 콜-풋 (Main)", self)
+        init_chain_saver(self)
+        self.tab_balance = add(BalanceGrid,        "2. 잔고/PnL",     self)
+        self.tab_combo   = add(ComboStrategyGrid,  "4. 복합 전략",    self)
+        self.tab_greeks  = add(GreeksGrid,         "6. Greeks Matrix",self)
         _buf = getattr(self, 'chain_buf', None)
         if _buf and hasattr(self.tab_greeks, 'attach_chain_buffer'):
             self.tab_greeks.attach_chain_buffer(_buf)
-        add(ChartGrid,                        "7. 1분봉 차트",   self)
-        add(OITrackerGrid,                    "8. OI 추적",      self)
-     #   self.tab_trading = add(TradingGrid,   "9. 주문/잔고",    self)
-     #   self.tab_kr      = add(KRFuturesGrid, "10. 한국선물옵션", self)
-    #   self.tabs.addTab(SpxHistoryGrid(self),   "📜 SPX 히스토리")
-     #   self.tabs.addTab(OptIntradayGrid(self),  "📊 옵션 분봉")
+        add(ChartGrid,                             "7. 1분봉 차트",   self)
+        add(OITrackerGrid,                         "8. OI 추적",      self)
+        self.tab_kr_chart = add(KoreaChartGrid,    "Korea_1분",  self)
 
-        # ── Korea_1분 차트 탭 (키움증권 API) ──────────────────────
-        self.tab_kr_chart = add(KoreaChartGrid, "🇰🇷 Korea_1분", self)
-
-        # ── 리포트 탭 ─────────────────────────────────────────────
-        self.tab_report = ReportTab(self)
+        self.tab_report   = ReportTab(self)
         self.tabs.addTab(self.tab_report, "📋 리포트")
 
-        # ── 텔레그램 탭 ───────────────────────────────────────────
         self.tab_telegram = TgConfigWidget()
         self.tabs.addTab(self.tab_telegram, "📡 텔레그램")
 
-        # ── Ctrl+1~10 단축키 — 탭 전환 ────────────────────────
+        # 텔레그램 정보 핸들러 등록
+        self._register_tg_info_handler()
+
+        # 단축키 Ctrl+1~10
         for i in range(min(10, self.tabs.count())):
-            key = f"Ctrl+{i+1}"
-            sc  = QShortcut(QKeySequence(key), self)
+            sc = QShortcut(QKeySequence("Ctrl+" + str(i + 1)), self)
             sc.activated.connect(lambda idx=i: self.tabs.setCurrentIndex(idx))
 
-        # ── 탭 전환 시 비활성 탭 제어 ───────────────────────────
-        # on_tab_activate() / on_tab_deactivate()를 구현한 탭만 호출됨
         self.tabs.currentChanged.connect(self._on_tab_changed)
+
+    def _register_tg_info_handler(self):
+        """텔레그램 '정보' 번호 선택 시 데이터 수집 후 전송하는 핸들러 등록."""
+        from telegram_bot.tg_command_router import TgCommandRouter
+        from telegram_bot.tg_client import TelegramClient
+
+        call_put = self.tab_callput
+
+        import threading as _th
+
+        # ── 브릿지 슬롯: 메인스레드에서 grab 후 백그라운드로 전송 ──
+        def _on_grab_requested():
+            """메인스레드에서 실행됨 (QueuedConnection 보장)."""
+            try:
+                img = call_put.grab_chart_image()
+                bar_type = getattr(call_put, 'combo_bar', None)
+                bar_text = bar_type.currentText() if bar_type else "1분"
+            except Exception as e:
+                img = b""
+                bar_text = "1분"
+            _th.Thread(target=_do_send, args=(img, bar_text), daemon=True).start()
+
+        def _do_send(img, bar_text):
+            """백그라운드 스레드에서 HTTP 전송."""
+            client = TelegramClient.get()
+            if img:
+                ok = client._send_photo_raw(img, "📊 실시간 " + bar_text + " 캔들차트")
+                if not ok:
+                    client._send_raw("⚠️ 차트 전송 실패")
+            else:
+                client._send_raw("⚠️ 차트 캡처 실패 (차트 데이터 없음)")
+
+        # 브릿지에 슬롯 연결 (QueuedConnection → 항상 메인스레드에서 실행)
+        self._chart_grab_bridge.request.connect(
+            _on_grab_requested, Qt.QueuedConnection)
+
+        def _handle_info(item_no, chat_id):
+            """백그라운드 스레드에서 호출."""
+            client = TelegramClient.get()
+
+            # ── 1번: 실시간 캔들 차트 ───────────────────────────
+            if item_no == 1:
+                if call_put is None:
+                    client._send_raw("⚠️ 차트 탭을 찾을 수 없습니다.")
+                    return
+                # 시그널 emit → QueuedConnection → 메인스레드 _on_grab_requested 실행
+                self._chart_grab_bridge.request.emit()
+
+            # ── 2번: 옵션 체인 ATM ──────────────────────────────
+            elif item_no == 2:
+                try:
+                    from core import REQ_CALL, REQ_PUT
+                    und     = getattr(call_put, 'und_price', None)
+                    strikes = getattr(call_put, 'call_strikes', [])
+                    cdata   = getattr(call_put, 'call_data', {})
+                    pdata   = getattr(call_put, 'put_data',  {})
+                    if not strikes or und is None:
+                        client._send_raw("⚠️ 옵션 체인 미조회 상태입니다.")
+                        return
+                    atm = min(range(len(strikes)), key=lambda i: abs(strikes[i] - und))
+                    rows = []
+                    for i in range(max(0, atm - 2), min(len(strikes), atm + 3)):
+                        c_last = cdata.get(REQ_CALL + i, {}).get('last', '―')
+                        p_last = pdata.get(REQ_PUT  + i, {}).get('last', '―')
+                        mark   = " <ATM" if i == atm else ""
+                        cl = "{:.2f}".format(c_last) if isinstance(c_last, float) else str(c_last)
+                        pl = "{:.2f}".format(p_last) if isinstance(p_last, float) else str(p_last)
+                        rows.append("C {:>7} | {:>5} | {:<7} P{}".format(
+                            cl, int(strikes[i]), pl, mark))
+                    header = "📋 옵션체인 ATM  SPX {:,.2f}\n콜       | 행사가 | 풋\n".format(und)
+                    client._send_raw(header + "\n".join(rows))
+                except Exception as e:
+                    client._send_raw("⚠️ ATM 조회 오류: " + str(e))
+
+            # ── 3번: 옵션 체인 OTM ──────────────────────────────
+            elif item_no == 3:
+                try:
+                    from core import REQ_CALL, REQ_PUT
+                    und     = getattr(call_put, 'und_price', None)
+                    strikes = getattr(call_put, 'call_strikes', [])
+                    cdata   = getattr(call_put, 'call_data', {})
+                    pdata   = getattr(call_put, 'put_data',  {})
+                    if not strikes or und is None:
+                        client._send_raw("⚠️ 옵션 체인 미조회 상태입니다.")
+                        return
+                    atm = min(range(len(strikes)), key=lambda i: abs(strikes[i] - und))
+                    rows = []
+                    for off in range(1, 6):
+                        ci = atm + off
+                        pi = atm - off
+                        if ci >= len(strikes) or pi < 0:
+                            break
+                        cl = cdata.get(REQ_CALL + ci, {}).get('last', '―')
+                        pl = pdata.get(REQ_PUT  + pi, {}).get('last', '―')
+                        cl = "{:.2f}".format(cl) if isinstance(cl, float) else str(cl)
+                        pl = "{:.2f}".format(pl) if isinstance(pl, float) else str(pl)
+                        rows.append("C OTM {:>7} | +{} / -{} | {:<7} P OTM".format(cl, off, off, pl))
+                    header = "📋 옵션체인 OTM  SPX {:,.2f}\n콜 OTM  | 거리 | 풋 OTM\n".format(und)
+                    client._send_raw(header + "\n".join(rows))
+                except Exception as e:
+                    client._send_raw("⚠️ OTM 조회 오류: " + str(e))
+
+            # ── 4번: 잔고 ───────────────────────────────────────
+            elif item_no == 4:
+                try:
+                    bal = self.tab_balance
+                    if bal is None:
+                        client._send_raw("⚠️ 잔고 탭 로딩 중입니다. 잠시 후 다시 시도해주세요.")
+                        return
+                    lines_out = ["💰 잔고 요약"]
+                    for attr_name in ('lbl_netliq', 'lbl_cash', 'lbl_unrealized', 'lbl_realized'):
+                        w = getattr(bal, attr_name, None)
+                        if w:
+                            lines_out.append(attr_name.replace('lbl_', '').upper() + ": " + w.text())
+                    msg = "\n".join(lines_out) if len(lines_out) > 1 else "⚠️ 잔고 데이터를 읽을 수 없습니다."
+                    client._send_raw(msg)
+                except Exception as e:
+                    client._send_raw("⚠️ 잔고 조회 오류: " + str(e))
+
+            # ── 5번: 현재 선물 지수 (/ES) ───────────────────────
+            elif item_no == 5:
+                und    = getattr(call_put, 'und_price', None)
+                is_fut = getattr(call_put, '_und_is_futures', False)
+                if und is None:
+                    client._send_raw("⚠️ 선물 지수 미수신 (IBKR 연결 확인)")
+                elif not is_fut:
+                    client._send_raw("ℹ️ 현재 장중 — 현물 SPX 사용 중\nSPX: {:,.2f}".format(und))
+                else:
+                    prev = getattr(call_put, 'und_prev', None)
+                    if prev and prev > 0:
+                        chg  = und - prev
+                        pct  = chg / prev * 100
+                        sign = "+" if chg >= 0 else ""
+                        client._send_raw(
+                            "📈 /ES 선물 지수\n현재가: {:,.2f}\n등락: {}{:,.2f} ({}{}%)".format(
+                                und, sign, chg, sign, round(pct, 2)))
+                    else:
+                        client._send_raw("📈 /ES 선물 지수\n현재가: {:,.2f}".format(und))
+
+            # ── 6번: 실시간 현물 지수 (SPX) ─────────────────────
+            elif item_no == 6:
+                und    = getattr(call_put, 'und_price', None)
+                is_fut = getattr(call_put, '_und_is_futures', False)
+                if und is None:
+                    client._send_raw("⚠️ 현물 지수 미수신 (장외 또는 IBKR 연결 확인)")
+                elif is_fut:
+                    client._send_raw(
+                        "ℹ️ 현재 장외 — /ES 선물 구독 중\n/ES: {:,.2f} (현물 SPX 아님)".format(und))
+                else:
+                    prev = getattr(call_put, 'und_prev', None)
+                    if prev and prev > 0:
+                        chg  = und - prev
+                        pct  = chg / prev * 100
+                        sign = "+" if chg >= 0 else ""
+                        client._send_raw(
+                            "📊 SPX 현물 지수\n현재가: {:,.2f}\n등락: {}{:,.2f} ({}{}%)".format(
+                                und, sign, chg, sign, round(pct, 2)))
+                    else:
+                        client._send_raw("📊 SPX 현물 지수\n현재가: {:,.2f}".format(und))
+            # ── 7번: 스프레드 조회 (콜/풋 선택) ─────────────────
+            elif item_no == 7:
+                try:
+                    from spread_tele.spread_config import CB_CALL, CB_PUT, CB_CANCEL
+                    client._send_inline_keyboard(
+                        "스프레드 종류를 선택하세요:",
+                        [
+                            [
+                                {"text": "📈 콜 스프레드", "callback_data": CB_CALL},
+                                {"text": "📉 풋 스프레드", "callback_data": CB_PUT},
+                            ],
+                            [{"text": "❌ 취소", "callback_data": CB_CANCEL}],
+                        ]
+                    )
+                except Exception as e:
+                    client._send_raw(f"⚠️ 스프레드 모듈 오류: {e}")
+
+            else:
+                client._send_raw("⚠️ 알 수 없는 번호입니다. (1~7)")
+
+        TgCommandRouter().register_info_handler(_handle_info)
+
+        # ── spread_tele 탭 참조 주입 ────────────────────────────
+        try:
+            from spread_tele.spread_tele_bot import set_tab as spread_set_tab
+            spread_set_tab(call_put)
+            print("[spread_tele] 탭 참조 주입 완료")
+        except Exception as e:
+            print(f"[spread_tele] 탭 참조 주입 실패: {e}")
+
 
     # ── 탭 전환 제어 ────────────────────────────────────────
     def _on_tab_changed(self, idx: int):

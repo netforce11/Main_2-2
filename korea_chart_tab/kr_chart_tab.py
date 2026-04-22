@@ -62,6 +62,10 @@ from kr_chart_hlines   import on_chart_click, on_hline_chk, del_hlines, redraw_h
 from kr_chart_labels   import on_chart_label_click, on_label_chk, del_labels, redraw_labels
 from kr_chart_peaks    import peak1, peak2, update_peak3
 from kr_chart_daily    import toggle_daily_view, load_daily_data, render_daily
+from kr_chart_overlay  import (
+    init_overlays, on_overlay_chk,
+    redraw_overlays, clear_all_overlays,
+)
 
 KR_DATA_ROOT   = Path(r"C:\data\Korea\stock_1M")
 CHART_SAVE_DIR = Path(r"C:\data\chart_save")
@@ -107,6 +111,7 @@ class KoreaChartGrid(QWidget):
         self._build()
         self._load_watchlist()
         self._apply_theme()
+        init_overlays(self)   # 오버레이 상태 초기화
 
     # ── 위임 바인딩 ───────────────────────────────────────────
     _apply_theme          = apply_theme
@@ -141,6 +146,9 @@ class KoreaChartGrid(QWidget):
     _toggle_daily_view    = toggle_daily_view
     _load_daily_data      = load_daily_data
     _render_daily         = render_daily
+    _on_overlay_chk       = on_overlay_chk
+    _redraw_overlays      = redraw_overlays
+    _clear_all_overlays   = clear_all_overlays
 
     def _on_multi_chk(self, days, chk, state):
         from kr_chart_data import on_multi_chk
@@ -159,7 +167,7 @@ class KoreaChartGrid(QWidget):
         except Exception:
             pass
         for code, name in items.items():
-            self.watch_list.addItem(f"{name}({code})")
+            self._add_watch_item(code, name)
 
     def _save_watchlist(self):
         items = {}
@@ -178,18 +186,51 @@ class KoreaChartGrid(QWidget):
         if not ok or not txt.strip():
             return
         txt = txt.strip()
-        if "(" in txt:
-            self.watch_list.addItem(txt)
+        if "(" in txt and txt.endswith(")"):
+            name = txt[:txt.rfind("(")]
+            code = txt[txt.rfind("(")+1:-1]
         else:
             code = txt.zfill(6)
-            self.watch_list.addItem(f"종목({code})")
+            name = "종목"
+        self._add_watch_item(code, name)
         self._save_watchlist()
 
     def _w_del(self):
         r = self.watch_list.currentRow()
         if r >= 0:
+            txt = self.watch_list.item(r).text()
+            if "(" in txt and txt.endswith(")"):
+                code = txt[txt.rfind("(")+1:-1]
+                # 오버레이 활성이면 제거
+                if code in getattr(self, '_overlays', {}):
+                    self._clear_all_overlays()
+                # 체크박스 위젯 제거
+                chk = self._overlay_chks.pop(code, None)
+                if chk:
+                    self._watch_overlay_layout.removeWidget(chk)
+                    chk.deleteLater()
             self.watch_list.takeItem(r)
             self._save_watchlist()
+
+    def _add_watch_item(self, code, name):
+        """관심종목 리스트에 아이템 + 오버레이 체크박스 추가."""
+        from PyQt5.QtWidgets import QCheckBox
+        self.watch_list.addItem(f"{name}({code})")
+        chk = QCheckBox(f"  {name}({code})")
+        chk.setFixedHeight(20)
+        chk.setStyleSheet(
+            "QCheckBox{color:#00BFFF;font-size:10px;}"
+            "QCheckBox::indicator{width:13px;height:13px;}"
+            "QCheckBox::indicator:unchecked{border:1px solid #446688;"
+            "background:#111122;border-radius:2px;}"
+            "QCheckBox::indicator:checked{border:1px solid #00BFFF;"
+            "background:#003366;border-radius:2px;}")
+        chk.setToolTip(f"{name} 오버레이 ON/OFF (우측 Y축 라인차트)")
+        chk.stateChanged.connect(
+            lambda state, c=code, n=name:
+                self._on_overlay_chk(c, n, state == 2))
+        self._overlay_chks[code] = chk
+        self._watch_overlay_layout.addWidget(chk)
 
     def _on_watch_click(self, item):
         txt = item.text()

@@ -14,8 +14,9 @@ from PyQt5.QtWidgets import (
     QLabel, QPushButton, QLineEdit,
     QGroupBox, QListWidget, QCheckBox, QSpinBox,
     QCalendarWidget, QFrame, QScrollArea,
+    QListWidgetItem,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize
 
 
 def build_sidebar(self) -> QScrollArea:
@@ -62,10 +63,25 @@ def build_sidebar(self) -> QScrollArea:
     sym_row.addWidget(self.sym_in)
     sym_v.addLayout(sym_row)
 
+    # 오버레이 안내 라벨
+    ovl_lbl = QLabel("□ 체크: 오버레이 (우측Y축, 하늘색 라인)")
+    ovl_lbl.setStyleSheet("color:#00BFFF;font-size:10px;")
+    sym_v.addWidget(ovl_lbl)
+
+    # 관심종목 + 오버레이 체크박스 컨테이너
+    # watch_list는 기존 유지, 오버레이 체크박스는 watch_overlay_container에 별도 관리
     self.watch_list = QListWidget()
-    self.watch_list.setMaximumHeight(90)
+    self.watch_list.setMaximumHeight(110)
     self.watch_list.itemClicked.connect(self._on_watch_click)
     sym_v.addWidget(self.watch_list)
+
+    # 오버레이 체크박스 컨테이너 (watch_list 아이템과 1:1 대응)
+    self._overlay_chks = {}   # {code: QCheckBox}
+    self._watch_overlay_w = QWidget()
+    self._watch_overlay_layout = QVBoxLayout(self._watch_overlay_w)
+    self._watch_overlay_layout.setSpacing(1)
+    self._watch_overlay_layout.setContentsMargins(0, 0, 0, 0)
+    sym_v.addWidget(self._watch_overlay_w)
 
     brow = QHBoxLayout(); brow.setSpacing(2)
     ba = QPushButton("추가"); ba.setFixedHeight(22)
