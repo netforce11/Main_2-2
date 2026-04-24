@@ -140,10 +140,20 @@ class OrderLogicMixin:
         # chk_order_confirm OFF 시 _skip_order_confirm=True → 팝업 건너뜀
         skip_confirm = getattr(self, '_skip_order_confirm', False)
         if not skip_confirm:
-            ret = QMessageBox.question(self, f"주문 확인 — {action_kr}",
-                f"⚠ 아래 주문을 전송합니다.\n\n{msg}\n\n계속하시겠습니까?",
-                QMessageBox.Yes | QMessageBox.No)
-            if ret != QMessageBox.Yes: return
+            dlg = QMessageBox(self)
+            dlg.setWindowTitle(f"주문 확인 — {action_kr}")
+            dlg.setText(f"⚠ 아래 주문을 전송합니다.\n\n{msg}\n\n계속하시겠습니까?")
+            dlg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            dlg.setDefaultButton(QMessageBox.Yes)   # 기본값 Yes
+            yes_btn = dlg.button(QMessageBox.Yes)   # Yes 버튼 녹색 강조
+            if yes_btn:
+                yes_btn.setStyleSheet(
+                    "QPushButton{background:#1a5c2e;color:#00ff88;"
+                    "font-weight:bold;padding:4px 16px;border-radius:4px;"
+                    "border:1px solid #00ff88;}"
+                    "QPushButton:hover{background:#2a7c3e;}")
+            if dlg.exec_() != QMessageBox.Yes:
+                return
         if not self.mw.connected:
             QMessageBox.warning(self,"미연결","TWS에 먼저 연결하세요.")
             return
@@ -277,21 +287,31 @@ class OrderLogicMixin:
     def set_sniper_target(self, strike: str, right: str, expiry: str):
         """
         core_fetch._tbl_click() 에서 호출.
-        행사가·C/P·만기를 스나이퍼 탭 입력 필드에 자동 입력한다.
+        행사가·C/P·만기를 신규 탭 및 스나이퍼 탭 입력 필드에 공통 입력한다.
+        포커스는 신규 탭으로 전환한다.
         """
-        if not hasattr(self, 'snp_strike'):
-            return
-        self.snp_strike.setText(str(strike))
-        idx = 0 if right.upper() == "C" else 1
-        self.snp_right.setCurrentIndex(idx)
-        self.snp_expiry.setText(str(expiry))
-        # 스나이퍼 탭으로 자동 전환
+        # ── 신규 탭 공통 입력 (qord_side / qord_strike) ──────
+        if hasattr(self, 'qord_side'):
+            self.qord_side.setText(right.upper())
+        if hasattr(self, 'qord_strike'):
+            self.qord_strike.setText(str(strike))
+
+        # ── 스나이퍼 탭 공통 입력 ────────────────────────────
+        if hasattr(self, 'snp_strike'):
+            self.snp_strike.setText(str(strike))
+        if hasattr(self, 'snp_right'):
+            self.snp_right.setCurrentIndex(0 if right.upper() == "C" else 1)
+        if hasattr(self, 'snp_expiry'):
+            self.snp_expiry.setText(str(expiry))
+
+        # ── 신규 탭으로 포커스 전환 (기존: 스나이퍼 탭) ─────
         tab_w = getattr(self, '_qord_tab_widget', None)
         if tab_w:
             for i in range(tab_w.count()):
-                if "스나이퍼" in tab_w.tabText(i):
+                if "신규" in tab_w.tabText(i):
                     tab_w.setCurrentIndex(i)
                     break
+
         if hasattr(self, 'snp_status'):
             self.snp_status.setText(
                 f"✅ 자동 입력: {strike}{right}  만기={expiry}")

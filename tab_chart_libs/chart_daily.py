@@ -42,7 +42,7 @@ try:
     from common import DATA_ROOT
 except Exception:
     from pathlib import Path
-    DATA_ROOT = Path(r"C:\data\US_StockData")
+    DATA_ROOT = Path(r"/home/netforce/US_Data/US_stockData")
 
 
 # ══════════════════════════════════════════════════════════════

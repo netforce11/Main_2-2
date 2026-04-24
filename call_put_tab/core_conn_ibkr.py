@@ -20,6 +20,7 @@ class ConnIbkrMixin:
         self.und_prev      = None
         self._last_tick_time  = None   # [v6.5-1] 타임스탬프 리셋
         self._err354_count = 0         # reset: clean session, MDT state unknown
+        self._spxw_today_selected = False  # ★ 만기 자동선택 덮어쓰기 방지 플래그 리셋
         if hasattr(self, 'lbl_und'):
             self.lbl_und.setText("조회 중…")
 
@@ -59,6 +60,17 @@ class ConnIbkrMixin:
         self.combo_spxw.blockSignals(False)
         self._on_spxw_select(found_idx)
         self._log(f"🔄 SPXW 0DTE 자동 선택: {today_str}  ← 조회 버튼을 눌러 체인을 로드하세요.")
+
+        # ★ _auto_select_next_expiry 가 이 날짜를 덮어쓰지 못하도록 플래그 설정
+        # _req_und() → _next_expiry_timer(1초) → _auto_select_next_expiry 경로가
+        # _auto_fetch_spxw_today(2500ms) 이전에 발화되어 combo_exp 를 내일 날짜로
+        # 변경하는 버그 방지. 플래그가 True 이면 _auto_select_next_expiry 는 skip.
+        self._spxw_today_selected = True
+
+        # 혹시 타이머가 아직 살아있으면 즉시 취소
+        t_exp = getattr(self, '_next_expiry_timer', None)
+        if t_exp is not None:
+            t_exp.stop()
 
     def _on_error(self, rid, code, msg):
         # 정상 알림 / 무해한 에러 무시

@@ -178,9 +178,13 @@ class BalanceGrid(GridTab):
         bridge.position_sig.connect(self._on_pos)
         bridge.open_order_sig.connect(self._on_order)
         # ── 실시간 PnL 브릿지 연결 ─────────────────────────────
-        # bridge.pnl_sig 가 있으면 연결 (core.py SignalBridge 정의 여부 확인)
         if hasattr(bridge, 'pnl_sig'):
             bridge.pnl_sig.connect(self._on_rt_pnl)
+        # ── 주문/체결 DB 저장 — 콜-풋/콤보 통합 ────────────────
+        if hasattr(bridge, 'order_status_sig'):
+            bridge.order_status_sig.connect(self._on_order_status_log)
+        if hasattr(bridge, 'exec_sig'):
+            bridge.exec_sig.connect(self._on_exec_log)
 
     def _refresh(self):
         self.tbl_acct.setRowCount(0); self.tbl_pos.setRowCount(0)
@@ -202,6 +206,7 @@ class BalanceGrid(GridTab):
         if self.mw.connected:
             self._refresh()
             self._start_rt_pnl()
+        self._jnl_load()   # 오늘 날짜 매매일지 자동 조회
 
     def on_tab_deactivate(self):
         """Tab2 에서 벗어날 때 호출 — 실시간 PnL 구독 해지."""
@@ -601,6 +606,46 @@ class BalanceGrid(GridTab):
         else:
             self._jnl_summary_lbl.setText(f"{date_str} — 체결 없음")
             self._jnl_summary_lbl.setStyleSheet("color:#555;font-size:12px;border:none;")
+
+    # ══════════════════════════════════════════════════════════════
+    # 주문/체결 DB 저장 — bridge 시그널 통합 핸들러
+    # 콜-풋 탭 / 복합주문 탭 구분 없이 모든 주문·체결을 한 곳에서 기록
+    # ══════════════════════════════════════════════════════════════
+
+    def _on_order_status_log(self, oid: int, status: str,
+                             filled: float, remaining: float) -> None:
+        """bridge.order_status_sig → 모든 주문 상태변경 DB 저장."""
+        try:
+            from trade_log import log_order, get_und_context
+            ctx = get_und_context()
+            log_order(
+                oid=oid,
+                source='bridge',
+                status=status,
+                qty=filled + remaining,
+                price=0.0,
+                und_price=ctx.get('und_price'),
+            )
+        except Exception as e:
+            print(f"[trade_log] order_log 저장 오류: {e}")
+
+    def _on_exec_log(self, oid: int, sym: str,
+                     side: str, qty: float, price: float) -> None:
+        """bridge.exec_sig → 모든 체결 DB 저장 + BUY/SELL 매칭."""
+        try:
+            from trade_log import log_exec, run_match, get_und_context
+            log_exec(
+                oid=oid,
+                source='bridge',
+                sym=sym,
+                action=side,
+                qty=qty,
+                price=price,
+                und_ctx=get_und_context(),
+            )
+            run_match('bridge', sym, '', '', 0)
+        except Exception as e:
+            print(f"[trade_log] executions 저장 오류: {e}")
 
     def _apply_theme(self):
         """TabWrapper 다크/라이트 전환 시 호출 — 테이블 색상 명시 재적용."""

@@ -1,0 +1,210 @@
+"""
+greeks_render_throttle.py — 렌더 부하 최적화
+════════════════════════════════════════════════════════════════
+실시간 렌더가 계속되면 생기는 부하 문제와 해결 전략.
+
+[문제]
+  · 스냅샷 범위 확대(±2.5%) → 한 번에 수백 개 셀 렌더
+  · QTableWidget.setItem() 은 매번 UI 갱신 → 누적 부하
+  · 데이터가 자주 바뀌지 않아도 매 flush마다 전체 렌더
+
+[해결 전략]
+  1. 더티플래그(DirtySet): 변경된 셀만 렌더
+  2. 렌더 스로틀: 최소 300ms 간격 (THROTTLE_MS 유지)
+  3. 만기별 분리: 0DTE만 즉시 렌더, +1/+2DTE는 느린 주기
+  4. 뷰포트 클리핑: 화면에 보이는 행만 렌더 (QTableWidget 스크롤)
+  5. 배치 업데이트: viewport().update() 한 번에 호출
+
+[사용법]
+  throttle = RenderThrottle(table, flush_fn)
+  throttle.mark_dirty(row, col)     # 변경 셀 표시
+  throttle.flush_if_needed()        # 타이머에서 호출
+"""
+
+from __future__ import annotations
+import time
+import logging
+from typing import Set, Tuple, Callable, Optional
+
+from PyQt5.QtWidgets import QTableWidget
+from PyQt5.QtCore    import QTimer
+
+log = logging.getLogger(__name__)
+
+THROTTLE_MS     = 300    # 최소 렌더 간격 (ms)
+SLOW_THROTTLE   = 1000   # +1/+2DTE 느린 렌더 간격 (ms)
+
+
+class DirtySet:
+    """
+    변경된 (row, col) 셀을 추적.
+    flush 시 변경분만 렌더링.
+    """
+
+    def __init__(self):
+        self._dirty: Set[Tuple[int, int]] = set()
+        self._all_dirty = False   # True 이면 전체 렌더
+
+    def mark(self, row: int, col: int):
+        self._dirty.add((row, col))
+
+    def mark_all(self):
+        self._all_dirty = True
+        self._dirty.clear()
+
+    def pop_dirty(self, total_rows: int, total_cols: int):
+        """더티 셀 목록 반환 후 초기화."""
+        if self._all_dirty:
+            result = [(r, c)
+                      for r in range(total_rows)
+                      for c in range(total_cols)]
+            self._all_dirty = False
+        else:
+            result = list(self._dirty)
+        self._dirty.clear()
+        return result
+
+    def has_dirty(self) -> bool:
+        return self._all_dirty or bool(self._dirty)
+
+    def count(self) -> int:
+        return -1 if self._all_dirty else len(self._dirty)
+
+
+class RenderThrottle:
+    """
+    QTableWidget 렌더 스로틀러.
+
+    · 변경된 셀만 렌더 (DirtySet 기반)
+    · 최소 THROTTLE_MS 간격 보장
+    · 배치 업데이트로 UI repaint 최소화
+    """
+
+    def __init__(self, table: QTableWidget,
+                 render_fn: Callable,
+                 throttle_ms: int = THROTTLE_MS):
+        """
+        table      : 렌더 대상 QTableWidget
+        render_fn  : render_fn(dirty_cells) 호출 시 실제 렌더 수행
+        throttle_ms: 최소 렌더 간격 (ms)
+        """
+        self._table      = table
+        self._render_fn  = render_fn
+        self._throttle   = throttle_ms / 1000.0   # seconds
+        self._last_flush = 0.0
+        self._dirty      = DirtySet()
+
+        self._timer = QTimer()
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._do_flush)
+
+    def mark_dirty(self, row: int, col: int):
+        """셀 변경 표시."""
+        self._dirty.mark(row, col)
+        self._schedule()
+
+    def mark_all_dirty(self):
+        """전체 재렌더 표시 (만기 변경 등)."""
+        self._dirty.mark_all()
+        self._schedule()
+
+    def _schedule(self):
+        if not self._timer.isActive():
+            elapsed = time.monotonic() - self._last_flush
+            delay   = max(0, int((self._throttle - elapsed) * 1000))
+            self._timer.start(delay)
+
+    def _do_flush(self):
+        if not self._dirty.has_dirty():
+            return
+
+        rows = self._table.rowCount()
+        cols = self._table.columnCount()
+        dirty_cells = self._dirty.pop_dirty(rows, cols)
+
+        if not dirty_cells:
+            return
+
+        # ── 배치 업데이트: setUpdatesEnabled 로 repaint 최소화
+        self._table.setUpdatesEnabled(False)
+        try:
+            self._render_fn(dirty_cells)
+        finally:
+            self._table.setUpdatesEnabled(True)
+            self._table.viewport().update()
+
+        self._last_flush = time.monotonic()
+        n = len(dirty_cells)
+        total = rows * cols
+        if n < total:
+            log.debug("[RenderThrottle] 부분 렌더: %d/%d 셀", n, total)
+
+    def force_flush(self):
+        """즉시 렌더 (정지/초기화 시 사용)."""
+        self._timer.stop()
+        self._do_flush()
+
+
+class ViewportClipper:
+    """
+    QTableWidget의 현재 뷰포트(스크롤 위치)에서
+    보이는 행 범위만 렌더링.
+
+    · 수백 행이 있어도 화면에 보이는 것만 처리
+    · 스크롤 시 자동으로 새 범위 렌더
+    """
+
+    def __init__(self, table: QTableWidget):
+        self._table = table
+
+    def visible_row_range(self) -> Tuple[int, int]:
+        """현재 뷰포트에서 보이는 (첫 행, 마지막 행) 반환."""
+        vp   = self._table.viewport()
+        top  = self._table.rowAt(0)
+        bot  = self._table.rowAt(vp.height() - 1)
+        if top < 0:
+            top = 0
+        if bot < 0:
+            bot = self._table.rowCount() - 1
+        return top, bot
+
+    def filter_visible(self, dirty_cells: list) -> list:
+        """더티 셀 중 현재 뷰포트에 보이는 것만 필터링."""
+        top, bot = self.visible_row_range()
+        return [(r, c) for r, c in dirty_cells if top <= r <= bot]
+
+
+# ══════════════════════════════════════════════════════════════
+# 렌더 부하 분석 보고서 (참고용)
+# ══════════════════════════════════════════════════════════════
+"""
+[현재 상태 분석]
+
+현재 _flush() 호출 시:
+  · strikes × 2 (콜/풋) × 4 (그릭) = ~168개 셀 (ATM±10 기준)
+  · 300ms마다 전체 렌더 = 초당 3.3회 × 168셀 = 554 setItem/초
+
+±2.5% 범위로 확대 시:
+  · SPX 기준 스트라이크 ~60개 × 2 × 4 = ~480개 셀 (step=5)
+  · 300ms마다 전체 렌더 = 초당 3.3회 × 480셀 = 1,584 setItem/초
+
+  → CPU 부하 약 3배 증가
+
+[해결 후]
+
+더티플래그 적용 시:
+  · 실제 변경된 셀만 렌더 (스냅샷: 1분 간격이라 변화량 적음)
+  · 0DTE 실시간: 초당 수십 개 변경 → 여전히 빠름
+  · +1/+2DTE 스냅샷: 1분에 한 번 변경 → 부하 거의 없음
+
+뷰포트 클리핑 적용 시:
+  · 화면에 20행이 보인다면 480셀 → 80셀만 처리
+  · 부하 80% 감소
+
+배치 업데이트 적용 시:
+  · setUpdatesEnabled(False) → 렌더 완료 후 1회 repaint
+  · UI 깜빡임 제거 + 렌더 속도 향상
+
+최종 예상 부하:
+  · ATM±10 기존 대비 부하 유사하거나 오히려 감소
+"""

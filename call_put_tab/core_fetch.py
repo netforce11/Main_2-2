@@ -248,6 +248,12 @@ class CoreFetchMixin(CoreFetchPosMixin):
         if not getattr(self, '_und_is_futures', False):
             return  # 장중이면 실행 안 함
 
+        # ★ _auto_fetch_spxw_today() 가 이미 오늘 날짜로 세팅했으면 덮어쓰지 않음
+        # (연결 초기화 시 _req_und(300ms) → 타이머(1초=1300ms) 가
+        #  _auto_fetch_spxw_today(2500ms) 보다 먼저 발화되어 내일 날짜로 바꾸는 버그 방지)
+        if getattr(self, '_spxw_today_selected', False):
+            return
+
         target = self._next_trading_day()
 
         # combo_exp 항목 탐색: _expiry_list = [(label, code, tag), ...]
@@ -504,7 +510,8 @@ class CoreFetchMixin(CoreFetchPosMixin):
             self._init_tbl(self.tbl_call, self.call_strikes)
             self._init_tbl(self.tbl_put,  self.put_strikes)
 
-            ticks = "100,101,106"
+            # 100=옵션거래량, 101=OI, 104=히스토리컬IV, 106=IV
+            ticks = "100,101,104,106"
             if self.call_strikes:
                 _c0 = make_opt_contract_safe(sym, self.call_strikes[0], "C", expiry, tag)
                 self._log(
@@ -736,6 +743,14 @@ class CoreFetchMixin(CoreFetchPosMixin):
             self._pp_switch_to_und()
 
         self._req_und(sym)
+
+        # ④ _req_und 내부에서 재예약된 만기 자동 선택 타이머 즉시 재취소
+        # → 더블클릭 시 combo_exp 날짜가 강제 변경되는 버그 방지
+        #   (_req_und 가 장외 감지 시 _next_expiry_timer.start(1000) 을 재호출하므로
+        #    ③번 취소만으로는 부족하며, _req_und 호출 직후 한 번 더 취소해야 함)
+        t_exp = getattr(self, '_next_expiry_timer', None)
+        if t_exp is not None:
+            t_exp.stop()
 
         t = getattr(self, '_watch_dbl_timer', None)
         if t is None:

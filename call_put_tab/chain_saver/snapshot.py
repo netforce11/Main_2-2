@@ -68,19 +68,30 @@ def request_next(ib, sym: str, und: float,
     atm     = round(und / step) * step
     strikes = [atm + i * step for i in range(-10, 11)]
 
+    # ★ SPX/SPXW 는 만기일에 따라 tradingClass(tag) 가 달라짐
+    #   tag="" 로 요청하면 IBKR 이 계약을 찾지 못해 틱이 오지 않아 저장 0건 버그
+    #   → _resolve_spx_trading_class() 로 정확한 tag 계산 후 전달
+    from core import _resolve_spx_trading_class
+    if sym in ("SPX", "SPXW"):
+        tag = _resolve_spx_trading_class(sym, nxt, "")
+    else:
+        tag = ""
+
     next_map.clear()
     rid_c, rid_p = NEXT_C_START, NEXT_P_START
 
     for st in strikes:
         if rid_c < NEXT_C_START + NEXT_SLOTS:
             next_map[rid_c] = (nxt, st, "C")
-            _req(ib, rid_c, make_opt_contract(sym, st, "C", nxt, ""))
+            _req(ib, rid_c, make_opt_contract(sym, st, "C", nxt, tag))
             rid_c += 1
         if rid_p < NEXT_P_START + NEXT_SLOTS:
             next_map[rid_p] = (nxt, st, "P")
-            _req(ib, rid_p, make_opt_contract(sym, st, "P", nxt, ""))
+            _req(ib, rid_p, make_opt_contract(sym, st, "P", nxt, tag))
             rid_p += 1
 
+    log.info("[Snapshot] request_next: %s 만기=%s tag=%s strikes=%d개",
+             sym, nxt, tag, len(strikes))
     return nxt
 
 

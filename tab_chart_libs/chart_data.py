@@ -50,10 +50,17 @@ try:
     from common import DATA_ROOT
 except Exception:
     from pathlib import Path
-    DATA_ROOT = Path(r"C:\data\US_StockData")
+    DATA_ROOT = Path("/home/netforce/US_Data/US_stockData")
 
 from chart_theme import _THEME
 from chart_workers import CandlestickItem
+
+# ── 순환참조 방지: chart_tab_ibkr 은 내부에서 lazy import 하므로
+#    여기서는 파일 상단에 한 번만 import (chart_tab_ibkr → chart_data 방향 없음)
+from chart_tab_ibkr import (
+    fetch_ibkr_history, fetch_polygon_history,
+    load_day_df, download_day,
+)
 
 
 # ── KST 변환 ────────────────────────────────────────────────
@@ -162,14 +169,6 @@ def do_multi_day(self, num_days: int):
     if PG: self.p1.autoRange()
     push_trend_df(self)
 
-
-# ── IBKR 과거 ────────────────────────────────────────────
-
-# IBKR/Polygon 과거 요청 → chart_tab_ibkr.py (chart_ibkr.py 는 Main2 기존 파일과 충돌 방지)
-from chart_tab_ibkr import (
-    fetch_ibkr_history, fetch_polygon_history,
-    load_day_df, download_day,
-)
 
 def update_display(self, force_regular=False):
     raw = self.df_raw

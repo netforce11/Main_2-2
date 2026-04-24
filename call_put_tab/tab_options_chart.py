@@ -112,7 +112,11 @@ class ChartMixin(HistoryMixin):
     # ─────────────────────────────────────────────────────────
     def _on_tick_price(self, rid, tt, price, attrib=None):
         # attrib=None: TWS가 4번째 인자(TickAttrib)를 전달할 수 있음.
-        # ConnSignalsMixin._on_tick_price 와 시그니처를 맞춰 TypeError 방지.
+        # Linux/Python 3.12: price가 float이 아닌 타입으로 올 수 있으므로 변환.
+        try:
+            price = float(price)
+        except (TypeError, ValueError):
+            return
         if price <= 0: return
         QTimer.singleShot(0, lambda: self._apply_tick_price(rid, tt, price))
 

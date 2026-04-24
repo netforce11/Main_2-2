@@ -557,6 +557,7 @@ class CoreFetchPosMixin:
     def _connect_exec_auto_refresh(self):
         """
         execDetails 콜백 후킹 → OPT/FOP 체결 시 _refresh_positions() 자동 호출.
+        DB 저장은 tab_account.py bridge 시그널에서 일괄 처리.
         _connect_signals() 또는 _on_connected() 에서 1회만 호출.
         """
         if getattr(self, '_exec_auto_refresh_connected', False):
@@ -575,26 +576,10 @@ class CoreFetchPosMixin:
             if getattr(contract, 'secType', '') not in ('OPT', 'FOP'):
                 return
 
-            sym    = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
-            side   = getattr(execution, 'side', '')
-            qty    = getattr(execution, 'shares', 0)
-            price  = getattr(execution, 'price', 0.0)
-            oid    = getattr(execution, 'orderId', 0)
-            expiry = getattr(contract, 'lastTradeDateOrContractMonth', '')[:8]
-            right  = getattr(contract, 'right', '')
-            strike = float(getattr(contract, 'strike', 0))
+            sym  = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
+            side = getattr(execution, 'side', '')
+            qty  = getattr(execution, 'shares', 0)
             self._log(f"✅ 체결 감지: {sym}  {side}  {qty}계약 → 잔고 자동 갱신")
-
-            # ── DB 저장 ──────────────────────────────────────
-            try:
-                from trade_log import log_exec, run_match, get_und_context
-                log_exec(oid=oid, source='callput', sym=sym, action=side,
-                         qty=qty, price=price, expiry=expiry,
-                         right=right, strike=strike,
-                         und_ctx=get_und_context())
-                run_match('callput', sym, expiry, right, strike)
-            except Exception as e:
-                self._log(f"⚠ trade_log 저장 오류: {e}")
 
             # 2초 후 잔고 갱신 (IBKR 서버 포지션 반영 대기)
             QTimer.singleShot(2000, self._refresh_positions)

@@ -6,6 +6,10 @@ core.py 300줄 초과로 분리.
   - IBapi.historicalDataUpdate() 추가 → keepUpToDate=True 실시간 바 수신
   - bridge.hist_bar_update 시그널로 emit (hist_bar 와 동일 직렬화 방식)
   - IBapi (더미 클래스) 에 cancelHistoricalData 추가
+
+[S10] 변경사항:
+  - 순환 import 제거: "from core import ..." 대신 필요한 것만 직접 정의/참조
+    core.py → core_contract.py → core.py 순환 구조 해소
 """
 try:
     from ibapi.client import EClient
@@ -19,10 +23,17 @@ except ModuleNotFoundError:
 from PyQt5.QtCore import pyqtSignal, QObject
 from datetime import datetime
 
-from core import (
-    SYMBOL_CFG, DEFAULT_CFG, INDEX_SYM,
-    bridge, SignalBridge,
-)
+# ── 순환 import 방지: core의 상수/bridge를 직접 참조하지 않고
+#    런타임에 core 모듈에서 가져온다 (core가 완전히 로드된 후 접근)
+def _get_core():
+    import core as _core
+    return _core
+
+def _bridge():
+    return _get_core().bridge
+
+# SYMBOL_CFG, DEFAULT_CFG, INDEX_SYM, FUT_SYM 은 함수 내부에서
+# _get_core() 를 통해 접근 → 모듈 로드 시점 순환 참조 없음
 
 
 # ══════════════════════════════════════════════════════════════
@@ -36,7 +47,7 @@ if IBAPI_AVAILABLE:
 
         def nextValidId(self, orderId):
             self._next_id = orderId
-            bridge.connected.emit()
+            _bridge().connected.emit()
             # ── 연결 즉시 계좌 잔고 영구 구독 ─────────────────────
             # reqId=9901 고정, IB가 변경될 때마다 자동 push
             # → _on_whatif_acct_value 에서 _whatif_acct_cache 갱신
@@ -47,35 +58,35 @@ if IBAPI_AVAILABLE:
                 print(f"[core] reqAccountSummary 구독 실패: {e}")
 
         def tickPrice(self, reqId, tickType, price, attrib):
-            bridge.tick_price.emit(reqId, int(tickType), float(price))
+            _bridge().tick_price.emit(reqId, int(tickType), float(price))
 
         def tickOptionComputation(self, reqId, tickType, tickAttrib,
                                   impliedVol, delta, optPrice, pvDividend,
                                   gamma, vega, theta, undPrice):
             def f(v): return float(v) if v is not None else 0.0
-            bridge.tick_option.emit(reqId, int(tickType),
+            _bridge().tick_option.emit(reqId, int(tickType),
                 f(impliedVol), f(delta), f(optPrice), f(gamma), f(vega), f(theta))
 
         def error(self, reqId, errorCode, errorString, advancedOrderRejectJson=None):
-            bridge.error_sig.emit(reqId, int(errorCode), str(errorString))
+            _bridge().error_sig.emit(reqId, int(errorCode), str(errorString))
 
         def accountSummary(self, reqId, account, tag, value, currency):
-            bridge.acct_value.emit(str(tag), str(value), str(currency), str(account))
+            _bridge().acct_value.emit(str(tag), str(value), str(currency), str(account))
 
         def accountSummaryEnd(self, reqId):
-            bridge.acct_end.emit()
+            _bridge().acct_end.emit()
 
         def position(self, account, contract, position, avgCost):
-            bridge.position_sig.emit(
+            _bridge().position_sig.emit(
                 str(account), str(contract.symbol),
                 str(getattr(contract, 'right', '')),
                 float(position), float(avgCost))
 
         def positionEnd(self):
-            bridge.position_end.emit()
+            _bridge().position_end.emit()
 
         def openOrder(self, orderId, contract, order, orderState):
-            bridge.open_order_sig.emit(
+            _bridge().open_order_sig.emit(
                 int(orderId), str(contract.symbol),
                 str(getattr(contract, 'right', '')),
                 str(order.action), float(order.totalQuantity),
@@ -90,7 +101,7 @@ if IBAPI_AVAILABLE:
                         return f if f < 1e300 else 0.0  # IB 미정의값(1.79e308) 제거
                     except (ValueError, TypeError):
                         return 0.0
-                bridge.whatif_sig.emit(
+                _bridge().whatif_sig.emit(
                     int(orderId),
                     _f(getattr(orderState, 'initMarginBefore',  0)),
                     _f(getattr(orderState, 'initMarginAfter',   0)),
@@ -102,11 +113,11 @@ if IBAPI_AVAILABLE:
         def orderStatus(self, orderId, status, filled, remaining,
                         avgFillPrice, permId, parentId, lastFillPrice,
                         clientId, whyHeld, mktCapPrice):
-            bridge.order_status_sig.emit(
+            _bridge().order_status_sig.emit(
                 int(orderId), str(status), float(filled), float(remaining))
 
         def execDetails(self, reqId, contract, execution):
-            bridge.exec_sig.emit(
+            _bridge().exec_sig.emit(
                 int(execution.orderId),
                 str(contract.symbol),
                 str(execution.side),
@@ -114,15 +125,9 @@ if IBAPI_AVAILABLE:
                 float(execution.price))
 
         def contractDetails(self, reqId, contractDetails):
-            """
-            BAG conId lookup callback — serialize to dict before emit.
-            Avoids cross-thread crash from passing raw Python objects.
-            Receivers access: cd['conId'], cd['symbol'], cd['right'], etc.
-            """
             from types import SimpleNamespace
             try:
                 c = contractDetails.contract
-                # Extract only needed fields — safe for cross-thread transfer
                 cd = SimpleNamespace(
                     conId   = int(getattr(c, 'conId',   0)),
                     symbol  = str(getattr(c, 'symbol',  '')),
@@ -131,17 +136,14 @@ if IBAPI_AVAILABLE:
                     expiry  = str(getattr(c, 'lastTradeDateOrContractMonth', '')),
                     secType = str(getattr(c, 'secType', '')),
                 )
-                # Compatibility shim: cd.contract.conId still works for
-                # existing receivers that access contractDetails.contract
                 cd.contract = cd
             except Exception as e:
                 print(f"[contractDetails] serialization error: {e}")
                 return
-            bridge.contract_details_sig.emit(reqId, cd)
+            _bridge().contract_details_sig.emit(reqId, cd)
 
         def contractDetailsEnd(self, reqId):
-            """BAG conId 조회 완료 콜백 — bridge로 emit."""
-            bridge.contract_details_end_sig.emit(reqId)
+            _bridge().contract_details_end_sig.emit(reqId)
 
         def historicalData(self, reqId, bar):
             """과거 바 배치 수신 — dict 직렬화 후 emit (cross-thread 안전)."""
@@ -157,7 +159,7 @@ if IBAPI_AVAILABLE:
             except Exception as e:
                 print(f"[historicalData] bar 변환 실패: {e}")
                 return
-            bridge.hist_bar.emit(reqId, bar_dict)
+            _bridge().hist_bar.emit(reqId, bar_dict)
 
         def historicalDataUpdate(self, reqId, bar):
             """
@@ -177,10 +179,10 @@ if IBAPI_AVAILABLE:
             except Exception as e:
                 print(f"[historicalDataUpdate] bar 변환 실패: {e}")
                 return
-            bridge.hist_bar_update.emit(reqId, bar_dict)
+            _bridge().hist_bar_update.emit(reqId, bar_dict)
 
         def historicalDataEnd(self, reqId, start, end):
-            bridge.hist_end.emit(reqId)
+            _bridge().hist_end.emit(reqId)
 
         def historicalTicks(self, reqId, ticks, done):
             """TRADES 틱 콜백 — STK/ETF용."""
@@ -194,7 +196,7 @@ if IBAPI_AVAILABLE:
                     })
                 except Exception:
                     pass
-            bridge.hist_ticks.emit(reqId, tick_list, bool(done))
+            _bridge().hist_ticks.emit(reqId, tick_list, bool(done))
 
         def historicalTicksBidAsk(self, reqId, ticks, done):
             """BID_ASK 틱 콜백 — IND(지수)용. mid price로 변환."""
@@ -209,7 +211,7 @@ if IBAPI_AVAILABLE:
                     })
                 except Exception:
                     pass
-            bridge.hist_ticks.emit(reqId, tick_list, bool(done))
+            _bridge().hist_ticks.emit(reqId, tick_list, bool(done))
 
         def get_next_id(self):
             oid = self._next_id
@@ -251,29 +253,51 @@ _TRADING_CLASS = {
 }
 
 def _resolve_spx_trading_class(symbol: str, expiry: str, tag: str = "") -> str:
+    """
+    SPX 옵션 tradingClass 결정 규칙:
+      - SPXW 심볼 입력 → 항상 SPXW
+      - tag="W" (주간)  → SPXW
+      - tag="M" (월간)  → SPX
+      - tag="0DTE" or 태그 없음 → 만기 요일로 판단:
+          * 금요일(4) 중 해당 월 3번째 금요일 → SPX (월간 AM결제)
+          * 그 외 모든 요일(월/화/수/목 + 나머지 금) → SPXW
+    """
     sym_up = symbol.upper()
     if sym_up == "SPXW":
         return "SPXW"
-    if tag == "0DTE":
-        try:
-            wd = datetime.strptime(expiry, "%Y%m%d").weekday()
-            return "SPX" if wd == 2 else "SPXW"
-        except Exception:
-            pass
     if tag == "W":
         return "SPXW"
     if tag == "M":
         return "SPX"
+
+    # 날짜 기반 판단 (0DTE 포함 tag 없는 경우 모두)
     try:
-        wd = datetime.strptime(expiry, "%Y%m%d").weekday()
-        return "SPXW" if wd != 2 else "SPX"
+        dt = datetime.strptime(expiry, "%Y%m%d")
+        wd = dt.weekday()  # 0=월 ... 4=금 ... 6=일
+
+        # 금요일이 아니면 무조건 SPXW
+        if wd != 4:
+            return "SPXW"
+
+        # 금요일인 경우: 해당 월의 3번째 금요일인지 확인
+        # 3번째 금요일 = 해당 월 1일부터 첫 금요일 + 14일
+        from datetime import date as _date
+        first_day = _date(dt.year, dt.month, 1)
+        days_to_fri = (4 - first_day.weekday()) % 7  # 첫 금요일까지 남은 일수
+        third_friday = first_day.day + days_to_fri + 14
+        if dt.day == third_friday:
+            return "SPX"   # 3번째 금요일 → 월간 SPX
+        return "SPXW"      # 나머지 금요일 → 주간 SPXW
     except Exception:
-        return "SPX"
+        return "SPXW"
 
 
 def make_opt_contract(symbol: str, strike: float, right: str,
                       expiry: str, tag: str = "") -> "Contract":
     sym_up = symbol.upper()
+    _core = _get_core()
+    SYMBOL_CFG  = _core.SYMBOL_CFG
+    DEFAULT_CFG = _core.DEFAULT_CFG
 
     # ── CL (원유 선물 옵션 FOP) ──────────────────────────────────
     if sym_up == "CL":
@@ -358,9 +382,11 @@ def make_und_contract(symbol: str) -> "Contract":
     sym = symbol.upper().replace("SPXW", "SPX")
     c = Contract()
     c.currency = "USD"
+    _core = _get_core()
 
     # ── 선물 기초자산 (CL 등) ────────────────────────────────────
-    from core import FUT_SYM
+    FUT_SYM   = _core.FUT_SYM
+    INDEX_SYM = _core.INDEX_SYM
     if sym in FUT_SYM:
         c.symbol   = sym
         c.secType  = "FUT"

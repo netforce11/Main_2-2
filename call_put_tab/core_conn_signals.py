@@ -202,3 +202,6 @@ class ConnSignalsMixin:
                     "color:#ff9800;font-weight:bold;border:none;")
             elif is_live_tick:
                 self._log("✅ 실시간 시세 정상 수신")
+
+        # ── 실제 가격 처리: ChartMixin._on_tick_price 로 위임 ──
+        super()._on_tick_price(reqId, tickType, price, attrib)

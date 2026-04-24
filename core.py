@@ -3,6 +3,10 @@ core.py — 공통 상수 / 시그널 브릿지 / IBKR 래퍼 / 헬퍼 함수
 ════════════════════════════════════════════════════════════════
 모든 탭 모듈이 이 파일에서 import 합니다.
 변경 사항: 설정 상수, reqId 범위, 종목 파라미터, 스타일
+
+【경로 수정】 2026-04-23
+- SAVE_DIR: data → /home/netforce/US_Data/Data
+- GREEKS_HISTORY_DIR: (신규) → /home/netforce/US_Data/Greeks_history
 """
 
 import os, json, csv
@@ -48,13 +52,22 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QColor, QBrush
 
 # ══════════════════════════════════════════════════════════════
-# 1. 전역 설정 상수
+# 1. 전역 설정 상수 (【경로 수정】)
 # ══════════════════════════════════════════════════════════════
 TWS_HOST   = "127.0.0.1"
 TWS_PORT   = 4001
 CLIENT_ID  = 1
-SAVE_DIR   = Path("data")          # 저장 디렉터리
-SAVE_DIR.mkdir(exist_ok=True)
+
+# 【경로 수정】기본 경로: /home/netforce/US_Data/
+BASE_DATA_DIR = Path("/home/netforce/US_Data")
+
+# SAVE_DIR: JSON, CSV, 설정 저장
+SAVE_DIR = BASE_DATA_DIR / "Data"
+SAVE_DIR.mkdir(parents=True, exist_ok=True)
+
+# GREEKS_HISTORY_DIR: Greeks DB 저장
+GREEKS_HISTORY_DIR = BASE_DATA_DIR / "Greeks_history"
+GREEKS_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_FONT_SIZE  = 16
 ALERT_COOLDOWN     = 600           # 추적기 재알림 쿨다운 (초)

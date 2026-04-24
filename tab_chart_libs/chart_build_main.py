@@ -154,7 +154,7 @@ def build_chart_area(self) -> QWidget:
             "border:1px solid #2a6a2a;border-radius:3px;padding:2px 6px;}"
             "QPushButton:hover{background:#2a4a2a;color:#aaffaa;}")
         self.btn_capture.setToolTip(
-            r"차트 캡쳐 → C:\data\chart_save\날짜_시각_심볼.png")
+            r"차트 캡쳐 → /home/netforce/US_Data/chart_save/날짜_시각_심볼.png")
         self.btn_capture.clicked.connect(self.capture_chart)
         line_bar.addWidget(self.btn_capture)
 

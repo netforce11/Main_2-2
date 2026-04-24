@@ -13,12 +13,12 @@ DELTA_JUMP         = 0.05
 BASELINE_CUT_MIN   = 30
 
 def _resolve_greeks_dir() -> str:
-    for p in [r"C:\data\Greeks_history",
+    for p in [r"/home/netforce/US_Data/Greeks_history",
               os.path.join(os.path.expanduser("~"), "Downloads"),
               os.path.join(os.path.expanduser("~"), "Documents")]:
         if os.path.isdir(p): return p
-    os.makedirs(r"C:\data\Greeks_history", exist_ok=True)
-    return r"C:\data\Greeks_history"
+    os.makedirs(r"/home/netforce/US_Data/Greeks_history", exist_ok=True)
+    return r"/home/netforce/US_Data/Greeks_history"
 
 GREEKS_DIR: str = _resolve_greeks_dir()
 
@@ -26,22 +26,34 @@ def _db_path(day: str) -> str:       return os.path.join(GREEKS_DIR, f"greeks_{d
 def _events_path() -> str:           return os.path.join(GREEKS_DIR, "events_log.db")
 def _baseline_path() -> str:         return os.path.join(GREEKS_DIR, "baseline.db")
 
-def open_db(day: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(_db_path(day))
+def open_db(day: str, db_dir: Optional[str] = None) -> sqlite3.Connection:
+    if db_dir:
+        path = os.path.join(db_dir, f"greeks_{day}.db")
+    else:
+        path = _db_path(day)
+    conn = sqlite3.connect(path)
     conn.execute("""CREATE TABLE IF NOT EXISTS greeks (
         ts TEXT, sym TEXT, expiry TEXT, strike REAL, side TEXT,
         delta REAL, gamma REAL, iv REAL, vanna REAL, und_price REAL)""")
     conn.commit(); return conn
 
-def open_events_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(_events_path())
+def open_events_db(db_dir: Optional[str] = None) -> sqlite3.Connection:
+    if db_dir:
+        path = os.path.join(db_dir, "events_log.db")
+    else:
+        path = _events_path()
+    conn = sqlite3.connect(path)
     conn.execute("""CREATE TABLE IF NOT EXISTS events (
         ts TEXT, sym TEXT, trigger_type TEXT, strike REAL,
         value REAL, prev_avg REAL, und_price REAL)""")
     conn.commit(); return conn
 
-def open_baseline_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(_baseline_path())
+def open_baseline_db(db_dir: Optional[str] = None) -> sqlite3.Connection:
+    if db_dir:
+        path = os.path.join(db_dir, "baseline.db")
+    else:
+        path = _baseline_path()
+    conn = sqlite3.connect(path)
     conn.execute("""CREATE TABLE IF NOT EXISTS baseline (
         day TEXT, sym TEXT, expiry TEXT, strike REAL, side TEXT,
         iv_avg REAL, gamma_avg REAL,

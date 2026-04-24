@@ -6,6 +6,7 @@ chart_tab_ibkr.py — IBKR/Polygon 과거 데이터 요청 (tab_chart 전용)
   fetch_polygon_history() — Polygon REST fallback
   load_day_df()           — pickle → CSV → API 삼단 fallback
   download_day()          — Polygon API → CSV 저장
+  force_redownload()      — CSV 삭제 후 강제 재다운로드
 """
 
 import os as _os, sys as _sys
@@ -35,52 +36,11 @@ try:
     from common import DATA_ROOT
 except Exception:
     from pathlib import Path
-    DATA_ROOT = Path(r"C:\data\US_StockData")
+    DATA_ROOT = Path("/home/netforce/US_Data/US_stockData")
 
-def _marker_path(symbol_up, tgt):
-    """다운로드 완료 마커 파일 경로"""
-    from pathlib import Path
-    return DATA_ROOT / symbol_up / ".downloaded" / tgt.strftime("%Y%m%d")
+# ── chart_data 에서 update_display / push_trend_df 를 직접 import 하지 않음
+# ── 순환참조 방지: 각 함수 내부에서 lazy import 사용
 
-def _set_marker(symbol_up, tgt):
-    """다운로드 완료 마커 생성"""
-    mp = _marker_path(symbol_up, tgt)
-    mp.parent.mkdir(parents=True, exist_ok=True)
-    mp.touch()
-
-def _has_marker(symbol_up, tgt):
-    return _marker_path(symbol_up, tgt).exists()
-
-def _clear_marker(symbol_up, tgt):
-    mp = _marker_path(symbol_up, tgt)
-    if mp.exists():
-        mp.unlink()
-
-def force_redownload(self, symbol: str, tgt):
-    """마커 삭제 + CSV에서 해당 날짜 행 제거 → API 재다운로드 → 화면 갱신"""
-    if not PANDAS: return
-    symbol_up = symbol.upper()
-    month_str = tgt.strftime("%Y%m")
-    from pathlib import Path
-    csv_path  = DATA_ROOT / symbol_up / f"{month_str}.csv"
-
-    # 1) 마커 삭제
-    _clear_marker(symbol_up, tgt)
-
-    # 2) CSV에서 해당 날짜 행만 제거
-    if csv_path.exists():
-        try:
-            full = pd.read_csv(str(csv_path))
-            full['_d'] = (pd.to_datetime(full['t'], unit='ms')
-                .dt.tz_localize('UTC').dt.tz_convert('America/New_York').dt.date)
-            cleaned = full[full['_d'] != tgt].drop(columns=['_d'])
-            cleaned.to_csv(str(csv_path), index=False)
-            print(f"[ChartTab] {tgt} 기존 데이터 제거 완료")
-        except Exception as ex:
-            print(f"[ChartTab] CSV 정리 실패: {ex}")
-
-    # 3) 재다운로드 후 화면 갱신
-    fetch_polygon_history(self, symbol_up, tgt)
 
 def fetch_ibkr_history(self, symbol, tgt):
     if not self.mw.connected:
@@ -111,11 +71,15 @@ def _on_ibkr_hist_end(self, rid):
     except Exception: pass
     try: bridge.hist_end.disconnect(_on_ibkr_hist_end.__get__(self))
     except Exception: pass
-    self._update_display()
+
+    # ── 순환참조 방지: lazy import ──────────────────────────
+    from chart_data import update_display, push_trend_df
+
+    update_display(self)
     if PANDAS and self.df_raw:
         try: self.df = pd.DataFrame(self.df_raw)
         except Exception: pass
-    self._push_trend_df()
+    push_trend_df(self)
 
 
 # ── Polygon 과거 ────────────────────────────────────────
@@ -126,9 +90,13 @@ def fetch_polygon_history(self, symbol, tgt):
         self.df = df
         self.df_raw = df.to_dict('records')
         self.status_lbl.setText(f"📅 {tgt} 복기 (ET)")
-        self._update_display()
+
+        # ── 순환참조 방지: lazy import ──────────────────────
+        from chart_data import update_display, push_trend_df
+
+        update_display(self)
         if PG: self.p1.autoRange()
-        self._push_trend_df()
+        push_trend_df(self)
     else:
         QMessageBox.warning(self, "데이터 없음",
             f"{tgt} 데이터가 없습니다.\n(휴장일 또는 API 오류)")
@@ -139,8 +107,6 @@ def load_day_df(self, symbol: str, tgt):
     symbol_up  = symbol.upper()
     year, month = tgt.year, tgt.month
     from pathlib import Path
-
-    # ── 1단계: pickle ───────────────────────────────────
     pkl_dir  = DATA_ROOT / symbol_up / "minute" / str(year) / f"{month:02d}"
     pkl_path = pkl_dir / f"{symbol_up}_{year}_{month:02d}.pkl"
     if pkl_path.exists():
@@ -149,28 +115,20 @@ def load_day_df(self, symbol: str, tgt):
             full['_d'] = (pd.to_datetime(full['t'], unit='ms')
                 .dt.tz_localize('UTC').dt.tz_convert('America/New_York').dt.date)
             res = full[full['_d'] == tgt].copy()
-            if not res.empty:
-                return res.drop(columns=['_d'])   # pickle은 완성본으로 간주
+            if not res.empty: return res.drop(columns=['_d'])
         except Exception as ex:
             print(f"[ChartTab] pickle 읽기 실패: {ex}")
-
     month_str = tgt.strftime("%Y%m")
     csv_path  = DATA_ROOT / symbol_up / f"{month_str}.csv"
-
-    # ── 2단계: 마커 있으면 CSV 그대로 신뢰 ────────────
-    if _has_marker(symbol_up, tgt) and csv_path.exists():
+    if csv_path.exists():
         try:
             full = pd.read_csv(str(csv_path))
             full['_d'] = (pd.to_datetime(full['t'], unit='ms')
                 .dt.tz_localize('UTC').dt.tz_convert('America/New_York').dt.date)
             res = full[full['_d'] == tgt].copy()
-            if not res.empty:
-                return res.drop(columns=['_d'])
+            if not res.empty: return res.drop(columns=['_d'])
         except Exception as ex:
             print(f"[ChartTab] CSV 읽기 실패: {ex}")
-
-    # ── 3단계: 마커 없음 → API 재다운로드 ──────────────
-    print(f"[ChartTab] {tgt} 마커 없음 → API 다운로드")
     download_day(self, symbol_up, tgt, csv_path)
     if csv_path.exists():
         try:
@@ -178,8 +136,7 @@ def load_day_df(self, symbol: str, tgt):
             full['_d'] = (pd.to_datetime(full['t'], unit='ms')
                 .dt.tz_localize('UTC').dt.tz_convert('America/New_York').dt.date)
             res = full[full['_d'] == tgt].copy()
-            if not res.empty:
-                return res.drop(columns=['_d'])
+            if not res.empty: return res.drop(columns=['_d'])
         except Exception as ex:
             print(f"[ChartTab] API 다운로드 후 읽기 실패: {ex}")
     return None
@@ -200,23 +157,46 @@ def download_day(self, symbol: str, tgt, fp):
                 ndf = (pd.concat([pd.read_csv(str(fp)), ndf])
                        .drop_duplicates(subset=['t']).reset_index(drop=True))
             ndf.to_csv(str(fp), index=False)
-            _set_marker(symbol.upper(), tgt)   # ✅ 완료 마커 생성
-            print(f"[ChartTab] {tgt} 다운로드 완료 ({len(ndf)}행) → 마커 생성")
-        else:
-            print(f"[ChartTab] {tgt} API 결과 없음 (휴장일 가능성)")
     except Exception as e:
         print(f"[ChartTab] _download_day: {e}")
 
 
-# ── 디스플레이 업데이트 ─────────────────────────────────
+# ── 강제 재다운로드 ──────────────────────────────────────
 
-# ── tab_chart.py 위임 연결 안내 ────────────────────────
-# ChartGrid.__init__ 또는 _bind() 에 아래 추가 필요:
-#
-#   from chart_tab_ibkr import force_redownload
-#
-#   def _on_force_reload(self):
-#       tgt = self.calendar.selectedDate().toPyDate()
-#       sym = self.sym_in.text().strip().upper()
-#       if sym:
-#           force_redownload(self, sym, tgt)
+def force_redownload(self):
+    """기존 CSV 캐시를 삭제하고 Polygon API에서 강제 재다운로드."""
+    if not PANDAS:
+        QMessageBox.warning(self, "오류", "pandas 가 설치되지 않았습니다."); return
+    symbol = self.sym_in.text().upper().strip()
+    if not symbol:
+        QMessageBox.warning(self, "오류", "종목 코드를 입력하세요."); return
+    qd  = self.calendar.selectedDate()
+    from datetime import date
+    tgt = date(qd.year(), qd.month(), qd.day())
+    month_str = tgt.strftime("%Y%m")
+    from pathlib import Path
+    csv_path = DATA_ROOT / symbol / f"{month_str}.csv"
+    # 기존 CSV 삭제
+    if csv_path.exists():
+        try:
+            csv_path.unlink()
+            print(f"[ChartTab] 캐시 삭제: {csv_path}")
+        except Exception as e:
+            print(f"[ChartTab] 캐시 삭제 실패: {e}")
+    # 재다운로드 후 표시
+    download_day(self, symbol, tgt, csv_path)
+    from chart_data import update_display, push_trend_df
+    df = load_day_df(self, symbol, tgt)
+    if df is not None and not df.empty:
+        self.df = df
+        self.df_raw = df.to_dict('records')
+        self.status_lbl.setText(f"📅 {tgt} 강제 재다운로드 완료 (ET)")
+        update_display(self)
+        try:
+            import pyqtgraph as pg
+            self.p1.autoRange()
+        except Exception: pass
+        push_trend_df(self)
+    else:
+        QMessageBox.warning(self, "데이터 없음",
+            f"{tgt} 재다운로드 실패.\n(휴장일 또는 API 오류)")

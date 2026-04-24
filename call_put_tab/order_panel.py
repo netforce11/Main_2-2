@@ -96,6 +96,23 @@ class OrderPanelMixin:
             "background:#0a0a1e;border:1px solid #333;")
         tgt_row.addWidget(self.qord_side); tgt_row.addWidget(self.qord_strike)
 
+        # ── 주문 확인창 체크박스 (행사가 우측) ───────────────────
+        from PyQt5.QtWidgets import QCheckBox
+        self.chk_order_confirm = QCheckBox("주문확인")
+        self.chk_order_confirm.setChecked(True)   # 기본값 ON
+        self.chk_order_confirm.setStyleSheet(
+            "QCheckBox{color:#aaa;font-size:12px;spacing:4px;}"
+            "QCheckBox::indicator{width:14px;height:14px;"
+            "border:1px solid #555;border-radius:3px;background:#0a0a1e;}"
+            "QCheckBox::indicator:checked{background:#1a5c2e;"
+            "border:1px solid #00ff88;}"
+            "QCheckBox::indicator:checked:hover{background:#2a7c3e;}")
+        self.chk_order_confirm.setToolTip(
+            "체크: 주문 전 확인창 표시\n미체크: 바로 주문 전송")
+        self.chk_order_confirm.toggled.connect(
+            lambda on: setattr(self, '_skip_order_confirm', not on))
+        tgt_row.addWidget(self.chk_order_confirm)
+
         # ── [S11] 계좌번호 / 모드 표시 라벨 ─────────────────────
         self.lbl_acct_mode = QLabel("계좌: ―")
         self.lbl_acct_mode.setStyleSheet(

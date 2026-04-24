@@ -75,32 +75,14 @@ def _on_order_status(self, oid: int, status: str,
                      filled: float, remaining: float) -> None:
     """
     TWS → orderStatus 콜백.
-    내 BAG 주문 OID 인지 확인 후 panel + log 갱신.
+    내 BAG 주문 OID 인지 확인 후 panel 갱신.
+    DB 저장은 tab_account.py bridge 시그널에서 일괄 처리.
     """
     my_oid = getattr(self, '_chaser_current_oid', None)
     if my_oid is None or oid != my_oid:
         return
 
     panel = getattr(self, 'synthetic_panel', None)
-
-    # ── 주문 상태 DB 기록 ─────────────────────────────────────
-    try:
-        from trade_log import log_order, get_und_context
-        legs   = getattr(self, '_last_legs', [])
-        ctx    = get_und_context()
-        log_order(
-            oid=oid, source='combo', status=status,
-            sym=legs[0].get('sym', '')    if legs else '',
-            expiry=legs[0].get('expiry', '') if legs else '',
-            right=legs[0].get('cp', '')   if legs else '',
-            strike=legs[0].get('strike', 0) if legs else 0,
-            action=legs[0].get('action', '') if legs else '',
-            qty=filled + remaining,
-            price=getattr(self, '_chaser_price', 0.0),
-            und_price=ctx.get('und_price'),
-        )
-    except Exception:
-        pass
 
     # ── 접수 ─────────────────────────────────────────────────
     if status in _STATUS_SUBMITTED:
@@ -168,21 +150,6 @@ def _on_exec_details(self, oid: int, sym: str,
     cache = getattr(self, '_exec_avg_cache', {})
     cache[oid] = price
     self._exec_avg_cache = cache
-
-    # ── DB 저장 ──────────────────────────────────────────────
-    try:
-        from trade_log import log_exec, run_match, get_und_context
-        legs   = getattr(self, '_last_legs', [])
-        expiry = legs[0].get('expiry', '') if legs else ''
-        right  = legs[0].get('cp',     '') if legs else ''
-        strike = legs[0].get('strike', 0.0) if legs else 0.0
-        log_exec(oid=oid, source='combo', sym=sym, action=side,
-                 qty=qty, price=price, expiry=expiry,
-                 right=right, strike=strike,
-                 und_ctx=get_und_context())
-        run_match('combo', sym, expiry, right, strike)
-    except Exception as e:
-        self._log(f"⚠ trade_log 저장 오류: {e}")
 
     # panel 진입가 즉시 갱신
     panel = getattr(self, 'synthetic_panel', None)

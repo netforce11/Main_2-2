@@ -19,11 +19,16 @@ from typing import Dict, Tuple
 from PyQt5.QtCore import QTimer, QObject
 
 from core_io import is_market_open
+from core import router
 from call_put_tab.chain_saver.buffer import ChainBuffer
 from call_put_tab.chain_saver.worker import SaveWorker
 from call_put_tab.chain_saver import snapshot as snap
 from call_put_tab.chain_saver.db import check_recent
 from call_put_tab.chain_saver.buffer import today_et
+from call_put_tab.chain_saver.snapshot import (
+    SNAP_C_START, SNAP_P_START, SNAP_SLOTS,
+    NEXT_C_START, NEXT_P_START, NEXT_SLOTS,
+)
 
 log = logging.getLogger(__name__)
 
@@ -104,10 +109,34 @@ class ChainScheduler(QObject):
         self._t60.start()
         self._t_stat.start()
 
+        # ★ OTM/ITM 스냅샷 + 내일 만기 reqId 범위를 router 에 등록
+        # ChainScheduler.on_tick_price/on_tick_option 이 router 에 등록되지 않으면
+        # 4400~4649 범위 틱이 와도 버퍼에 전달되지 않아 D+1/D+2 저장 0건 발생
+        router.register_price(
+            SNAP_C_START, SNAP_C_START + SNAP_SLOTS - 1, self.on_tick_price)
+        router.register_price(
+            SNAP_P_START, SNAP_P_START + SNAP_SLOTS - 1, self.on_tick_price)
+        router.register_price(
+            NEXT_C_START, NEXT_C_START + NEXT_SLOTS - 1, self.on_tick_price)
+        router.register_price(
+            NEXT_P_START, NEXT_P_START + NEXT_SLOTS - 1, self.on_tick_price)
+        router.register_option(
+            SNAP_C_START, SNAP_C_START + SNAP_SLOTS - 1, self.on_tick_option)
+        router.register_option(
+            SNAP_P_START, SNAP_P_START + SNAP_SLOTS - 1, self.on_tick_option)
+        router.register_option(
+            NEXT_C_START, NEXT_C_START + NEXT_SLOTS - 1, self.on_tick_option)
+        router.register_option(
+            NEXT_P_START, NEXT_P_START + NEXT_SLOTS - 1, self.on_tick_option)
+
     def stop(self):
         self._t5.stop()
         self._t60.stop()
         self._t_stat.stop()
+
+        # ★ router 등록 해제 — 앱 종료/재시작 시 중복 등록 방지
+        router.unregister_price(self.on_tick_price)
+        router.unregister_option(self.on_tick_option)
 
     # ── 5초 tick ────────────────────────────────────────────
     def _on_5s(self):

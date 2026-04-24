@@ -55,6 +55,19 @@ main.py — 0DTE Master Dashboard  v6.5  메인 진입점
 ════════════════════════════════════════════════════════════════
 """
 
+# ── pyqtgraph / OpenGL Segfault 방지 ─────────────────────────
+# QApplication 생성 전, 모든 import 전에 설정해야 효과 있음
+import os
+os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+os.environ.setdefault("QT_XCB_GL_INTEGRATION", "none")
+os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
+
+import pyqtgraph as pg
+pg.setConfigOption('useOpenGL', False)
+pg.setConfigOption('enableExperimental', False)
+pg.setConfigOption('antialias', False)
+# ─────────────────────────────────────────────────────────────
+
 import sys, threading
 from datetime import datetime
 
@@ -75,7 +88,6 @@ from core import (
 )
 
 # ── Greeks 폴더 경로 등록 (Main2/Greeks/) ────────────────────
-import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "Greeks"))
 
 # ── combo_libs 폴더 경로 등록 (Main2/combo_libs/) ───────────────
