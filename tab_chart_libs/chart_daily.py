@@ -4,8 +4,8 @@ chart_daily.py — 일봉 추가 보기  v6.4
 분봉(chart_tab_ibkr.py)과 동일한 마커 캐시 구조 사용.
 
 저장 경로:
-  C:\\data\\US_StockData\\{SYM}\\daily_{SYM}.csv
-  C:\\data\\US_StockData\\{SYM}\\.downloaded_daily\\YYYYMMDD
+  /home/netforce/US_Data/US_stockData/{SYM}/daily_{SYM}.csv
+  /home/netforce/US_Data/US_stockData/{SYM}/.downloaded_daily/YYYYMMDD
 
 동작:
   · 날짜별 마커 파일로 다운로드 여부 체크
@@ -42,7 +42,7 @@ try:
     from common import DATA_ROOT
 except Exception:
     from pathlib import Path
-    DATA_ROOT = Path(r"/home/netforce/US_Data/US_stockData")
+    DATA_ROOT = Path("/home/netforce/US_Data/US_stockData")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -137,7 +137,6 @@ class _DailyFillWorker(QThread):
                 existing = pd.DataFrame()
 
             # ── 빠진 날짜 계산 ─────────────────────────
-            # 범위 내 모든 날짜 생성 (주말 제외하지 않음 — 마커로 판단)
             all_dates = [t_from + timedelta(days=i)
                          for i in range((t_to - t_from).days + 1)]
 
@@ -171,7 +170,6 @@ class _DailyFillWorker(QThread):
         if not missing_dates:
             return
 
-        # 연속 범위로 묶기 (최대 30일 단위)
         chunks = []
         chunk_start = missing_dates[0]
         prev        = missing_dates[0]
@@ -195,16 +193,14 @@ class _DailyFillWorker(QThread):
                 results = r.json().get("results", [])
                 if results:
                     all_new.extend(results)
-                    # 수신된 날짜에 마커 생성
                     for row in results:
                         bar_date = datetime.fromtimestamp(
                             row["t"] / 1000).date()
                         _set_daily_marker(sym, bar_date)
-                # 결과가 없어도 (휴장일 등) 해당 범위 마커 생성
                 d = t_from
                 while d <= t_to:
                     if not _has_daily_marker(sym, d):
-                        _set_daily_marker(sym, d)   # 휴장일도 마킹
+                        _set_daily_marker(sym, d)
                     d += timedelta(days=1)
             except Exception as e:
                 print(f"[DailyFill] API 오류 {t_from}~{t_to}: {e}")
@@ -214,7 +210,6 @@ class _DailyFillWorker(QThread):
 
         new_df = pd.DataFrame(all_new)[["t","o","h","l","c","v"]]
 
-        # 기존 CSV와 합치기
         if not existing_df.empty:
             cols = [c for c in ["t","o","h","l","c","v"]
                     if c in existing_df.columns]
@@ -246,7 +241,6 @@ def toggle_daily_view(self):
         self.btn_daily.setText("📈 일봉 추가 보기")
         self.daily_container.hide()
         self._tbl_splitter.show()
-        # 진행 중인 워커 중지
         if getattr(self, "_daily_worker", None):
             self._daily_worker.quit()
             self._daily_worker = None
@@ -262,7 +256,6 @@ def load_daily_data(self):
     cal_date = self.calendar.selectedDate().toString("yyyy-MM-dd")
     self.status_lbl.setText(f"📈 일봉 확인 중…  {sym}  ({cal_date} 기준)")
 
-    # 이전 워커 정리
     if getattr(self, "_daily_worker", None):
         self._daily_worker.quit()
 
@@ -292,10 +285,8 @@ def render_daily(self, df):
         w = item.widget()
         if w: w.deleteLater()
 
-    # bars: [(ts_ms, o, h, l, c, v), ...]
     bars = list(df[["t","o","h","l","c","v"]].itertuples(index=False, name=None))
 
-    # ── 캔들 플롯 ──────────────────────────────────────
     candle_plot = pg.PlotWidget(background="#1a1a2e")
     candle_plot.setMenuEnabled(False)
     candle_plot.showGrid(x=False, y=True, alpha=0.15)
@@ -303,13 +294,11 @@ def render_daily(self, df):
     candle_plot.getAxis("bottom").hide()
     candle_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-    # ── 볼륨 플롯 ──────────────────────────────────────
     vol_plot = pg.PlotWidget(background="#1a1a2e")
     vol_plot.setMenuEnabled(False)
     vol_plot.setFixedHeight(80)
     vol_plot.getAxis("left").setTextPen(pg.mkPen("#888888"))
 
-    # x축 날짜 눈금
     dates = [datetime.fromtimestamp(b[0] / 1000).strftime("%y/%m/%d")
              for b in bars]
     step  = max(1, len(bars) // 10)
@@ -319,21 +308,17 @@ def render_daily(self, df):
 
     candle_plot.setXLink(vol_plot)
 
-    # 캔들
     candle_data = [(i, b[1], b[2], b[3], b[4]) for i, b in enumerate(bars)]
     candle_plot.addItem(_DailyCandle(candle_data, body_w=0.55))
 
-    # 볼륨
     for i, b in enumerate(bars):
         col = "#26a69a" if b[4] >= b[1] else "#ef5350"
         vol_plot.addItem(pg.BarGraphItem(
             x=[i], height=[b[5]], width=0.6,
             brush=pg.mkBrush(col), pen=pg.mkPen(None)))
 
-    # 캘린더 날짜 중앙 정렬 + y축 범위 + 수직선 (center_on_calendar 내부에서 처리)
     center_on_calendar(self, candle_plot, bars)
 
-    # autoRange 비활성화 (볼륨 등 외부 데이터에 끌려가지 않도록)
     candle_plot.getViewBox().disableAutoRange()
     vol_plot.getViewBox().disableAutoRange()
 
@@ -347,9 +332,7 @@ def render_daily(self, df):
 
 
 def center_on_calendar(self, plot, bars):
-    """캘린더 선택 날짜가 x축 중앙에 오도록 뷰 범위 설정.
-    표시 구간 내 고가/저가 기준으로 y축 범위도 명시적으로 설정한다.
-    캘린더 날짜 수직선도 여기서 재드로우 (캘린더 변경 시 항상 최신 상태 유지)."""
+    """캘린더 선택 날짜가 x축 중앙에 오도록 뷰 범위 설정."""
     cal_date = self.calendar.selectedDate().toPyDate()
 
     best_idx, best_delta = None, timedelta(days=9999)
@@ -366,16 +349,13 @@ def center_on_calendar(self, plot, bars):
     x_max = min(len(bars) - 1, best_idx + half)
     plot.setXRange(x_min, x_max, padding=0.02)
 
-    # 표시 구간 내 봉들의 고가/저가로 y축 범위 계산
-    # bars 구조: (ts_ms, o, h, l, c, v)  → h=index2, l=index3
     visible = bars[x_min: x_max + 1]
     if visible:
         y_lo = min(b[3] for b in visible)
         y_hi = max(b[2] for b in visible)
-        margin = (y_hi - y_lo) * 0.06   # 위아래 6% 여백
+        margin = (y_hi - y_lo) * 0.06
         plot.setYRange(y_lo - margin, y_hi + margin, padding=0)
 
-    # 기존 수직선 제거 후 재드로우 (캘린더 날짜 변경 시 항상 최신 위치 반영)
     if hasattr(plot, '_cal_vline') and plot._cal_vline is not None:
         try:
             plot.removeItem(plot._cal_vline)
@@ -393,8 +373,6 @@ def center_on_calendar(self, plot, bars):
             plot._cal_vline = vline
             break
 
-
-# ── 내부 헬퍼 ──────────────────────────────────────────────
 
 def _draw_cal_vline(plot, bars, calendar):
     cal_date = calendar.selectedDate().toPyDate()

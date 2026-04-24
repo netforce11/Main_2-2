@@ -5,7 +5,7 @@ v6.3 변경:
   - tab_chart_libs/ 로 로직 분리 (200줄 단위)
   - 시간 입력: ":" 없이 숫자만 입력 가능 (1030 → 10:30 자동 변환)
   - 📷 차트 캡쳐 버튼: 마커 우측에 추가
-    저장 경로: C:\\data\\chart_save\\{날짜}_{시각}_{심볼}.png
+    저장 경로: /home/netforce/US_Data/chart_save/{날짜}_{시각}_{심볼}.png
 
 v6.4 변경:
   - 🔤 레이블 기능 추가 (chart_labels.py 신규)
@@ -98,7 +98,7 @@ try:
                         DARK_BG, PANEL_BG, CARD_BG, BLUE, RED,
                         GREEN, ORANGE, GRAY, TEXT, GLOBAL_STYLE)
 except Exception:
-    DATA_ROOT      = Path(r"C:\data\US_StockData")
+    DATA_ROOT      = Path("/home/netforce/US_Data/US_stockData")
     API_KEY_FILE   = DATA_ROOT / "stock_api_key"
     WATCHLIST_FILE = DATA_ROOT / "watchlist.json"
 

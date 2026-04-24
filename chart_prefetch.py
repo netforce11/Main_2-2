@@ -30,7 +30,7 @@ from PyQt5.QtWidgets import QMessageBox
 try:
     from common import DATA_ROOT
 except Exception:
-    DATA_ROOT = Path(r"C:\data\US_StockData")
+    DATA_ROOT = Path("/home/netforce/US_Data/US_stockData")
 
 try:
     from common import API_KEY_FILE

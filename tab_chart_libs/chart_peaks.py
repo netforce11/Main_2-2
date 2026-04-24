@@ -34,7 +34,7 @@ try:
     from common import DATA_ROOT
 except Exception:
     from pathlib import Path
-    DATA_ROOT = Path(r"C:\data\US_StockData")
+    DATA_ROOT = Path("/home/netforce/US_Data/US_stockData")
 
 
 def _time_to_min(t_str: str) -> int:
