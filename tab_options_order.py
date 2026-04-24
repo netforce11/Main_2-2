@@ -1,5 +1,5 @@
 """
-tab_options_order.py — 빠른 주문 시스템  v6.4
+tab_options_order.py — 빠른 주문 시스템  v6.5
 ════════════════════════════════════════════════════════════════
   CallPutGrid 에서 분리 (tab_options.py 에 mixin으로 사용)
 
@@ -10,6 +10,12 @@ tab_options_order.py — 빠른 주문 시스템  v6.4
   - _fill_amend_from_table() / _fill_cancel_from_table()
   - _amend_order() / _cancel_order()
   - _qord_fill() / _qord_place()
+
+  어댑티브 알고리즘 기능:
+  - tab_options_order_adaptive.py → AdaptiveMixin 으로 분리
+    · _build_adaptive_ui(tif_row)  UI 위젯 삽입
+    · _apply_adaptive(ibord)       주문 객체에 algoStrategy 적용
+    · _adaptive_label()            확인창 / 상태바 태그 문자열
 ════════════════════════════════════════════════════════════════
 """
 
@@ -17,14 +23,16 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QLineEdit, QComboBox,
     QGroupBox, QRadioButton, QButtonGroup, QMessageBox,
-    QSpinBox, QTabWidget, QTableWidget, QHeaderView, QAbstractItemView,
+    QSpinBox, QTabWidget,
+    QTableWidget, QHeaderView, QAbstractItemView,
 )
 from PyQt5.QtCore import Qt, QTimer
 
 from core import make_opt_contract, ts
+from tab_options_order_adapted import AdaptiveMixin
 
 
-class OrderMixin:
+class OrderMixin(AdaptiveMixin):
     """빠른 주문 전용 메서드 모음. CallPutGrid 에 mixin된다."""
 
     # ─────────────────────────────────────────────────────────
@@ -77,8 +85,9 @@ class OrderMixin:
         gl = QGridLayout(); gl.setSpacing(4)
         lbl_style = "color:#aaa;font-size:11px;border:none;"
 
+        # ── 유형 행: [지정가] [시장가]  [어댑티브🟢] [Normal▼]  [MAX] [$200] ──
         type_w = QWidget(); type_h = QHBoxLayout(type_w)
-        type_h.setContentsMargins(0,0,0,0); type_h.setSpacing(6)
+        type_h.setContentsMargins(0,0,0,0); type_h.setSpacing(5)
         self.qord_lmt = QRadioButton("지정가"); self.qord_mkt = QRadioButton("시장가")
         self.qord_lmt.setChecked(True)
         self.qord_lmt.setStyleSheet("color:#ffd700;font-size:11px;")
@@ -87,6 +96,26 @@ class OrderMixin:
         qord_grp.addButton(self.qord_lmt); qord_grp.addButton(self.qord_mkt)
         self.qord_lmt.toggled.connect(self._on_qord_type_toggle)
         type_h.addWidget(self.qord_lmt); type_h.addWidget(self.qord_mkt)
+
+        # 어댑티브 체크박스 + 콤보 (AdaptiveMixin)
+        self._build_adaptive_ui(type_h)
+
+        # MAX / $200 버튼
+        _abtn_s = ("QPushButton{background:#1a2a3a;color:#90caf9;font-size:10px;"
+                   "font-weight:bold;padding:1px 4px;border-radius:3px;"
+                   "border:1px solid #2a4a6a;}"
+                   "QPushButton:hover{background:#2a3a5a;}")
+        self.btn_qty_max = QPushButton("MAX")
+        self.btn_qty_200 = QPushButton("$200")
+        self.btn_qty_max.setFixedSize(34, 22); self.btn_qty_200.setFixedSize(34, 22)
+        self.btn_qty_max.setStyleSheet(_abtn_s); self.btn_qty_200.setStyleSheet(_abtn_s)
+        self.btn_qty_max.setToolTip("잔고 조회 후 최대 수량 자동 계산")
+        self.btn_qty_200.setToolTip("$200 기준 수량 자동 계산")
+        self.btn_qty_max.clicked.connect(self._calc_qty_max)
+        self.btn_qty_200.clicked.connect(self._calc_qty_200)
+        type_h.addStretch()
+        type_h.addWidget(self.btn_qty_max)
+        type_h.addWidget(self.btn_qty_200)
 
         self.qord_price = QLineEdit(); self.qord_price.setPlaceholderText("가격 입력")
         self.qord_price.setStyleSheet(
@@ -128,7 +157,8 @@ class OrderMixin:
             "font-size:11px;padding:1px;}"
             "QComboBox QAbstractItemView{background:#0a0a1e;color:#ffd700;font-size:11px;}"
             "QComboBox::drop-down{border:none;}")
-        tif_row.addWidget(self.qord_tif); tif_row.addStretch()
+        tif_row.addWidget(self.qord_tif)
+        tif_row.addStretch()
         root_v.addLayout(tif_row)
 
         btn_row = QHBoxLayout(); btn_row.setSpacing(4)
@@ -401,7 +431,7 @@ class OrderMixin:
             QMessageBox.warning(self, "입력 오류", "유효한 가격을 입력하세요."); return
         action_kr  = "매수" if action == "BUY" else "매도"
         price_disp = f"${price:.2f}" if is_lmt else "시장가"
-        msg = f"{action_kr} {order_type}  {side} {strike}  {qty}계약  {price_disp}  {tif}"
+        msg = f"{action_kr} {order_type}  {side} {strike}  {qty}계약  {price_disp}  {tif}{self._adaptive_label()}"
         ret = QMessageBox.question(self, f"주문 확인 — {action_kr}",
             f"⚠ 아래 주문을 전송합니다.\n\n{msg}\n\n계속하시겠습니까?",
             QMessageBox.Yes | QMessageBox.No)
@@ -418,6 +448,10 @@ class OrderMixin:
             ibord.action = action; ibord.orderType = order_type
             ibord.totalQuantity = qty; ibord.tif = tif
             if is_lmt: ibord.lmtPrice = price
+
+            # ── 어댑티브 알고리즘 적용 → AdaptiveMixin 으로 위임 ─
+            adapt_tag = self._adaptive_label() if self._apply_adaptive(ibord) else ""
+
             oid = self.mw.ib.nextOrderId()
             self.mw.ib.nextOrderId = lambda: oid + 1
             self.mw.ib.placeOrder(oid, contract, ibord)
@@ -425,8 +459,8 @@ class OrderMixin:
             self.lbl_qord_status.setStyleSheet(
                 f"color:{col};font-size:11px;"
                 "border:1px solid #333;border-radius:3px;padding:2px;")
-            self.lbl_qord_status.setText(f"전송: {msg}")
-            self._log(f"📤 빠른주문: {msg}  (OID={oid})")
+            self.lbl_qord_status.setText(f"전송: {msg}{adapt_tag}")
+            self._log(f"📤 빠른주문: {msg}{adapt_tag}  (OID={oid})")
         except Exception as e:
             self.lbl_qord_status.setText(f"오류: {e}")
             self._log(f"❌ 주문 오류: {e}")

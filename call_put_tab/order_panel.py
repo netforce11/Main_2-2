@@ -146,6 +146,43 @@ class OrderPanelMixin:
         qord_grp.addButton(self.qord_lmt); qord_grp.addButton(self.qord_mkt)
         self.qord_lmt.toggled.connect(self._on_qord_type_toggle)
         type_h.addWidget(self.qord_lmt); type_h.addWidget(self.qord_mkt)
+
+        # ── 어댑티브: 녹색 인디케이터 ● + 체크박스 + Normal/Urgent 콤보 ──
+        from PyQt5.QtWidgets import QCheckBox
+        self.lbl_adapt_dot = QLabel("●")
+        self.lbl_adapt_dot.setFixedWidth(12)
+        self.lbl_adapt_dot.setStyleSheet("color:#1a1a3a;font-size:10px;border:none;")
+        self.chk_adaptive = QCheckBox("어댑티브")
+        self.chk_adaptive.setStyleSheet(
+            "QCheckBox{color:#a0c4ff;font-size:12px;font-weight:bold;spacing:3px;}"
+            "QCheckBox::indicator{width:13px;height:13px;"
+            "border:1px solid #4a6a9a;border-radius:2px;background:#0a0a1e;}"
+            "QCheckBox::indicator:checked{background:#3060cc;border:1px solid #60a0ff;}")
+        self.chk_adaptive.setToolTip(
+            "IBKR Adaptive Algorithm 사용\n"
+            "Normal: 체결률 우선  |  Urgent: 속도 우선")
+        self.combo_adapt_priority = QComboBox()
+        self.combo_adapt_priority.addItems(["Normal", "Urgent"])
+        self.combo_adapt_priority.setFixedHeight(22)
+        self.combo_adapt_priority.setFixedWidth(64)
+        self.combo_adapt_priority.setEnabled(False)
+        self.combo_adapt_priority.setStyleSheet(
+            "QComboBox{background:#0d0d22;color:#a0c4ff;border:1px solid #2a4a6a;"
+            "font-size:11px;padding:1px 3px;}"
+            "QComboBox QAbstractItemView{background:#0d0d22;color:#a0c4ff;font-size:11px;}"
+            "QComboBox::drop-down{border:none;width:10px;}"
+            "QComboBox:disabled{color:#4a6a8a;border:1px solid #1a2a4a;background:#08081a;}")
+        def _on_adpt_toggle(checked):
+            self.combo_adapt_priority.setEnabled(checked)
+            self.lbl_adapt_dot.setStyleSheet(
+                "color:#00ff88;font-size:10px;border:none;" if checked else
+                "color:#1a1a3a;font-size:10px;border:none;")
+        self.chk_adaptive.toggled.connect(_on_adpt_toggle)
+        type_h.addSpacing(6)
+        type_h.addWidget(self.lbl_adapt_dot)
+        type_h.addWidget(self.chk_adaptive)
+        type_h.addWidget(self.combo_adapt_priority)
+
         type_h.addStretch()
         _abtn_s = ("QPushButton{background:#1a2a3a;color:#90caf9;font-size:12px;"
                    "font-weight:bold;padding:1px 5px;border-radius:3px;"
