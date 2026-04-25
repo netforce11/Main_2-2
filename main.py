@@ -550,7 +550,7 @@ class TradingDashboard(QMainWindow):
 # ══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     print("=" * 60)
-    print("0DTE Master Dashboard  v6.5")
+    print("0DTE Master Dashboard  v1.0DTE")
     print(f"저장 경로: {SAVE_DIR.resolve()}")
     print("=" * 60)
 
