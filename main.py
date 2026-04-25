@@ -20,7 +20,9 @@ main.py — 0DTE Master Dashboard  v6.5  메인 진입점
   [나머지 탭]
   tab_sniper.py         ← Tab3 스나이퍼 (SniperGrid)
   tab_oi.py             ← Tab8 OI 추적 (OITrackerGrid)
-  tab_account.py        ← Tab2 잔고PnL / Tab5 복수현재가 / Tab6 Greeks
+  tab_balance.py        ← Tab2 잔고/PnL (BalanceGrid) — Account_info/ 패키지 사용
+  tab_multi_price.py    ← Tab5 복수현재가 (MultiPriceGrid) — Account_info/ 패키지 사용
+  tab_greeks.py         ← Tab6 Greeks Matrix (GreeksGrid) — Account_info/ 패키지 사용
   tab_chart.py          ← Tab7 1분봉 차트 (Polygon + IBKR)
   tab_trading.py        ← Tab9 주문/잔고
   tab_kr_futures.py     ← Tab10 한국선물옵션
@@ -123,8 +125,9 @@ from telegram_bot.tg_client import TelegramClient
 from tab_sniper  import SniperGrid
 from tab_oi      import OITrackerGrid
 from tab_combo_strategy import ComboStrategyGrid
-from tab_account import BalanceGrid, MultiPriceGrid
-from tab_greeks  import GreeksGrid          # ← Main2/Greeks/tab_greeks.py
+from tab_balance      import BalanceGrid        # Account_info/ 패키지 사용
+from tab_multi_price  import MultiPriceGrid     # Account_info/ 패키지 사용
+from tab_greeks       import GreeksGrid         # Account_info/ 패키지 사용
 from tab_chart   import ChartGrid           # tab_chart_libs/ 경로는 tab_chart.py 내부 등록
 from tab_trading import TradingGrid
 from tab_kr_futures  import KRFuturesGrid

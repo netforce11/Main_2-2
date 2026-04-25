@@ -23,7 +23,10 @@
 			"path": "trade_log",
 		},
 		{
-			"path": "tab_chart_libs"
+			"path": "tab_chart_libs",
+		},
+		{
+			"path": "Account_info"
 		},
 	],
 }

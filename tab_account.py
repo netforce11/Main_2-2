@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QGroupBox, QListWidget, QTextEdit, QMessageBox,
     QInputDialog, QFileDialog, QAbstractItemView,
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QSplitter, QCheckBox,
+    QSplitter, QCheckBox, QFrame,
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush
@@ -63,115 +63,28 @@ class BalanceGrid(GridTab):
         self._connect_signals()
         self._load_history()
 
+    # ── 공통 스타일 상수 (Clean Card Light) ──────────────────────
     def _build(self):
-        # [0,0-11] 대형 PnL
-        self.lbl_pnl = QLabel("미실현 PnL: ―")
-        self.lbl_pnl.setFont(QFont("Arial", 42, QFont.Bold))
-        self.lbl_pnl.setAlignment(Qt.AlignCenter)
-        self.lbl_pnl.setStyleSheet(
-            "color:#aaa;background:#0a0a1a;border-radius:10px;border:none;")
-        self.add(self.lbl_pnl, 0, 0, 1, 12)
+        """패널별 빌더 호출만. 실제 UI 코드는 balance_panel_*.py 참조."""
+        from Account_info.balance_style         import CS
+        from Account_info.balance_panel_hero    import build_hero
+        from Account_info.balance_panel_top     import (build_acct_panel,
+                                           build_kpi_panel,
+                                           build_position_panel)
+        from Account_info.balance_panel_mid     import (build_chart_panel,
+                                           build_session_panel,
+                                           build_order_panel)
+        from Account_info.balance_panel_journal import build_journal
 
-        # [1,0-3] 계좌 요약 테이블 (상단 좌측)
-        gb1 = QGroupBox("계좌 요약")
-        v1  = QVBoxLayout(gb1)
-        self.tbl_acct = make_table(["항목", "값", "통화"], 0)
-        self.tbl_acct.setRowCount(0)
-        v1.addWidget(self.tbl_acct)
-        self.add(gb1, 1, 0, 1, 4)
-
-        # [1,4-7] 주요 지표 (빅 넘버)
-        gb_big = QGroupBox("주요 지표")
-        v_big  = QVBoxLayout(gb_big)
-        self.lbl_nlv  = self._big("총자산 (NLV)", "#ffd700")
-        self.lbl_bp   = self._big("사용가능 증거금", "#00cfff")
-        self.lbl_rpnl = self._big("실현 PnL", "#00ff88")
-        for w in (self.lbl_nlv, self.lbl_bp, self.lbl_rpnl):
-            v_big.addWidget(w)
-        self.add(gb_big, 1, 4, 1, 4)
-
-        # [1,8-11] 포지션
-        gb2 = QGroupBox("현재 포지션")
-        v2  = QVBoxLayout(gb2)
-        self.tbl_pos = make_table(["계좌", "심볼", "종류", "수량", "평균단가"], 0)
-        self.tbl_pos.setRowCount(0)
-        v2.addWidget(self.tbl_pos)
-        self.add(gb2, 1, 8, 1, 4)
-
-        # [2,0-3] 일자별 잔고·손익 차트
-        gb_chart = QGroupBox("일자별 잔고·손익 추이")
-        vc = QVBoxLayout(gb_chart)
-        if PG:
-            pg.setConfigOption('background', '#08080f')
-            pg.setConfigOption('foreground', '#ccc')
-            self.pw_nlv = pg.PlotWidget(title="총자산")
-            self.pw_nlv.showGrid(x=True, y=True, alpha=0.2)
-            self.pw_nlv.setMaximumHeight(100)
-            self.curve_nlv = self.pw_nlv.plot(
-                pen=pg.mkPen('#ffd700', width=2), symbol='o',
-                symbolSize=5, symbolBrush='#ffd700')
-            self.pw_pnl = pg.PlotWidget(title="일별 손익")
-            self.pw_pnl.showGrid(x=True, y=True, alpha=0.2)
-            self.pw_pnl.setMaximumHeight(100)
-            self.pw_pnl.addLine(y=0, pen=pg.mkPen('#555', width=1))
-            self.curve_pnl = self.pw_pnl.plot(
-                pen=pg.mkPen('#00ff88', width=2), symbol='o',
-                symbolSize=5, symbolBrush='#00ff88')
-            vc.addWidget(self.pw_nlv); vc.addWidget(self.pw_pnl)
-        else:
-            vc.addWidget(QLabel("pip install pyqtgraph"))
-        self.add(gb_chart, 2, 0, 1, 4)
-
-        # [2,4-7] Session Stats
-        gb3 = QGroupBox("Session Stats (누적 통계)")
-        g3  = QGridLayout(gb3)
-        self.lbl_winrate = QLabel("승률: ―")
-        self.lbl_avghold = QLabel("평균 보유: ―")
-        self.lbl_tot_pnl = QLabel("누적 손익: ―")
-        self.lbl_tot_cnt = QLabel("총 거래: ―")
-        for lb, col in [(self.lbl_winrate,"#00ff88"),(self.lbl_avghold,"#5dade2"),
-                        (self.lbl_tot_pnl,"#ffd700"),(self.lbl_tot_cnt,"#dde0f0")]:
-            lb.setFont(QFont("Arial", 14, QFont.Bold))
-            lb.setStyleSheet(f"color:{col};border:none;"); lb.setAlignment(Qt.AlignCenter)
-        g3.addWidget(self.lbl_winrate, 0, 0); g3.addWidget(self.lbl_avghold, 0, 1)
-        g3.addWidget(self.lbl_tot_pnl, 1, 0); g3.addWidget(self.lbl_tot_cnt, 1, 1)
-        self.tbl_trades = make_table(
-            ["시간","심볼","방향","수량","진입가","청산가","PnL","보유(분)"], 0)
-        g3.addWidget(self.tbl_trades, 2, 0, 1, 2)
-        btn_clr = QPushButton("Session 초기화"); btn_clr.clicked.connect(self._clear_session)
-        g3.addWidget(btn_clr, 3, 0, 1, 2)
-        self.add(gb3, 2, 4, 1, 4)
-
-        # [2,8-11] 미체결 주문
-        gb4 = QGroupBox("미체결 주문")
-        v4  = QVBoxLayout(gb4)
-        self.tbl_ord = make_table(
-            ["ID","심볼","종류","매수/도","수량","지정가","상태"], 0)
-        self.tbl_ord.setRowCount(0)
-        v4.addWidget(self.tbl_ord)
-        self.add(gb4, 2, 8, 1, 4)
-
-        # [3,0-11] 버튼 바
-        br = QWidget(); bl = QHBoxLayout(br)
-        btn_r = QPushButton("↺ 전체 새로고침")
-        btn_r.setStyleSheet("background:#1a4a6b;font-size:14px;font-weight:bold;padding:8px;")
-        btn_r.clicked.connect(self._refresh)
-        btn_sv = QPushButton("💾 PnL 이력 저장"); btn_sv.clicked.connect(self._save_history)
-        bl.addWidget(btn_r); bl.addWidget(btn_sv); bl.addStretch()
-        self.lbl_time = QLabel("마지막 업데이트: ―")
-        self.lbl_time.setStyleSheet("color:#555;font-size:11px;border:none;")
-        bl.addWidget(self.lbl_time)
-        self.add(br, 3, 0, 1, 12)
-
-        # [4,0-11] 매매일지 패널
-        self.add(self._build_trade_journal(), 4, 0, 1, 12)
-
-    def _big(self, title, color):
-        w = QWidget(); v = QVBoxLayout(w); v.setContentsMargins(4, 2, 4, 2)
-        lt = QLabel(title); lt.setStyleSheet("color:#888;font-size:11px;border:none;")
-        lv = QLabel("―"); lv.setFont(QFont("Arial", 18, QFont.Bold))
-        lv.setStyleSheet(f"color:{color};border:none;"); lv.setAlignment(Qt.AlignCenter)
-        v.addWidget(lt); v.addWidget(lv); w._val = lv; return w
+        self.setStyleSheet(CS["root"])
+        self.add(build_hero(self),           0, 0, 1, 12)
+        self.add(build_acct_panel(self),     1, 0, 1,  4)
+        self.add(build_kpi_panel(self),      1, 4, 1,  4)
+        self.add(build_position_panel(self), 1, 8, 1,  4)
+        self.add(build_chart_panel(self),    2, 0, 1,  4)
+        self.add(build_session_panel(self),  2, 4, 1,  4)
+        self.add(build_order_panel(self),    2, 8, 1,  4)
+        self.add(build_journal(self),        3, 0, 1, 12)
 
     def _connect_signals(self):
         bridge.acct_value.connect(self._on_acct)
@@ -268,10 +181,9 @@ class BalanceGrid(GridTab):
             # 미실현 PnL (대형 라벨)
             sign = "+" if unrealized >= 0 else ""
             col  = "#00ff88" if unrealized >= 0 else "#ff4444"
-            self.lbl_pnl.setText(f"미실현 PnL: {sign}${unrealized:,.2f}")
+            self.lbl_pnl.setText(f"{sign}${unrealized:,.2f}")
             self.lbl_pnl.setStyleSheet(
-                f"color:{col};background:#0a0a1a;border-radius:10px;"
-                "font-size:42px;font-weight:bold;border:none;")
+                f"color:{col};border:none;font-size:22px;font-weight:bold;")
 
             # 실현 PnL (주요 지표)
             rcol = "#00ff88" if realized >= 0 else "#ff4444"
@@ -304,10 +216,9 @@ class BalanceGrid(GridTab):
             try:
                 v = float(val); sign = "+" if v >= 0 else ""
                 col = "#00ff88" if v >= 0 else "#ff4444"
-                self.lbl_pnl.setText(f"미실현 PnL: {sign}${v:,.2f}")
+                self.lbl_pnl.setText(f"{sign}${v:,.2f}")
                 self.lbl_pnl.setStyleSheet(
-                    f"color:{col};background:#0a0a1a;border-radius:10px;"
-                    "font-size:42px;font-weight:bold;border:none;")
+                    f"color:{col};border:none;font-size:22px;font-weight:bold;")
                 self.tbl_acct.item(r,1).setForeground(QBrush(QColor(col)))
                 self._record_pnl(0.0, v)
             except: pass
@@ -410,106 +321,6 @@ class BalanceGrid(GridTab):
     # ══════════════════════════════════════════════════════════════
     # 매매일지 패널
     # ══════════════════════════════════════════════════════════════
-    def _build_trade_journal(self) -> QGroupBox:
-        """[4,0-11] 매매일지 패널 — 날짜 선택 + 체결/주문로그/요약 3탭."""
-        from PyQt5.QtWidgets import QTabWidget, QDateEdit, QCalendarWidget
-        from PyQt5.QtCore    import QDate
-
-        gb = QGroupBox("📋 매매일지")
-        gb.setStyleSheet(
-            "QGroupBox{font-size:12px;color:#ffd700;font-weight:bold;"
-            "border:1px solid #2a2a5a;border-radius:4px;"
-            "margin-top:6px;padding-top:4px;}"
-            "QGroupBox::title{subcontrol-origin:margin;left:8px;}")
-        root = QVBoxLayout(gb); root.setSpacing(4); root.setContentsMargins(6,8,6,6)
-
-        # ── 날짜 선택 행 ─────────────────────────────────────
-        ctrl = QHBoxLayout(); ctrl.setSpacing(6)
-        ctrl.addWidget(QLabel("날짜:", styleSheet="color:#aaa;font-size:12px;border:none;"))
-
-        self._jnl_date = QDateEdit()
-        self._jnl_date.setCalendarPopup(True)
-        self._jnl_date.setDate(QDate.currentDate())
-        self._jnl_date.setDisplayFormat("yyyy-MM-dd")
-        self._jnl_date.setFixedHeight(26)
-        self._jnl_date.setStyleSheet(
-            "background:#0a0a1e;color:#ffd700;border:1px solid #444;"
-            "font-size:13px;padding:2px 4px;")
-        ctrl.addWidget(self._jnl_date)
-
-        btn_load = QPushButton("📂 조회")
-        btn_load.setFixedHeight(26)
-        btn_load.setStyleSheet(
-            "background:#1a3a6b;color:#90caf9;font-size:12px;"
-            "font-weight:bold;padding:2px 10px;border-radius:3px;")
-        btn_load.clicked.connect(self._jnl_load)
-        ctrl.addWidget(btn_load)
-
-        btn_today = QPushButton("오늘")
-        btn_today.setFixedHeight(26)
-        btn_today.setStyleSheet(
-            "background:#1a3a1a;color:#00ff88;font-size:11px;padding:2px 8px;border-radius:3px;")
-        btn_today.clicked.connect(lambda: (
-            self._jnl_date.setDate(QDate.currentDate()), self._jnl_load()))
-        ctrl.addWidget(btn_today)
-
-        # 일일 요약 라벨 (날짜 행 우측)
-        self._jnl_summary_lbl = QLabel("")
-        self._jnl_summary_lbl.setStyleSheet(
-            "color:#ffd700;font-size:12px;font-weight:bold;border:none;")
-        ctrl.addStretch(); ctrl.addWidget(self._jnl_summary_lbl)
-        root.addLayout(ctrl)
-
-        # ── 3탭: 체결내역 / 주문로그 / 미청산 ───────────────
-        _tab_s = (
-            "QTabWidget::pane{border:1px solid #2a2a4a;background:#07070f;}"
-            "QTabBar::tab{background:#0a0a1e;color:#aaa;padding:4px 10px;"
-            "border:1px solid #2a2a4a;border-bottom:none;font-size:12px;}"
-            "QTabBar::tab:selected{background:#12122a;color:#ffd700;}"
-            "QTabBar::tab:hover{background:#1a1a3a;color:#fff;}")
-        tabs = QTabWidget(); tabs.setStyleSheet(_tab_s)
-
-        # 탭1: 체결내역
-        self.tbl_jnl_exec = self._jnl_make_table([
-            "시각","방향","종목","만기","CP","행사가",
-            "수량","체결가","지수","5분전","10분전","변동(5m)","변동(10m)"])
-        tabs.addTab(self._wrap(self.tbl_jnl_exec), "💰 체결내역")
-
-        # 탭2: 주문 상태 로그
-        self.tbl_jnl_orders = self._jnl_make_table([
-            "시각","상태","OID","종목","CP","행사가","방향","수량","주문가","지수"])
-        tabs.addTab(self._wrap(self.tbl_jnl_orders), "📋 주문로그")
-
-        # 탭3: 미청산 포지션
-        self.tbl_jnl_open = self._jnl_make_table([
-            "진입일","종목","CP","행사가","수량","진입가","현재손익"])
-        tabs.addTab(self._wrap(self.tbl_jnl_open), "🔓 미청산")
-
-        root.addWidget(tabs)
-        return gb
-
-    def _jnl_make_table(self, headers: list) -> QTableWidget:
-        tbl = QTableWidget(0, len(headers))
-        tbl.setHorizontalHeaderLabels(headers)
-        tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        tbl.verticalHeader().setVisible(False)
-        tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
-        tbl.setAlternatingRowColors(True)
-        tbl.setMaximumHeight(200)
-        tbl.setStyleSheet(
-            "QTableWidget{background:#05050f;color:#ccc;"
-            "gridline-color:#1a1a3a;font-size:11px;alternate-background-color:#080818;}"
-            "QHeaderView::section{background:#0a0a1e;color:#90caf9;"
-            "border:1px solid #1a1a3a;font-size:11px;padding:2px;}"
-            "QTableWidget::item:selected{background:#1a3a6b;color:#ffd700;}")
-        return tbl
-
-    @staticmethod
-    def _wrap(widget) -> QWidget:
-        w = QWidget(); v = QVBoxLayout(w)
-        v.setContentsMargins(0,4,0,0); v.addWidget(widget); return w
-
     def _jnl_load(self):
         """선택 날짜 매매일지 DB 조회 → 3탭 갱신."""
         date_str = self._jnl_date.date().toString("yyyy-MM-dd")
@@ -595,17 +406,23 @@ class BalanceGrid(GridTab):
         # ── 일일 요약 ─────────────────────────────────────────
         s = get_daily_summary(date_str)
         if s["trades"]:
-            col = "#00ff88" if s["net_pnl"] >= 0 else "#ff4444"
+            col = "#16a34a" if s["net_pnl"] >= 0 else "#dc2626"
             sign = "+" if s["net_pnl"] >= 0 else ""
             self._jnl_summary_lbl.setText(
-                f"{date_str}  |  {s['trades']}건  "
+                f"  {date_str}  |  {s['trades']}건  "
                 f"실현손익: {sign}${s['realized_pnl']:,.2f}  "
                 f"수수료: ${s['commission']:.2f}  "
                 f"순손익: {sign}${s['net_pnl']:,.2f}")
-            self._jnl_summary_lbl.setStyleSheet(f"color:{col};font-size:12px;font-weight:bold;border:none;")
+            self._jnl_summary_lbl.setStyleSheet(
+                f"color:{col};font-size:11px;font-weight:600;"
+                "background:#f8fafc;border-bottom:1px solid #f0f2f6;"
+                "padding:6px 16px;")
         else:
-            self._jnl_summary_lbl.setText(f"{date_str} — 체결 없음")
-            self._jnl_summary_lbl.setStyleSheet("color:#555;font-size:12px;border:none;")
+            self._jnl_summary_lbl.setText(f"  {date_str} — 체결 없음")
+            self._jnl_summary_lbl.setStyleSheet(
+                "color:#94a3b8;font-size:11px;"
+                "background:#f8fafc;border-bottom:1px solid #f0f2f6;"
+                "padding:6px 16px;")
 
     # ══════════════════════════════════════════════════════════════
     # 주문/체결 DB 저장 — bridge 시그널 통합 핸들러
@@ -651,7 +468,8 @@ class BalanceGrid(GridTab):
         """TabWrapper 다크/라이트 전환 시 호출 — 테이블 색상 명시 재적용."""
         from core import _apply_table_theme
         dark = getattr(self, 'dark_mode', True)
-        for tbl in (self.tbl_acct, self.tbl_pos, self.tbl_ord, self.tbl_trades):
+        for tbl in (self.tbl_acct, self.tbl_pos, self.tbl_ord, self.tbl_trades,
+                    self.tbl_jnl_exec, self.tbl_jnl_orders, self.tbl_jnl_open):
             _apply_table_theme(tbl, dark)
 
 
