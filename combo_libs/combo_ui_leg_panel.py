@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QTimer
 from combo_constants import STRATEGIES, MAX_LEGS
+from combo_ui_net_price_display import NetPriceDisplay
 
 # Mid-price 티커 ID 범위: 8800~8815 (레그 0~15)
 _TICKER_BASE = 8800
@@ -154,12 +155,9 @@ def _build_leg_left(self) -> QWidget:
     self.direction_banner = DirectionBanner(self)
     v.addWidget(self.direction_banner)
 
-    # ── Net Price 라벨 ────────────────────────────────────────
-    self.lbl_net_price = QLabel("Net Price: —")
-    self.lbl_net_price.setStyleSheet(
-        "QLabel{background:#0a0a1e;color:#aaa;font-size:12px;font-weight:bold;"
-        "border:1px solid #2a2a4a;border-radius:3px;padding:3px 8px;}")
-    v.addWidget(self.lbl_net_price)
+    # ── Net Price 전광판 ──────────────────────────────────────
+    self.net_price_display = NetPriceDisplay(self)
+    v.addWidget(self.net_price_display)
 
     # 재귀 방지 플래그 + itemChanged 연결
     self._leg_item_changing = False
@@ -205,25 +203,15 @@ def _recalc_net_price(self) -> float:
 
     net       = round(buy_total - sell_total, 2)
     lmt_price = round(abs(net), 2)
-    lbl = getattr(self, 'lbl_net_price', None)
-    if lbl is None:
-        return lmt_price
-    if lmt_price == 0.0:
-        lbl.setText("Net Price: —")
-        lbl.setStyleSheet(
-            "QLabel{background:#0a0a1e;color:#aaa;font-size:12px;font-weight:bold;"
-            "border:1px solid #2a2a4a;border-radius:3px;padding:3px 8px;}")
-        return 0.0
-    if net >= 0:
-        label = f"Net Debit:  ${lmt_price:.2f}  (지불)"
-        color = "#ff8888"
-    else:
-        label = f"Net Credit: ${lmt_price:.2f}  (수취)"
-        color = "#00ff88"
-    lbl.setText(label)
-    lbl.setStyleSheet(
-        f"QLabel{{background:#0a0a1e;color:{color};font-size:12px;font-weight:bold;"
-        f"border:1px solid #2a2a4a;border-radius:3px;padding:3px 8px;}}")
+
+    # ── 전광판 위젯 갱신 ──────────────────────────────────────
+    display = getattr(self, 'net_price_display', None)
+    if display is not None:
+        if lmt_price == 0.0:
+            display.reset()
+        else:
+            display.refresh(round(buy_total, 2), round(sell_total, 2))
+
     return lmt_price
 
 

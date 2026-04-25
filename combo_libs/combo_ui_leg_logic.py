@@ -136,6 +136,11 @@ def _rebuild_legs(self, legs: list):
         _insert_leg_row(self, leg, i)
     _update_add_btn_state(self)
 
+    # ★ 전략 변경 시 전광판 초기화
+    display = getattr(self, 'net_price_display', None)
+    if display is not None:
+        display.reset()
+
 
 def _insert_leg_row(self, leg: dict, row_idx: int):
     """레그 1행을 tbl_legs에 삽입."""

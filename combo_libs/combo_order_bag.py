@@ -259,7 +259,7 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
             f"잠시 기다렸다가 다시 시도하세요.")
         return
 
-    # lmtPrice 계산
+    # lmtPrice 계산 — 전광판 위젯 실시간 가격 우선, 없으면 legs 데이터 폴백
     buy_total  = sum(
         float(lg.get("prem", 0) or 0) * int(float(lg.get("qty", 1)))
         for lg in legs if lg["dir"] == "BUY")
@@ -268,18 +268,28 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
         for lg in legs if lg["dir"] == "SELL")
     net = round(buy_total - sell_total, 2)
 
-    try:
-        from combo_ui_leg_panel import _recalc_net_price
-        ui_price  = _recalc_net_price(self)
-        lmt_price = round(abs(float(ui_price)), 2) if ui_price else round(abs(net), 2)
-    except Exception:
-        lmt_price = round(abs(net), 2)
+    # ★ 전광판 위젯에서 실시간 Mid-price 기반 순가격 수신
+    display = getattr(self, 'net_price_display', None)
+    if display is not None and display.get_net_price() != 0.0:
+        params     = display.get_bag_params()
+        lmt_price  = params["lmt_price"]
+        bag_action = params["action"]
+        # net 부호는 위젯 값으로 재동기화
+        net = lmt_price if bag_action == "BUY" else -lmt_price
+    else:
+        # 폴백: legs 데이터 or _recalc_net_price
+        try:
+            from combo_ui_leg_panel import _recalc_net_price
+            ui_price  = _recalc_net_price(self)
+            lmt_price = round(abs(float(ui_price)), 2) if ui_price else round(abs(net), 2)
+        except Exception:
+            lmt_price = round(abs(net), 2)
+        bag_action = "BUY" if net >= 0 else "SELL"
 
     if lmt_price <= 0.0:
         lmt_price = 0.01
 
-    bag_action = "BUY" if net >= 0 else "SELL"
-    type_label = "데빗 (지불)" if net >= 0 else "크레딧 (수취)"
+    type_label = "데빗 (지불)" if bag_action == "BUY" else "크레딧 (수취)"
 
     # 확인 다이얼로그
     leg_lines = "\n".join(
