@@ -62,21 +62,36 @@ os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 os.environ.setdefault("QT_XCB_GL_INTEGRATION", "none")
 os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
 
+import sys, threading
+from datetime import datetime
+
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QFont
+
+# ══════════════════════════════════════════════════════════════
+# ✅ 핵심 수정: QApplication을 탭 모듈 import 전에 먼저 생성
+#    (어느 탭 모듈이든 import 시점에 QWidget을 생성하면 crash 발생)
+# ══════════════════════════════════════════════════════════════
+if not QApplication.instance():
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    _default_font = QFont()
+    _default_font.setPointSize(10)
+    app.setFont(_default_font)
+
+# ── pyqtgraph는 QApplication 생성 후에 import ─────────────────
 import pyqtgraph as pg
 pg.setConfigOption('useOpenGL', False)
 pg.setConfigOption('enableExperimental', False)
 pg.setConfigOption('antialias', False)
 # ─────────────────────────────────────────────────────────────
 
-import sys, threading
-from datetime import datetime
-
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout,
     QTabWidget, QLabel, QMessageBox
 )
 from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
-from PyQt5.QtGui import QFont, QKeySequence
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QShortcut
 
 # ── 공통 코어 ─────────────────────────────────────────────────
@@ -388,6 +403,7 @@ class TradingDashboard(QMainWindow):
                                 und, sign, chg, sign, round(pct, 2)))
                     else:
                         client._send_raw("📊 SPX 현물 지수\n현재가: {:,.2f}".format(und))
+
             # ── 7번: 스프레드 조회 (콜/풋 선택) ─────────────────
             elif item_no == 7:
                 try:
@@ -535,12 +551,8 @@ if __name__ == "__main__":
     print(f"저장 경로: {SAVE_DIR.resolve()}")
     print("=" * 60)
 
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-
-    default_font = QFont()
-    default_font.setPointSize(10)
-    app.setFont(default_font)
+    # ✅ 이미 모듈 최상단에서 생성된 QApplication 인스턴스를 재사용
+    app = QApplication.instance()
 
     win = TradingDashboard()
     win.app = app   # chain_saver worker 종료 연결용

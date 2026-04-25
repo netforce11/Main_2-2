@@ -1,0 +1,29 @@
+{
+	"folders":
+	[
+		{
+			"path": "call_put_tab",
+		},
+		{
+			"path": "combo_libs",
+		},
+		{
+			"path": "Greeks",
+		},
+		{
+			"path": "telegram_bot",
+		},
+		{
+			"path": "spread_tele",
+		},
+		{
+			"path": "strategy_report",
+		},
+		{
+			"path": "trade_log",
+		},
+		{
+			"path": "tab_chart_libs"
+		},
+	],
+}
