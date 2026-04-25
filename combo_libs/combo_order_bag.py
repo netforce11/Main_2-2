@@ -230,10 +230,22 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
         return
 
     # 중복 호출 방지
+    # Fix #9: lock_key를 finally에서 반드시 삭제해 self에 키가 누적되는 버그 수정.
+    # 이전 코드는 setattr(self, lock_key, True)만 하고 delattr 없이 방치됨.
     lock_key = f'_do_send_lock_{session}'
     if getattr(self, lock_key, False):
         return
     setattr(self, lock_key, True)
+
+    try:
+        _do_send_inner(self, bag, combo_legs, legs, strat, ib, total, resolved, session)
+    finally:
+        # Fix #9: 호출 완료(성공/실패/예외 무관) 후 lock 키 제거
+        try:
+            delattr(self, lock_key)
+        except AttributeError:
+            pass
+
 
     # ★ v2.9: _orig_cd 복구 코드 제거 (bridge 방식으로 교체됨, 잔류 코드였음)
 
@@ -361,12 +373,14 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
             self, oid=oid, price=lmt_price,
             action=bag_action, qty=int(ibord.totalQuantity))
 
-        # ── 주문 접수 확인: 4초 후 on_open_orders 재사용하여 OID 직접 확인 ──
-        # Chaser 첫 정정(5초)과 겹치지 않도록 4초로 설정
+        # ── 주문 접수 확인: 5초 후 on_open_orders 재사용하여 OID 직접 확인 ──
+        # Fix #3: Chaser 첫 정정(4초) + on_open_orders 락(2초) 충돌 방지를 위해
+        # 5초로 변경. Chaser 정정이 4초에 실행되고 조회는 5초에 시작하므로
+        # _oo_in_progress 락과 겹치지 않음.
         def _verify_order(check_oid=oid):
             from combo_order_open import on_open_orders
 
-            # 조회 완료 후 캐시에서 OID 확인하는 콜백 등록 (6초 후 — 조회 2초 여유)
+            # 조회 완료 후 캐시에서 OID 확인 (조회 2초 + 0.5초 여유 = 2.5초 후)
             def _check_cache():
                 orders = getattr(self, '_cached_open_orders', [])
                 oids = [o.get('oid') for o in orders]
@@ -376,9 +390,9 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
                     self._log(f"⚠ OID={check_oid} 주문 미확인 — TWS에서 직접 확인 필요")
 
             on_open_orders(self)
-            QTimer.singleShot(2500, _check_cache)  # 조회 완료(2초) 후 0.5초 여유
+            QTimer.singleShot(2500, _check_cache)
 
-        QTimer.singleShot(4000, _verify_order)
+        QTimer.singleShot(5000, _verify_order)
 
     except Exception as e:
         self._bag_session = None

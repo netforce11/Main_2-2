@@ -307,11 +307,15 @@ def _fetch_mid_price_sync(self) -> Optional[float]:
         ib.tickPrice = _orig
         return None
 
-    # Non-blocking wait: QEventLoop processes Qt events while waiting
-    QTimer.singleShot(500, loop.quit)   # 500ms hard timeout
-    loop.exec_()
-
-    ib.tickPrice = _orig
+    # Fix #6: try/finally로 감싸 예외 발생 시에도 반드시 원본 콜백 복구.
+    # 이전 코드는 QEventLoop 실행 중 예외 시 ib.tickPrice = _orig 미실행 →
+    # 다른 실시간 스트림 tick 콜백이 _on_tick으로 영구 교체되는 버그.
+    try:
+        # Non-blocking wait: QEventLoop processes Qt events while waiting
+        QTimer.singleShot(500, loop.quit)   # 500ms hard timeout
+        loop.exec_()
+    finally:
+        ib.tickPrice = _orig
 
     if 1 in result and 2 in result:
         return round((result[1] + result[2]) / 2, 2)

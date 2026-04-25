@@ -17,6 +17,7 @@ Python 3.8 호환
 
 from __future__ import annotations
 from typing import Optional
+from functools import partial
 from PyQt5.QtCore import Qt
 
 
@@ -35,15 +36,17 @@ def connect_order_callbacks(self) -> None:
     """
     bridge 시그널을 self 의 핸들러에 연결한다.
     중복 연결 방지: _cb_connected 플래그로 1회만 연결.
+
+    Fix #8: lambda 대신 functools.partial 사용.
+      - lambda는 self를 클로저로 캡처해 순환참조 발생.
+      - partial은 Qt가 슬롯 식별자로 안전하게 disconnect 가능.
     """
     if getattr(self, '_cb_connected', False):
         return
 
     from core import bridge
-    _slot_status = lambda oid, st, filled, rem: _on_order_status(
-        self, oid, st, filled, rem)
-    _slot_exec   = lambda oid, sym, side, qty, price: _on_exec_details(
-        self, oid, sym, side, qty, price)
+    _slot_status = partial(_on_order_status, self)
+    _slot_exec   = partial(_on_exec_details, self)
 
     bridge.order_status_sig.connect(_slot_status, Qt.QueuedConnection)
     bridge.exec_sig.connect(_slot_exec,           Qt.QueuedConnection)
@@ -92,6 +95,15 @@ def _on_order_status(self, oid: int, status: str,
     # ── 체결 ─────────────────────────────────────────────────
     elif status in _STATUS_FILLED:
         avg = _get_avg_price(self, oid)
+
+        # Fix #4: 부분 체결은 status="Filled" + remaining>0 으로 수신됨.
+        # 이전 코드에서는 elif filled>0 and remaining>0 분기가 Filled 분기보다
+        # 아래에 있어 절대 실행되지 않았음 → Filled 분기 안에서 먼저 판별.
+        if remaining > 0:
+            self._log(f"⚡ OID={oid} 부분체결: {filled:.0f}체결 / {remaining:.0f}잔여")
+            _set_panel_status(panel, oid, f"⚡ 부분체결({filled:.0f})")
+            return  # 아직 완전 체결 아님 — Chaser 유지
+
         msg = f"✅ OID={oid} 체결완료"
         msg += f"  avg=${avg:.2f}" if avg else ""
         self._log(msg)
@@ -109,6 +121,8 @@ def _on_order_status(self, oid: int, status: str,
 
         _set_panel_filled(panel, oid, avg)
         _deactivate_chaser_safe(self, reason="체결 완료")
+        # Fix #5: 완전 체결 후 current_oid 해제 → 뒤늦은 콜백 차단
+        self._chaser_current_oid = None
 
     # ── 취소 확인 ────────────────────────────────────────────
     elif status in _STATUS_CANCELLED:
@@ -116,10 +130,13 @@ def _on_order_status(self, oid: int, status: str,
         _set_panel_cancelled(panel, oid)
         _deactivate_chaser_safe(self, reason="취소 확인")
         # pending 포지션 정리 (합성 잔고에 추가되지 않았으므로 그냥 버림)
-        if getattr(self, '_pending_position', None) and                 getattr(self, '_pending_position', {}).get('oid') == oid:
+        if getattr(self, '_pending_position', None) and \
+                getattr(self, '_pending_position', {}).get('oid') == oid:
             self._pending_position = None
         # 완전 취소 후 재주문 허용
         self._bag_session = None
+        # Fix #5: 취소 확인 후 current_oid 해제 → 뒤늦은 콜백 차단
+        self._chaser_current_oid = None
 
     # ── IBKR 거절 ────────────────────────────────────────────
     elif status in _STATUS_INACTIVE:
@@ -127,11 +144,8 @@ def _on_order_status(self, oid: int, status: str,
         _set_panel_status(panel, oid, "❌ 거절됨")
         _deactivate_chaser_safe(self, reason="주문 거절")
         self._bag_session = None
-
-    # ── 부분 체결 ────────────────────────────────────────────
-    elif filled > 0 and remaining > 0:
-        self._log(f"⚡ OID={oid} 부분체결: {filled:.0f}체결 / {remaining:.0f}잔여")
-        _set_panel_status(panel, oid, f"⚡ 부분체결({filled:.0f})")
+        # Fix #5: 거절 후 current_oid 해제
+        self._chaser_current_oid = None
 
 
 def _on_exec_details(self, oid: int, sym: str,
