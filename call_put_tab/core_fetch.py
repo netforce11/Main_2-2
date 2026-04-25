@@ -596,34 +596,25 @@ class CoreFetchMixin(CoreFetchPosMixin):
                 tbl.setItem(r, c, _mk("―"))
 
     def _tbl_click(self, row, col, side):
+        # ── 더블클릭 억제: Qt는 dblclick 직전에 click을 먼저 발화한다.
+        #    _tbl_dbl 에서 플래그를 True 로 세우고 QTimer(0) 으로 리셋하므로,
+        #    연속 click+dblclick 구분이 가능하다.
+        if getattr(self, '_dbl_pending', False):
+            return
+
         strikes = self.call_strikes if side == "C" else self.put_strikes
         if row >= len(strikes): return
-        self._chart_strike = strikes[row]
-        self._chart_side   = side
-        if PG:
-            self._prices.clear()
-            self._price_times.clear()
-            self._deltas.clear()
-            self._candle_bars.clear()
-            self._candle_items.clear()
-            self._redraw_candles()
-        label = 'CALL' if side == 'C' else 'PUT'
-        if hasattr(self, 'chart_lbl'):
-            self.chart_lbl.setText(
-                f"차트: {label}  {int(strikes[row])}  (실시간 추적 중)")
-        self._log(f"차트 선택: {label} {int(strikes[row])}")
 
-        if hasattr(self, '_chart_tabs'):
-            self._chart_tabs.setCurrentIndex(0)
-
-        if hasattr(self, 'watch_side'):   self.watch_side.setText(side)
-        if hasattr(self, 'watch_strike'): self.watch_strike.setText(str(int(strikes[row])))
-
+        # ── 주문 패널용 가격·델타 조회 ──────────────────────────
         rid        = (REQ_CALL if side == "C" else REQ_PUT) + row
         data_dict  = (self.call_data if side == "C" else self.put_data)
         tick_entry = data_dict.get(rid, {})
 
-        cur_price = tick_entry.get("last") or tick_entry.get("bid") or tick_entry.get("ask")
+        # ※ or 체인 대신 is None 체크: 가격이 0.0이면 or 체인에서 falsy로 건너뜀
+        _p = tick_entry.get("last")
+        if _p is None: _p = tick_entry.get("bid")
+        if _p is None: _p = tick_entry.get("ask")
+        cur_price = _p
         cur_delta = tick_entry.get("delta")
 
         if cur_price is None:
@@ -643,11 +634,17 @@ class CoreFetchMixin(CoreFetchPosMixin):
                 except:
                     pass
 
+        # ── 빠른 주문 패널에 행사가·가격·정보 전달 ──────────────
         self._qord_fill(side, str(int(strikes[row])), cur_price, source="← 테이블 클릭")
 
-        if col == 2 and hasattr(self, '_show_pos_sell_panel'):
+        # ── 감시 패널 행사가 동기화 ──────────────────────────────
+        if hasattr(self, 'watch_side'):   self.watch_side.setText(side)
+        if hasattr(self, 'watch_strike'): self.watch_strike.setText(str(int(strikes[row])))
+
+        # ── 잔고 컬럼 클릭 시 포지션 매도 패널 ──────────────────
+        if col == 6 and hasattr(self, '_show_pos_sell_panel'):
             tbl = self.tbl_call if side == "C" else self.tbl_put
-            pos_item = tbl.item(row, 2)
+            pos_item = tbl.item(row, 6)
             hold_qty = 0
             if pos_item:
                 try:
@@ -658,6 +655,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
                 self._show_pos_sell_panel(
                     side, str(int(strikes[row])), qty=hold_qty, price=cur_price)
 
+        # ── 현재가 패널 옵션 정보 업데이트 ──────────────────────
         if hasattr(self, '_pp_opt_bid'):
             self._pp_opt_bid = None
             self._pp_opt_ask = None
@@ -665,6 +663,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
             self._update_price_panel_opt(
                 side, str(int(strikes[row])), None, cur_price, cur_delta)
 
+        # ── 스나이퍼 탭 타깃 동기화 ─────────────────────────────
         try:
             expiry_sn, _ = self._get_expiry()
             if expiry_sn and hasattr(self, 'set_sniper_target'):
@@ -676,11 +675,39 @@ class CoreFetchMixin(CoreFetchPosMixin):
         except Exception:
             pass
 
+        label = 'CALL' if side == 'C' else 'PUT'
+        self._log(f"주문 패널 전달: {label} {int(strikes[row])}"
+                  + (f"  가격={cur_price:.2f}" if cur_price else ""))
+
     def _tbl_dbl(self, row, col, side):
+        """더블클릭 → 옵션 행사가 차트 스냅샷 조회.
+
+        처리 순서:
+          1. _dbl_pending 플래그 설정 → 선행 cellClicked(_tbl_click) 억제
+          2. _chart_strike / _chart_side 확정
+          3. 차트 실시간 버퍼 초기화 (탭0 깨끗하게 비움)
+          4. 옵션 계약 스냅샷 히스토리 조회 (_fetch_option_snapshot)
+          5. 차트 탭을 분봉(탭2) 또는 실시간(탭0)으로 전환
+        """
+        # ── 범위 체크를 플래그 설정 전에 수행 ───────────────────
+        # _dbl_pending=True 설정 후 return 하면 _tbl_click 이 억제된 채
+        # QTimer(0) 리셋도 발화되지 않아 이후 단클릭이 모두 무시된다.
         strikes = self.call_strikes if side == "C" else self.put_strikes
-        if row >= len(strikes): return
-        self._chart_strike = strikes[row]
+        if not strikes or row >= len(strikes):
+            return
+
+        # ── 더블클릭 억제 플래그: QTimer(0)으로 이벤트 루프 직후 리셋 ──
+        self._dbl_pending = True
+        QTimer.singleShot(0, lambda: setattr(self, '_dbl_pending', False))
+
+        strike = strikes[row]
+        label  = 'CALL' if side == 'C' else 'PUT'
+
+        # ── _chart_strike 확정 ───────────────────────────────────
+        self._chart_strike = strike
         self._chart_side   = side
+
+        # ── 실시간 차트 버퍼 초기화 (탭0) ───────────────────────
         if PG:
             self._prices.clear()
             self._price_times.clear()
@@ -688,11 +715,223 @@ class CoreFetchMixin(CoreFetchPosMixin):
             self._candle_bars.clear()
             self._candle_items.clear()
             self._redraw_candles()
-        label = 'CALL' if side == 'C' else 'PUT'
-        if hasattr(self, 'chart_lbl'):
-            self.chart_lbl.setText(f"차트: {label}  {int(strikes[row])}  ✔ 확정")
-        self._log(f"차트 확정: {label} {int(strikes[row])}")
 
+        if hasattr(self, 'chart_lbl'):
+            self.chart_lbl.setText(f"차트: {label}  {int(strike)}  📊 조회 중…")
+
+        self._log(f"차트 더블클릭: {label} {int(strike)}  → 스냅샷 차트 조회")
+
+        # ── 옵션 스냅샷 차트 조회 ────────────────────────────────
+        self._fetch_option_snapshot(strike, side)
+
+    # ── 옵션 스냅샷 차트 조회 ────────────────────────────────────
+    # ── 옵션 스냅샷 차트용 reqId ────────────────────────────────
+    # REQ_HIST(6000~6099) 범위 밖, REQ_SNIPER(7000~) 이전의 빈 공간 사용
+    _OPT_SNAP_REQ = 6500
+
+    def _fetch_option_snapshot(self, strike: float, side: str):
+        """
+        행사가·방향에 대한 옵션 분봉 히스토리를 스냅샷(1회) 방식으로 조회.
+
+        chart_ibkr.py의 IbkrHistMixin 인프라(_ensure_hist_router, _poll_hist)를
+        직접 재활용한다.
+
+        흐름:
+          1. _ensure_hist_router() — bridge.hist_bar / hist_end 시그널 라우터 등록
+          2. _hist_router[6500] 슬롯 등록
+          3. reqHistoricalData(keepUpToDate=False) 스냅샷 전송
+          4. _poll_hist(10초 폴링) → on_done → _on_opt_snapshot_done()
+
+        옵션 계약 IBKR 주의사항:
+          - whatToShow = "TRADES"  (옵션은 BID_ASK/MIDPOINT 제한 있음)
+          - useRTH = 0             (전체 세션, 0DTE는 장 전후 체결 포함)
+          - barSizeSetting = "1 min"
+          - durationStr = "1 D"    (당일 분봉)
+          - endDateTime = ""       (현재 시각 기준 최신)
+        """
+        if not self.mw.connected:
+            self._log("⚠ 옵션 차트 조회: IBKR 미연결")
+            if hasattr(self, 'chart_lbl'):
+                self.chart_lbl.setText("차트: ⚠ IBKR 미연결")
+            return
+
+        try:
+            expiry, tag = self._get_expiry()
+        except Exception:
+            expiry, tag = None, None
+        if not expiry:
+            self._log("⚠ 옵션 차트 조회: 만기일 미설정")
+            return
+
+        sym   = self.edit_sym.text().strip().upper() or "SPX"
+        label = 'CALL' if side == 'C' else 'PUT'
+        req   = self._OPT_SNAP_REQ
+
+        # ── 이전 조회 취소 + 라우터 슬롯 초기화 ────────────────
+        # keepUpToDate=True 실시간 스트림이 켜져 있으면 _hist_router[9801]이
+        # 살아있어 _poll_hist 의 done 신호를 가로챌 수 있다 → 먼저 중지.
+        if hasattr(self, '_stop_live'):
+            self._stop_live()
+        try:
+            self.mw.ib.cancelHistoricalData(req)
+        except Exception:
+            pass
+        if hasattr(self, '_hist_router'):
+            self._hist_router.pop(req, None)
+
+        # ── chart_ibkr.IbkrHistMixin 라우터 등록 ─────────────
+        # _ensure_hist_router() 는 IbkrHistMixin에 정의되어 있다.
+        # CallPutGrid 가 IbkrHistMixin 을 상속하므로 self 에서 호출 가능.
+        self._ensure_hist_router()
+        self._hist_router[req] = {"buf": [], "done": False, "is_daily": False}
+
+        # ── 옵션 계약 생성 ───────────────────────────────────────
+        contract = make_opt_contract_safe(sym, strike, side, expiry, tag)
+
+        self._log(f"📊 옵션 스냅샷 조회: {label} {int(strike)}  만기={expiry}")
+        if hasattr(self, 'chart_lbl'):
+            self.chart_lbl.setText(
+                f"차트: {label}  {int(strike)}  ⏳ 조회 중…")
+
+        # ── MDT 임시 전환: 스냅샷 요청 전 현재 MDT 저장 후 4로 전환 ──
+        # _current_mdt 는 core_conn.py 가 갱신하는 속성.
+        # 없으면 auto_mdt()로 현재 값을 직접 계산하여 복원 기준으로 삼는다.
+        _prev_mdt = getattr(self, '_current_mdt', None)
+        if _prev_mdt is None:
+            try:
+                _prev_mdt = auto_mdt(self.mw.ib)
+            except Exception:
+                _prev_mdt = 3   # 안전 기본값: 지연
+        try:
+            self.mw.ib.reqMarketDataType(4)
+        except Exception:
+            pass
+
+        # ── reqHistoricalData 전송 ───────────────────────────────
+        try:
+            self.mw.ib.reqHistoricalData(
+                req,
+                contract,
+                "",          # endDateTime: 빈 문자열 = 현재 시각
+                "1 D",       # durationStr
+                "1 min",     # barSizeSetting
+                "TRADES",    # whatToShow — 옵션은 TRADES가 가장 안정적
+                0,           # useRTH: 0 = 전체 세션
+                1,           # formatDate: 1 = yyyymmdd hh:mm:ss
+                False,       # keepUpToDate: False = 스냅샷
+                []           # chartOptions
+            )
+        except Exception as e:
+            self._log(f"⚠ 옵션 reqHistoricalData 오류: {e}")
+            if hasattr(self, 'chart_lbl'):
+                self.chart_lbl.setText(f"차트: {label}  {int(strike)}  ❌ 요청 실패")
+            self._hist_router.pop(req, None)
+            # MDT 복원
+            try:
+                self.mw.ib.reqMarketDataType(_prev_mdt)
+            except Exception:
+                pass
+            return
+
+        # ── _poll_hist로 폴링 (10초 타임아웃) ────────────────────
+        # chart_ibkr.py _poll_hist 시그니처:
+        #   _poll_hist(self, req_id, on_done, lbl, on_timeout, ms=10_000)
+        # lbl은 setText가 있는 객체이면 됨 — chart_lbl 또는 더미 객체 사용
+        _lbl = getattr(self, 'chart_lbl', _DummyLabel())
+
+        _strike_snap = strike   # 클로저 캡처용
+        _side_snap   = side
+
+        def _restore_mdt():
+            """스냅샷 완료/실패 후 MDT를 이전 값으로 복원."""
+            try:
+                self.mw.ib.reqMarketDataType(_prev_mdt)
+            except Exception:
+                pass
+
+        def _on_done_with_restore(bars):
+            _restore_mdt()
+            self._on_opt_snapshot_done(bars, _strike_snap, _side_snap)
+
+        def _on_timeout_with_restore():
+            _restore_mdt()
+            self._on_opt_snapshot_timeout()
+
+        self._poll_hist(
+            req,
+            _on_done_with_restore,
+            _lbl,
+            _on_timeout_with_restore,
+            ms=10_000,
+        )
+
+    def _on_opt_snapshot_done(self, bars, strike: float, side: str):
+        """스냅샷 조회 완료 — 분봉 탭(탭2) 렌더링 후 탭 전환.
+
+        bars: List[dict]  {"t": timestamp, "o", "h", "l", "c", "v"}
+          — chart_ibkr._parse_bar() 가 생성한 포맷.
+          — _on_intra_done 은 내부에서 _bars_to_rows() 를 호출하므로 그대로 전달 가능.
+
+        주의: _intra_cache_bars 를 옵션 봉으로 덮어쓰지 않는다.
+              덮어쓰면 이후 기초자산 분봉 재조회 시 _redraw_intraday_cache 가
+              옵션 봉 데이터로 잘못 렌더링된다.
+        """
+        label = 'CALL' if side == 'C' else 'PUT'
+
+        if not bars:
+            self._log(f"⚠ 옵션 스냅샷: 데이터 없음 ({label} {int(strike)})")
+            if hasattr(self, 'chart_lbl'):
+                self.chart_lbl.setText(
+                    f"차트: {label}  {int(strike)}  ⚠ 데이터 없음")
+            if hasattr(self, '_chart_tabs'):
+                self._chart_tabs.setCurrentIndex(0)   # 실시간 탭 유지
+            return
+
+        self._log(f"✅ 옵션 스냅샷: {label} {int(strike)}  {len(bars)}봉")
+
+        if hasattr(self, 'chart_lbl'):
+            self.chart_lbl.setText(
+                f"차트: {label}  {int(strike)}  📊 {len(bars)}봉")
+
+        # ── 분봉 탭(탭2) 렌더러 호출 ────────────────────────────
+        # _on_intra_done(bars, sym, tf, maxbars) 시그니처 (chart_history.py 기준)
+        # sym 자리에 옵션 레이블 전달 → lbl_intra_status 에 종목명 표시
+        sym       = self.edit_sym.text().strip().upper() or "SPX"
+        label_sym = f"{sym} {label} {int(strike)}"
+        tf        = getattr(self, '_intra_cache_tf', 1)
+        maxbars   = getattr(self, '_intra_cache_maxbars', 399)
+
+        # ── _intra_cache_bars 백업·복원: 옵션 봉으로 덮어쓰기 방지 ──
+        # _on_intra_done 내부에서 self._intra_cache_bars 를 갱신하지 않으므로
+        # 실제로는 안전하지만, 혹시 구현이 바뀌어도 문제없도록 명시적 보호.
+        _prev_cache = getattr(self, '_intra_cache_bars', None)
+        _prev_sym   = getattr(self, '_intra_cache_sym', '')
+
+        if hasattr(self, '_on_intra_done'):
+            try:
+                self._on_intra_done(bars, label_sym, tf, maxbars)
+            except Exception as e:
+                self._log(f"⚠ 옵션 차트 렌더링 오류: {e}")
+
+        # 캐시 복원 — 기초자산 분봉 데이터 보존
+        self._intra_cache_bars = _prev_cache
+        self._intra_cache_sym  = _prev_sym
+
+        # ── 분봉 탭으로 전환 ─────────────────────────────────────
+        if hasattr(self, '_chart_tabs'):
+            self._chart_tabs.setCurrentIndex(2)
+
+    def _on_opt_snapshot_timeout(self):
+        """폴링 타임아웃(10초) — 실시간 탭(탭0) 유지."""
+        strike = getattr(self, '_chart_strike', None)
+        side   = getattr(self, '_chart_side', 'C')
+        label  = 'CALL' if side == 'C' else 'PUT'
+        s_txt  = str(int(strike)) if strike else "?"
+        self._log(f"⚠ 옵션 스냅샷 타임아웃 ({label} {s_txt}) — 실시간 탭 유지")
+        if hasattr(self, '_chart_tabs'):
+            self._chart_tabs.setCurrentIndex(0)
+
+    # ─────────────────────────────────────────────────────────
     _INDEX_SYMS = {"SPX", "NDX", "RUT", "VIX", "DJX", "XSP", "NQ", "ES", "MES", "MNQ"}
 
     def _on_watch_dbl(self, item):
@@ -865,3 +1104,11 @@ class CoreFetchMixin(CoreFetchPosMixin):
         r = self.watchlist.currentRow()
         if r >= 0:
             self.watchlist.takeItem(r)
+
+# ──────────────────────────────────────────────────────────────
+# _DummyLabel — _poll_hist lbl 인자용 더미 (CoreFetchMixin 외부)
+# ──────────────────────────────────────────────────────────────
+class _DummyLabel:
+    """chart_lbl 위젯이 없을 때 _poll_hist의 lbl 자리를 채우는 더미.
+    setText 호출을 조용히 무시한다."""
+    def setText(self, *_): pass
