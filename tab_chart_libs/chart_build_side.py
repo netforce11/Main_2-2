@@ -91,6 +91,12 @@ def build_sidebar(self) -> QScrollArea:
     self.btn_force_reload.clicked.connect(self._on_force_reload)
     rt_btn_row.addWidget(self.btn_force_reload)
     rt_v.addLayout(rt_btn_row)
+
+    # ── RT 시작 시 IBKR 자동 전환 안내 ───────────────────────
+    lbl_rt_hint = QLabel("※ RT 시작 시 IBKR 연결되면 자동 전환")
+    lbl_rt_hint.setStyleSheet("color:#666;font-size:10px;")
+    lbl_rt_hint.setWordWrap(True)
+    rt_v.addWidget(lbl_rt_hint)
     crow = QHBoxLayout(); crow.addWidget(QLabel("캔들:"))
     self.candle_spin = QSpinBox()
     self.candle_spin.setRange(10, 2000); self.candle_spin.setValue(180)

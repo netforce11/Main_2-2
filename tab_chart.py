@@ -92,6 +92,12 @@ from chart_daily    import toggle_daily_view, load_daily_data, \
                            render_daily, center_on_calendar
 # ── v6.5 신규 ────────────────────────────────────────────────
 from chart_prefetch import PrefetchManager
+# ── 기능 추가: 거래량급증 / 체결마커 / 틱속도 ────────────────
+from chart_vol_surge   import draw_vol_surge, clear_vol_surge
+from chart_exec_marker import (init_exec_markers, add_exec_marker,
+                                redraw_exec_markers, clear_exec_markers,
+                                load_exec_markers_from_db)
+from chart_tick_speed  import stop_tick_speed
 
 try:
     from common import (DATA_ROOT, API_KEY_FILE, WATCHLIST_FILE,
@@ -138,6 +144,8 @@ class ChartGrid(QWidget):
         self._build()
         self._load_watchlist()
         self._apply_theme()
+        # ── 체결 마커 초기화 (SignalBridge 연결 포함) ─────────
+        init_exec_markers(self)
 
     # ── 위임 메서드 바인딩 ────────────────────────────────────
     _apply_theme         = apply_theme
@@ -185,6 +193,14 @@ class ChartGrid(QWidget):
     _load_daily_data       = load_daily_data
     _render_daily          = render_daily
     _center_on_calendar    = center_on_calendar
+    # ── 기능 추가 바인딩 ──────────────────────────────────────
+    _draw_vol_surge        = draw_vol_surge
+    _clear_vol_surge       = clear_vol_surge
+    _add_exec_marker       = add_exec_marker
+    _redraw_exec_markers   = redraw_exec_markers
+    _clear_exec_markers    = clear_exec_markers
+    _load_exec_from_db     = load_exec_markers_from_db
+    _stop_tick_speed       = stop_tick_speed
 
     # ── API 키 / 관심종목 ─────────────────────────────────────
     def _load_api_key(self):

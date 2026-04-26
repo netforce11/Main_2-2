@@ -252,9 +252,17 @@ def build_chart_area(self) -> QWidget:
         self.gfx = pg.GraphicsLayoutWidget()
         self.p1  = self.gfx.addPlot(row=0, col=0)
         self.p2  = self.gfx.addPlot(row=1, col=0)
-        self.p2.setFixedHeight(110); self.p2.setXLink(self.p1)
+        self.p2.setFixedHeight(80); self.p2.setXLink(self.p1)
         self.p1.scene().sigMouseClicked.connect(self._on_chart_click)
         self.p1.getViewBox().sigRangeChanged.connect(self._on_range_changed)
+
+        # ── 기능추가: 틱/호가 속도 인디케이터 패널 (p3) ─────
+        try:
+            from chart_tick_speed import init_tick_speed
+            init_tick_speed(self)   # row=2, col=0 으로 p3 자동 추가
+        except Exception as _e:
+            print(f"[TickSpeed] init 실패: {_e}")
+
         chart_v.addWidget(self.gfx, 1)
     else:
         chart_v.addWidget(QLabel("pip install pyqtgraph"))

@@ -123,6 +123,14 @@ if IBAPI_AVAILABLE:
                 str(execution.side),
                 float(execution.shares),
                 float(execution.price))
+            # ── 체결 마커용 시그널 (chart_exec_marker.py 수신) ──
+            import time as _time
+            # IBKR side: 'BOT'=매수, 'SLD'=매도
+            _action = "BUY" if str(execution.side).upper() == "BOT" else "SELL"
+            _bridge().exec_filled.emit(
+                int(_time.time() * 1000),
+                _action,
+                float(execution.price))
 
         def contractDetails(self, reqId, contractDetails):
             from types import SimpleNamespace

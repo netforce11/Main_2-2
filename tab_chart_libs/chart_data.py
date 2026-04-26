@@ -228,8 +228,21 @@ def update_display(self, force_regular=False):
         if eok >= limit: hi_rows.append((i, r, et, eok))
 
     self.p1.addItem(CandlestickItem(p_data, self._c_up(), self._c_dn()))
-    self.p2.addItem(pg.BarGraphItem(
-        x=range(len(v_h)), height=v_h, width=0.6, brushes=v_b))
+
+    # ── 기능3: 거래량 급증 하이라이트 ───────────────────────
+    try:
+        from chart_vol_surge import draw_vol_surge
+        # vol_data: [(x_index, volume), ...]
+        _vol_data = list(enumerate(v_h))
+        draw_vol_surge(self, p_data, _vol_data)
+    except Exception as _e:
+        # vol_surge 미설치 시 기본 바 그리기로 fallback
+        self.p2.addItem(pg.BarGraphItem(
+            x=range(len(v_h)), height=v_h, width=0.6, brushes=v_b))
+    else:
+        # draw_vol_surge 내부에서 p2 바를 그리므로 중복 방지
+        # 급증 없는 봉은 draw_vol_surge 가 이미 기본색으로 그림
+        pass
     from PyQt5.QtCore import Qt as _Qt
     for bx in date_bounds:
         for pl in (self.p1, self.p2):
@@ -240,7 +253,22 @@ def update_display(self, force_regular=False):
         pl.getAxis('bottom').setTicks([x_t])
     redraw_time_markers(self)
     redraw_hlines(self)
-    self.current_processed = [(r, et, eok) for _, r, et, eok in hi_rows]
+
+    # current_processed: 체결 마커 등이 참조하는 봉 목록 (전체 봉 기준)
+    # [(r_dict, et, eok), ...] — hi_rows 아닌 filtered 전체
+    self.current_processed = [
+        {**r, 'h': r.get('h', r.get('high', 0)),
+               'l': r.get('l', r.get('low',  0)),
+               't': r.get('t', 0)}
+        for r, et in filtered
+    ]
+
+    # ── 기능5: 체결 마커 오버레이 ────────────────────────────
+    try:
+        from chart_exec_marker import redraw_exec_markers
+        redraw_exec_markers(self)
+    except Exception as _e:
+        pass
 
     hi_sorted = sorted(hi_rows, key=lambda x: -x[3])
     self.table_l.setRowCount(len(hi_sorted))

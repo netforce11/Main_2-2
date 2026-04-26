@@ -192,7 +192,9 @@ class SignalBridge(QObject):
     hist_bar       = pyqtSignal(int, dict)   # bar를 dict로 직렬화 후 emit (object는 cross-thread 크래시)
     hist_end       = pyqtSignal(int)
     hist_ticks     = pyqtSignal(int, list, bool)  # reqId, ticks(list of dict), done
-    hist_bar_update = pyqtSignal(int, dict)  # ← 이 줄만 추가
+    hist_bar_update = pyqtSignal(int, dict)
+    # ── 체결 마커용 (chart_exec_marker.py 에서 수신) ─────────
+    exec_filled     = pyqtSignal(int, str, float)  # (ts_ms, 'BUY'|'SELL', fill_price)
 
 # 전역 브릿지 싱글턴
 bridge = SignalBridge()
@@ -233,6 +235,13 @@ class TickRouter(QObject):
             if start <= rid <= end:
                 try: slot(rid, tt, price)
                 except Exception as ex: print(f"[Router] price slot err: {ex}")
+        # ── 틱/호가 속도 인디케이터 (chart_tick_speed.py) ─────
+        if tt in (1, 2, 4):   # Bid=1, Ask=2, Last=4
+            try:
+                from chart_tick_speed import on_ibkr_tick
+                on_ibkr_tick(tt, price)
+            except Exception:
+                pass
 
     def _route_option(self, rid: int, tt: int, iv, delta, op, gamma, vega, theta):
         for start, end, slot in self._option_routes:
