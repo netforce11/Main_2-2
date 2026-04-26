@@ -7,6 +7,12 @@ build_chart_area(self) → QWidget   (컨트롤바 + gfx)
 v6.4 변경:
   build_tables() 상단에 daily_container 추가
   (일봉 보기 ON 시 분차트 테이블 숨기고 이 영역에 일봉 캔들 렌더링)
+
+v6.6 변경:
+  우측 상단 패널에 체크박스 토글 추가
+    ☐ 미체크 → 기존 대량체결 테이블 표시
+    ☑ 체크   → 조건부 주문 설정 WebEngine 패널로 전환
+  _on_order_panel_toggle(checked) 핸들러 내장
 """
 
 import os as _os, sys as _sys
@@ -18,7 +24,7 @@ if _here not in _sys.path:
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QCheckBox, QSplitter, QAbstractItemView,
-    QSizePolicy,
+    QSizePolicy, QStackedWidget,
 )
 from PyQt5.QtCore import Qt
 
@@ -29,22 +35,28 @@ except ImportError:
 
 from core import make_table
 
+
 def build_tables(self) -> QWidget:
     """
-    반환 구조 (v6.4):
+    반환 구조 (v6.6):
     QWidget (outer)
-    ├── daily_container   ← v6.4 신규, 초기 hidden
-    │   (일봉 캔들 + 볼륨 pyqtgraph 가 여기에 동적으로 추가됨)
-    └── _tbl_splitter     ← 기존 분차트 좌/우 테이블
+    ├── daily_container        ← v6.4 신규, 초기 hidden
+    └── _tbl_splitter
+         ├── 좌 테이블 (분봉 데이터)
+         └── 우 QWidget
+              ├── 헤더 행 (타이틀 + 초기화버튼 + [☐ 주문 설정] 체크박스)
+              ├── 로드 행 (FTD/공매도 + 파일 불러오기)
+              └── _right_stack (QStackedWidget)
+                   ├── page 0: table_r  (대량체결 테이블)  ← 기본
+                   └── page 1: _cond_panel (조건부 주문 WebEngine)
     """
-    outer = QWidget()
+    outer   = QWidget()
     outer_v = QVBoxLayout(outer)
     outer_v.setContentsMargins(0, 0, 0, 0)
     outer_v.setSpacing(0)
 
     # ════════════════════════════════════════════════════
-    # v6.4 신규: 일봉 컨테이너 (초기 hidden)
-    # chart_daily.py 의 render_daily() 가 이 안에 위젯을 동적으로 추가
+    # v6.4: 일봉 컨테이너 (초기 hidden)
     # ════════════════════════════════════════════════════
     self.daily_container = QWidget()
     self.daily_container.setSizePolicy(
@@ -53,65 +65,128 @@ def build_tables(self) -> QWidget:
     daily_v.setContentsMargins(2, 2, 2, 2)
     daily_v.setSpacing(2)
 
-    # 로딩 전 안내 라벨 (데이터 수신 전 표시)
     _ph = QLabel("캘린더 날짜를 선택 후\n📈 일봉 추가 보기를 눌러주세요.")
     _ph.setAlignment(Qt.AlignCenter)
     _ph.setStyleSheet(
         "color:#556655;font-size:13px;"
         "background:#151f15;border-radius:4px;")
     daily_v.addWidget(_ph)
-    self.daily_container.hide()      # ← 기본값: 숨김
+    self.daily_container.hide()
     outer_v.addWidget(self.daily_container)
-    # ════════════════════════════════════════════════════
 
-    # ── 기존 분차트 테이블 스플리터 ──────────────────────
+    # ── 분차트 테이블 스플리터 ────────────────────────────
     self._tbl_splitter = QSplitter(Qt.Horizontal)
     self._tbl_splitter.setHandleWidth(4)
     self._tbl_splitter.setStyleSheet(
         "QSplitter::handle{background:#2a2a4a;}"
         "QSplitter::handle:hover{background:#5dade2;}")
+    # 상하 스플리터가 위로 최대한 올라갈 수 있도록 최소 높이 제거
+    self._tbl_splitter.setMinimumHeight(0)
+    outer.setMinimumHeight(0)
 
-    lw = QWidget(); lbox = QVBoxLayout(lw)
-    lbox.setContentsMargins(0,0,0,0); lbox.setSpacing(2)
+    # ── 좌 테이블 ─────────────────────────────────────────
+    lw   = QWidget(); lbox = QVBoxLayout(lw)
+    lbox.setContentsMargins(0, 0, 0, 0); lbox.setSpacing(2)
     lbox.addWidget(QLabel("▶ 데이터 테이블 (좌)"))
-    self.table_l = make_table(["시간(ET)","시가","고가","저가","종가","거래대금(억)"])
+    self.table_l = make_table(
+        ["시간(ET)", "시가", "고가", "저가", "종가", "거래대금(억)"])
     self.table_l.setSelectionMode(QAbstractItemView.MultiSelection)
     self.table_l.setSelectionBehavior(QAbstractItemView.SelectRows)
     self.table_l.itemSelectionChanged.connect(
         lambda: self._update_peak3(self.table_l))
+    # 스플리터가 위로 자유롭게 올라가도록 최소 높이 제거
+    self.table_l.setMinimumHeight(0)
+    lw.setMinimumHeight(0)
     lbox.addWidget(self.table_l)
     self._tbl_splitter.addWidget(lw)
 
-    rw = QWidget(); rbox = QVBoxLayout(rw)
-    rbox.setContentsMargins(0,0,0,0); rbox.setSpacing(2)
-    rtitle_row = QHBoxLayout()
-    rtitle_row.addWidget(QLabel("▶ 대량체결 / FTD / 공매도 테이블 (우)"))
+    # ── 우 패널 전체 컨테이너 ─────────────────────────────
+    rw   = QWidget(); rbox = QVBoxLayout(rw)
+    rbox.setContentsMargins(0, 0, 0, 0); rbox.setSpacing(2)
+
+    # ── 헤더 행 (타이틀 + 초기화 + 주문설정 체크박스) ─────
+    rtitle_row = QHBoxLayout(); rtitle_row.setSpacing(6)
+    rtitle_row.addWidget(
+        QLabel("▶ 대량체결 / FTD / 공매도 테이블 (우)"))
     rtitle_row.addStretch()
-    btn_clr = QPushButton("초기화"); btn_clr.setFixedWidth(60); btn_clr.setFixedHeight(22)
+
+    # ── v6.6: 주문 설정 토글 체크박스 ─────────────────────
+    self.chk_order_panel = QCheckBox("⚙ 주문 설정")
+    self.chk_order_panel.setToolTip(
+        "체크: 조건부 주문 설정 패널 표시\n"
+        "미체크: 대량 체결 테이블 표시")
+    self.chk_order_panel.setStyleSheet(
+        "QCheckBox{ color:#FF8C00; font-weight:bold; font-size:11px; }"
+        "QCheckBox::indicator{ width:14px; height:14px; }"
+        "QCheckBox::indicator:unchecked{"
+        "  border:1px solid #7a5a1a; border-radius:3px;"
+        "  background:#1a1a0a; }"
+        "QCheckBox::indicator:checked{"
+        "  border:1px solid #FF8C00; border-radius:3px;"
+        "  background:#3a2a0a; }"
+    )
+    self.chk_order_panel.stateChanged.connect(
+        lambda state: _on_order_panel_toggle(self, bool(state)))
+    rtitle_row.addWidget(self.chk_order_panel)
+
+    btn_clr = QPushButton("초기화")
+    btn_clr.setFixedWidth(60); btn_clr.setFixedHeight(22)
     btn_clr.clicked.connect(self._clr_right)
     rtitle_row.addWidget(btn_clr)
     rbox.addLayout(rtitle_row)
+
+    # ── 로드 행 (FTD / 공매도 파일) ──────────────────────
     load_row = QHBoxLayout(); load_row.setSpacing(4)
     self.file_type_combo = QComboBox()
     self.file_type_combo.addItems(["FTD (미결제)", "공매도 (Short Volume)"])
-    self.file_type_combo.setFixedWidth(155); self.file_type_combo.setFixedHeight(22)
+    self.file_type_combo.setFixedWidth(155)
+    self.file_type_combo.setFixedHeight(22)
     load_row.addWidget(self.file_type_combo)
     self.file_sym_in = QLineEdit()
     self.file_sym_in.setPlaceholderText("종목 (예: spy)")
-    self.file_sym_in.setFixedWidth(80); self.file_sym_in.setFixedHeight(22)
+    self.file_sym_in.setFixedWidth(80)
+    self.file_sym_in.setFixedHeight(22)
     load_row.addWidget(self.file_sym_in)
-    btn_load = QPushButton("📂 불러오기"); btn_load.setFixedWidth(85); btn_load.setFixedHeight(22)
-    btn_load.clicked.connect(self._load_aux_file); load_row.addWidget(btn_load)
+    btn_load = QPushButton("📂 불러오기")
+    btn_load.setFixedWidth(85); btn_load.setFixedHeight(22)
+    btn_load.clicked.connect(self._load_aux_file)
+    load_row.addWidget(btn_load)
     self.file_status_lbl = QLabel("")
     self.file_status_lbl.setStyleSheet("font-size:11px;color:gray;")
-    load_row.addWidget(self.file_status_lbl); load_row.addStretch()
+    load_row.addWidget(self.file_status_lbl)
+    load_row.addStretch()
     rbox.addLayout(load_row)
-    self.table_r = make_table(["시간(ET)","시가","고가","저가","종가","거래대금(억)","구분"])
+
+    # ── QStackedWidget (테이블 ↔ 주문 패널) ──────────────
+    self._right_stack = QStackedWidget()
+
+    # page 0 — 대량체결 테이블 (기존)
+    self.table_r = make_table(
+        ["시간(ET)", "시가", "고가", "저가", "종가", "거래대금(억)", "구분"])
     self.table_r.setSelectionMode(QAbstractItemView.MultiSelection)
     self.table_r.setSelectionBehavior(QAbstractItemView.SelectRows)
     self.table_r.itemSelectionChanged.connect(
         lambda: self._update_peak3(self.table_r))
-    rbox.addWidget(self.table_r)
+    # 스플리터가 위로 자유롭게 올라가도록 최소 높이 제거
+    self.table_r.setMinimumHeight(0)
+    rw.setMinimumHeight(0)
+    self._right_stack.addWidget(self.table_r)       # index 0
+
+    # page 1 — 조건부 주문 WebEngine 패널
+    try:
+        from chart_condition_order import build_condition_panel
+        self._cond_panel = build_condition_panel(self.mw)
+    except Exception as e:
+        print(f"[build_main] 조건부 주문 패널 로드 실패: {e}")
+        _err = QLabel(f"⚠ chart_condition_order 로드 실패\n{e}")
+        _err.setStyleSheet("color:#ff5252;font-size:11px;padding:8px;")
+        _err.setAlignment(Qt.AlignCenter)
+        self._cond_panel = _err
+
+    self._right_stack.addWidget(self._cond_panel)   # index 1
+    self._right_stack.setCurrentIndex(0)            # 기본: 테이블
+
+    rbox.addWidget(self._right_stack, 1)            # stretch=1
     self._tbl_splitter.addWidget(rw)
     self._tbl_splitter.setSizes([500, 500])
 
@@ -119,9 +194,43 @@ def build_tables(self) -> QWidget:
     return outer
 
 
+# ── 토글 핸들러 ──────────────────────────────────────────────
+def _on_order_panel_toggle(self, checked: bool):
+    """
+    체크박스 상태 변경 시 호출.
+    checked=True  → 조건부 주문 패널 (page 1)
+    checked=False → 대량체결 테이블  (page 0)
+    """
+    self._right_stack.setCurrentIndex(1 if checked else 0)
+
+    # 로드 행(FTD/파일) 은 테이블 모드일 때만 의미있으므로 시인성 처리
+    _load_visible = not checked
+    self.file_type_combo.setVisible(_load_visible)
+    self.file_sym_in.setVisible(_load_visible)
+    self.file_status_lbl.setVisible(_load_visible)
+
+    # 체크박스 색상 업데이트
+    if checked:
+        self.chk_order_panel.setStyleSheet(
+            "QCheckBox{ color:#FF8C00; font-weight:bold; font-size:11px; }"
+            "QCheckBox::indicator{ width:14px; height:14px; }"
+            "QCheckBox::indicator:checked{"
+            "  border:1px solid #FF8C00; border-radius:3px;"
+            "  background:#3a2a0a; }"
+        )
+    else:
+        self.chk_order_panel.setStyleSheet(
+            "QCheckBox{ color:#888; font-weight:bold; font-size:11px; }"
+            "QCheckBox::indicator{ width:14px; height:14px; }"
+            "QCheckBox::indicator:unchecked{"
+            "  border:1px solid #3a3a3a; border-radius:3px;"
+            "  background:#1a1a1a; }"
+        )
+
+
 def build_chart_area(self) -> QWidget:
     chart_w = QWidget(); chart_v = QVBoxLayout(chart_w)
-    chart_v.setContentsMargins(0,0,0,0); chart_v.setSpacing(2)
+    chart_v.setContentsMargins(0, 0, 0, 0); chart_v.setSpacing(2)
 
     if PG:
         # ── 컨트롤 바 ─────────────────────────────────────
@@ -172,7 +281,7 @@ def build_chart_area(self) -> QWidget:
         line_bar.addWidget(self.btn_label)
 
         self.label_combo = QComboBox()
-        self.label_combo.addItems(["1","2","3","4","5","A","B","C","D","E"])
+        self.label_combo.addItems(["1", "2", "3", "4", "5", "A", "B", "C", "D", "E"])
         self.label_combo.setFixedWidth(52); self.label_combo.setFixedHeight(24)
         self.label_combo.setToolTip("차트에 추가할 레이블 선택")
         line_bar.addWidget(self.label_combo)
@@ -202,29 +311,26 @@ def build_chart_area(self) -> QWidget:
         # ── 체크박스 바 ───────────────────────────────────
         chk_bar = QHBoxLayout(); chk_bar.setSpacing(3)
 
-        # 가로 라인 체크박스 (10개)
         chk_bar.addWidget(QLabel("라인:"))
         self._hline_slots = 10; self._hline_chks = []
         for i in range(self._hline_slots):
-            chk = QCheckBox(str(i+1))
+            chk = QCheckBox(str(i + 1))
             chk.setEnabled(False); chk.setFixedWidth(34)
             chk.setStyleSheet("color:#444;font-size:10px;")
             chk.stateChanged.connect(
                 lambda state, idx=i: self._on_hline_chk(idx, state))
             chk_bar.addWidget(chk); self._hline_chks.append(chk)
 
-        # 시간 마커 체크박스 (5개)
         chk_bar.addWidget(QLabel("  마커:"))
         self._marker_slots = 5; self._marker_chks = []
         for i in range(self._marker_slots):
-            chk = QCheckBox(str(i+1))
+            chk = QCheckBox(str(i + 1))
             chk.setEnabled(False); chk.setFixedWidth(34)
             chk.setStyleSheet("color:#444;font-size:10px;")
             chk.stateChanged.connect(
                 lambda state, idx=i: self._on_marker_chk(idx, state))
             chk_bar.addWidget(chk); self._marker_chks.append(chk)
 
-        # 레이블 체크박스 (10개: 1~5, A~E)
         chk_bar.addWidget(QLabel("  레이블:"))
         self._label_chks = []
         from chart_labels import LABEL_ITEMS
@@ -245,9 +351,9 @@ def build_chart_area(self) -> QWidget:
         chart_v.addLayout(chk_bar)
 
         # 상태 초기화
-        self._hlines: dict        = {}
-        self._time_markers: dict  = {}
-        self._chart_labels: dict  = {}
+        self._hlines:       dict = {}
+        self._time_markers: dict = {}
+        self._chart_labels: dict = {}
 
         self.gfx = pg.GraphicsLayoutWidget()
         self.p1  = self.gfx.addPlot(row=0, col=0)
@@ -256,10 +362,10 @@ def build_chart_area(self) -> QWidget:
         self.p1.scene().sigMouseClicked.connect(self._on_chart_click)
         self.p1.getViewBox().sigRangeChanged.connect(self._on_range_changed)
 
-        # ── 기능추가: 틱/호가 속도 인디케이터 패널 (p3) ─────
+        # ── 틱/호가 속도 인디케이터 패널 (p3) ────────────
         try:
             from chart_tick_speed import init_tick_speed
-            init_tick_speed(self)   # row=2, col=0 으로 p3 자동 추가
+            init_tick_speed(self)
         except Exception as _e:
             print(f"[TickSpeed] init 실패: {_e}")
 

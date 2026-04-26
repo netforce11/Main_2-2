@@ -43,17 +43,31 @@ _INDEX   = {"SPX", "SPXW", "NDX", "VIX", "RUT", "DJX", "XSP", "MID", "GSPC"}
 _LIVE_ID = 9801
 
 
+# VIX는 MIDPOINT, SPX/NDX 등 나머지 IND는 TRADES
+# - VIX IND: 실제 체결(TRADES) 데이터 없음 → MIDPOINT 사용
+# - SPX IND: MIDPOINT ERR 162 발생 → TRADES 사용
+_VIX_SYMS = {"VIX"}
+
 def _hist_what_rth(sym: str):
     """
     IBKR whatToShow 결정.
-    - Index(IND): 주말=BID_ASK, 평일=TRADES  ← MIDPOINT는 SPX IND에서 에러 162 발생
-    - STK/ETF   : TRADES 고정
+
+    종목별 지원 여부:
+    - VIX (IND): TRADES 없음 → MIDPOINT 사용 (주말은 BID_ASK)
+    - SPX/NDX 등 (IND): MIDPOINT ERR 162 → TRADES 사용
+    - STK/ETF: TRADES 고정
     """
-    is_idx = sym.upper() in _INDEX
+    sym_up = sym.upper()
     is_wkd = datetime.now(_ET).weekday() >= 5
+
     if is_wkd:
+        is_idx = sym_up in _INDEX
         return ("BID_ASK" if is_idx else "TRADES"), 1
-    return ("TRADES", 0)  # Index도 TRADES 사용 — MIDPOINT는 SPX/IND 미지원
+
+    # 평일
+    if sym_up in _VIX_SYMS:
+        return "MIDPOINT", 0   # VIX는 TRADES 미지원 → MIDPOINT
+    return "TRADES", 0         # SPX/NDX 등 IND + STK/ETF
 
 
 def _make_hist_contract(sym: str, is_weekend: bool = False,

@@ -51,15 +51,24 @@ _DELAYED_SYMS = {"VIX", "CL"}
 def _mdt_for_sym(sym: str, ib) -> int:
     """
     종목별 MarketDataType 결정.
-    _DELAYED_SYMS 에 속하면 장중/장외 무관하게 항상 3(지연) 반환.
-    나머지는 auto_mdt() 로 자동 판별 (장중=1, 평일장외=3, 주말=4).
+
+    _DELAYED_SYMS(VIX, CL 등):
+      - 장중(auto_mdt=1): MDT=3 (20분 지연) 강제
+      - 평일 장외(auto_mdt=3): MDT=3 유지
+      - 주말(auto_mdt=4): MDT=4 (frozen 종가) 사용
+        → 주말에 MDT=3으로 고정하면 VIX IND도 ERR 200 발생
+        → MDT=4로 설정해야 전일 종가라도 수신 가능
+
+    나머지: auto_mdt() 그대로 (장중=1, 평일장외=3, 주말=4).
     """
     if sym.upper() in _DELAYED_SYMS:
+        base = auto_mdt(ib)          # 장중=1, 평일장외=3, 주말=4
+        actual = max(base, 3)        # 장중(1)이어도 최소 3 보장
         try:
-            ib.reqMarketDataType(3)
+            ib.reqMarketDataType(actual)
         except Exception as e:
-            print(f"[mdt_for_sym] MDT=3 설정 실패({sym}): {e}")
-        return 3
+            print(f"[mdt_for_sym] MDT={actual} 설정 실패({sym}): {e}")
+        return actual
     return auto_mdt(ib)
 
 

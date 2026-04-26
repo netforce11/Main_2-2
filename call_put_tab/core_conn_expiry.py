@@ -186,25 +186,48 @@ class ConnExpiryMixin:
         """
         IBKR reqContractDetails 실패 시 로컬 계산으로 만기 목록을 구성한다.
 
-        CL: 매월 25일의 3영업일 전이 만기 → 향후 6개월치 생성
-        기타 선물: 현재 달 + 향후 5개월 YYYYMM 목록
+        VIX: 매달 세 번째 수요일 30일 전의 금요일이 옵션 만기일.
+             향후 6개월치 YYYYMMDD 8자리로 생성.
+        CL:  매월 25일의 3영업일 전 → YYYYMMDD
         """
         from datetime import date, timedelta
 
         today = _today_et()
 
+        def _third_wednesday(y: int, m: int) -> date:
+            """해당 연월의 세 번째 수요일 반환."""
+            d = date(y, m, 1)
+            # 첫 번째 수요일
+            days_to_wed = (2 - d.weekday()) % 7   # 2 = 수요일
+            first_wed = d + timedelta(days=days_to_wed)
+            return first_wed + timedelta(weeks=2)  # 세 번째 수요일
+
+        def _third_friday(y: int, m: int) -> date:
+            """해당 연월의 세 번째 금요일 반환."""
+            d = date(y, m, 1)
+            days_to_fri = (4 - d.weekday()) % 7
+            first_fri = d + timedelta(days=days_to_fri)
+            return first_fri + timedelta(weeks=2)
+
+        def _vix_expiry(y: int, m: int) -> date:
+            """
+            VIX 옵션 만기일 계산 (CBOE 공식).
+            규칙: 다음 달 세 번째 금요일(SPX 결제일) 30일 전 수요일.
+            예) 5월 VIX 만기 = 6월 세 번째 금요일(6/19) - 30일 = 5/20(수)
+            """
+            if m == 12:
+                next_y, next_m = y + 1, 1
+            else:
+                next_y, next_m = y, m + 1
+            third_fri_next = _third_friday(next_y, next_m)
+            target = third_fri_next - timedelta(days=30)
+            # 가장 가까운 수요일(이전 방향, 2=수요일)
+            days_back = (target.weekday() - 2) % 7
+            wednesday = target - timedelta(days=days_back)
+            return wednesday
+
         def _cl_expiry(y: int, m: int) -> date:
-            """해당 연월 CL 만기일 계산 (25일의 3영업일 전)."""
-            cnt = 0
-            cur = date(y, m, 25) - timedelta(days=1)
-            while cnt < 3:
-                if cur.weekday() < 5:
-                    cnt += 1
-                    if cnt < 3:
-                        cur -= timedelta(days=1)
-                else:
-                    cur -= timedelta(days=1)
-            # 단순 버전
+            """CL 만기일: 해당 월 25일의 3영업일 전."""
             d = date(y, m, 25)
             biz = 0
             while biz < 3:
@@ -216,13 +239,17 @@ class ConnExpiryMixin:
         exps = []
         y, m = today.year, today.month
         for _ in range(7):   # 현재 달 포함 7개월
-            if sym == "CL":
+            if sym == "VIX":
+                exp_date = _vix_expiry(y, m)
+                if exp_date >= today:
+                    exps.append(exp_date.strftime("%Y%m%d"))
+            elif sym == "CL":
                 exp_date = _cl_expiry(y, m)
                 if exp_date >= today:
                     exps.append(exp_date.strftime("%Y%m%d"))
             else:
-                # VIX 등: YYYYMM만 제공 (일자 미정)
-                exps.append(f"{y}{m:02d}")
+                # 기타: YYYYMMDD 01일로 placeholder
+                exps.append(f"{y}{m:02d}01")
             if m == 12:
                 y, m = y + 1, 1
             else:
@@ -230,11 +257,9 @@ class ConnExpiryMixin:
 
         if not exps:
             self._expiry_list = [("📅 날짜 입력", "CUSTOM", "")]
+            self._apply_expiry_combo()
         else:
             self._apply_ibkr_expiry(sym, exps)
-            return
-
-        self._apply_expiry_combo()
 
     def _on_exp_change(self, idx):
         _, code, _ = self._expiry_list[idx]

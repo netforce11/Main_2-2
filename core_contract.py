@@ -371,6 +371,23 @@ def make_opt_contract(symbol: str, strike: float, right: str,
         c.lastTradeDateOrContractMonth = expiry
         return c
 
+    # ── VIX 옵션: exchange 반드시 CBOE 명시 ─────────────────────
+    # SMART 라우팅으로는 IBKR이 VIX 옵션을 찾지 못해 ERR 200 발생.
+    # VIX 옵션은 CBOE 단독 상장이므로 exchange="CBOE" 를 직접 지정.
+    if sym_up == "VIX":
+        sec, _, mult, _ = SYMBOL_CFG.get("VIX", DEFAULT_CFG)
+        c = Contract()
+        c.symbol       = "VIX"
+        c.secType      = sec          # "OPT"
+        c.exchange     = "CBOE"       # ← SMART 아닌 CBOE 명시
+        c.currency     = "USD"
+        c.strike       = float(strike)
+        c.right        = "C" if right.upper() in ("C", "CALL") else "P"
+        c.multiplier   = mult         # "100"
+        c.tradingClass = "VIX"
+        c.lastTradeDateOrContractMonth = expiry
+        return c
+
     sec, exch, mult, _ = SYMBOL_CFG.get(sym_up, DEFAULT_CFG)
     c = Contract()
     c.symbol     = sym_up
