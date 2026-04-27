@@ -9,6 +9,10 @@ combo_ui_leg_logic.py — 레그 빌드 · 전략 변경 로직
 분리:
   _manual_add_leg / _manual_del_leg / _on_strike_changed
   → combo_ui_leg_extra.py
+
+v3.0 변경:
+  _get_leg_template: 콜/풋/아이언 버터플라이 3종 추가
+  _on_strat_change: 전략 변경 시 구성 가이드 팝업 자동 표시
 ────────────────────────────────────────────────────
 """
 
@@ -58,6 +62,30 @@ def _on_strat_change(self, idx: int):
     # 추가 레그 버튼 최대치 갱신
     _update_add_btn_state(self)
 
+    # ── v3.0: 구성 가이드가 있는 전략이면 팝업 자동 표시 ─────
+    _maybe_show_setup_guide(self, strat)
+
+
+def _maybe_show_setup_guide(self, strat: str):
+    """STRATEGY_SETUP_GUIDE에 해당 전략이 있으면 구성 가이드 팝업 표시."""
+    from combo_constants import STRATEGY_SETUP_GUIDE
+    # 정확 매칭 우선, 없으면 부분 매칭
+    guide = STRATEGY_SETUP_GUIDE.get(strat)
+    if guide is None:
+        for key in STRATEGY_SETUP_GUIDE:
+            if key in strat or strat in key:
+                guide = STRATEGY_SETUP_GUIDE[key]
+                break
+    if guide is None:
+        return
+    try:
+        from combo_strategy_guide_popup import StrategyGuidePopup
+        popup = StrategyGuidePopup(guide, parent=self)
+        popup.show()
+    except Exception as e:
+        # 팝업 로드 실패 시 무시 (전략 변경 흐름은 유지)
+        pass
+
 
 def _get_leg_template(self, strat: str) -> list:
     """전략명 → 레그 기본 정의 반환."""
@@ -66,9 +94,22 @@ def _get_leg_template(self, strat: str) -> list:
 
     # 주의: 키 매칭이 'key in strat' 방식이므로
     # 짧은 키가 긴 키의 부분 문자열이 되면 먼저 매칭됨.
-    # ex) "콜 스프레드" ⊂ "숏 콜 스프레드 / 베어 콜 스프레드"
     # → 신규 전략(더 긴 이름)을 반드시 앞에 배치해야 함.
     templates = {
+        # ── v3.0 버터플라이 신규 — 다른 전략과 키 충돌 없음 ──
+        "콜 버터플라이": [
+            {**base, "leg":"레그1","dir":"BUY", "cp":"C","qty":"1","strike":"","prem":""},
+            {**base, "leg":"레그2","dir":"SELL","cp":"C","qty":"2","strike":"","prem":""},
+            {**base, "leg":"레그3","dir":"BUY", "cp":"C","qty":"1","strike":"","prem":""}],
+        "풋 버터플라이": [
+            {**base, "leg":"레그1","dir":"BUY", "cp":"P","qty":"1","strike":"","prem":""},
+            {**base, "leg":"레그2","dir":"SELL","cp":"P","qty":"2","strike":"","prem":""},
+            {**base, "leg":"레그3","dir":"BUY", "cp":"P","qty":"1","strike":"","prem":""}],
+        "아이언 버터플라이": [
+            {**base, "leg":"레그1","dir":"BUY", "cp":"P","qty":"1","strike":"","prem":""},
+            {**base, "leg":"레그2","dir":"SELL","cp":"P","qty":"1","strike":"","prem":""},
+            {**base, "leg":"레그3","dir":"SELL","cp":"C","qty":"1","strike":"","prem":""},
+            {**base, "leg":"레그4","dir":"BUY", "cp":"C","qty":"1","strike":"","prem":""}],
         # ── 신규 전략 — 반드시 "콜 스프레드"/"풋 스프레드" 앞에 위치 ──
         "숏 콜 스프레드": [
             {**base, "leg":"레그1","dir":"SELL","cp":"C","strike":"","prem":""},

@@ -78,6 +78,8 @@ class TabWrapper(QWidget):
         self._save_settings()
 
     def _apply_font(self, fs: int):
+        if getattr(self.grid_tab, 'FORCE_LIGHT', False):
+            return  # 라이트 고정 탭은 폰트 스타일 덮어쓰기 금지
         self.grid_tab.setStyleSheet(
             f"QWidget{{font-size:{fs}px;}}"
             f"QLabel{{font-size:{fs}px;}}"
@@ -101,6 +103,12 @@ class TabWrapper(QWidget):
 
     def _apply_dark(self, dark: bool):
         """탭 위젯 자체 + grid_tab에 다크/라이트 테마 적용 + 모든 테이블 테마 동기화."""
+        # FORCE_LIGHT 탭은 다크/라이트 전환에서 완전 제외 — 항상 라이트 스타일 유지
+        if getattr(self.grid_tab, 'FORCE_LIGHT', False):
+            style = getattr(self.grid_tab, 'LIGHT_STYLE', '')
+            if style:
+                self.grid_tab.setStyleSheet(style)
+            return
         if dark:
             style = (
                 "QWidget{background:#1e1e2e;color:#e0e0f0;}"
@@ -177,7 +185,8 @@ class TabWrapper(QWidget):
     def _restore_settings(self):
         all_s = load_json("tab_settings.json", {})
         s = all_s.get(self.tab_name, {})
-        dark = s.get("dark", False)
+        # FORCE_LIGHT 탭은 저장된 다크 설정 무시 — 항상 라이트로 시작
+        dark = False if getattr(self.grid_tab, 'FORCE_LIGHT', False) else s.get("dark", False)
         fs   = s.get("font", DEFAULT_FONT_SIZE)
         self.slider.blockSignals(True)
         self.slider.setValue(fs)
@@ -201,5 +210,3 @@ class TabWrapper(QWidget):
             self.grid_tab._apply_extra_settings(s)
         except Exception as e:
             print(f"[settings restore] {e}")
-
-

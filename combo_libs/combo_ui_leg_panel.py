@@ -11,9 +11,11 @@ combo_ui_leg_panel.py — 레그 테이블 좌측 패널 빌드
 
 v2.6 변경:
   - ➕ 레그 추가 / ➖ 마지막 레그 제거 버튼 (자동/수동 모드 공용)
-  - 추가된 레그도 손익·증거금 계산 자동 연동
   - MAX_LEGS(8) 초과 시 버튼 자동 비활성
   - 세트 입력 패널 제거 (v2.7)
+v3.0 변경:
+  - 📋 구성 가이드 버튼 추가 (전략별 팝업 직접 호출)
+  - 전략 콤보박스 옆 ❓(설명) + 📋(구성 가이드) 두 버튼 체계
 ────────────────────────────────────────────────────
 """
 
@@ -23,10 +25,9 @@ from PyQt5.QtWidgets import (
     QLineEdit, QFrame,
 )
 from PyQt5.QtCore import QTimer
-from combo_constants import STRATEGIES, MAX_LEGS
+from combo_constants import STRATEGIES, MAX_LEGS, STRATEGY_SETUP_GUIDE
 from combo_ui_net_price_display import NetPriceDisplay
 
-# Mid-price 티커 ID 범위: 8800~8815 (레그 0~15)
 _TICKER_BASE = 8800
 
 
@@ -48,14 +49,30 @@ def _build_leg_left(self) -> QWidget:
         "QComboBox::drop-down{border:none;}")
     self.combo_strat.currentIndexChanged.connect(self._on_strat_change)
     row.addWidget(self.combo_strat, 1)
+
+    # ❓ 전략 설명 버튼
     btn_info = QPushButton("❓")
     btn_info.setFixedSize(26, 26)
+    btn_info.setToolTip("전략 설명 보기")
     btn_info.setStyleSheet(
         "QPushButton{background:#1a2a4a;color:#90caf9;border:1px solid #3a3a6a;"
         "border-radius:4px;font-size:14px;font-weight:bold;}"
         "QPushButton:hover{background:#2a3a6a;color:#ffd700;}")
     btn_info.clicked.connect(self._show_strat_desc)
     row.addWidget(btn_info)
+
+    # 📋 전략 구성 가이드 버튼 (v3.0 신규)
+    btn_guide = QPushButton("📋")
+    btn_guide.setFixedSize(26, 26)
+    btn_guide.setToolTip("전략 구성 가이드 보기")
+    btn_guide.setStyleSheet(
+        "QPushButton{background:#1a3a1a;color:#44cc88;border:1px solid #2a6a2a;"
+        "border-radius:4px;font-size:14px;}"
+        "QPushButton:hover{background:#2a5a2a;color:#88ff44;}"
+        "QPushButton:disabled{background:#0a0a1a;color:#333;border-color:#222;}")
+    btn_guide.clicked.connect(lambda: _show_guide_popup(self))
+    self._btn_guide = btn_guide
+    row.addWidget(btn_guide)
     v.addLayout(row)
 
     # ── 레그 모드 행 ──────────────────────────────────────────
@@ -99,7 +116,7 @@ def _build_leg_left(self) -> QWidget:
         "border:1px solid #1a1a3a;font-weight:bold;}")
     v.addWidget(self.tbl_legs, 1)
 
-    # ── 수동 모드 버튼 행 (기존) ──────────────────────────────
+    # ── 수동 모드 버튼 행 ─────────────────────────────────────
     self._manual_btn_row = QWidget()
     mbh = QHBoxLayout(self._manual_btn_row)
     mbh.setContentsMargins(0, 1, 0, 1); mbh.setSpacing(4)
@@ -122,7 +139,7 @@ def _build_leg_left(self) -> QWidget:
     self._manual_btn_row.setVisible(False)
     v.addWidget(self._manual_btn_row)
 
-    # ── ➕ 추가 레그 버튼 행 (자동/수동 공용, v2.6 신규) ────────
+    # ── ➕ 추가 레그 버튼 행 (자동/수동 공용) ─────────────────
     extra_row = QHBoxLayout(); extra_row.setSpacing(6)
     from combo_ui_leg_extra import _extra_add_leg, _extra_del_leg
     self._btn_extra_add = QPushButton(f"➕ 레그 추가  (최대 {MAX_LEGS}개)")
@@ -167,7 +184,49 @@ def _build_leg_left(self) -> QWidget:
     self.tbl_legs.itemChanged.connect(
         lambda item: self.direction_banner.refresh(self.tbl_legs))
 
+    # 초기 구성 가이드 버튼 상태 갱신
+    _update_guide_btn_state(self)
+
     return w
+
+
+# ── 구성 가이드 버튼 상태 갱신 ──────────────────────────────────
+
+def _update_guide_btn_state(self):
+    """현재 전략에 가이드가 있으면 📋 버튼 활성화."""
+    btn = getattr(self, '_btn_guide', None)
+    if btn is None:
+        return
+    strat = self.combo_strat.currentText() if hasattr(self, 'combo_strat') else ""
+    has_guide = (strat in STRATEGY_SETUP_GUIDE or
+                 any(k in strat or strat in k for k in STRATEGY_SETUP_GUIDE))
+    btn.setEnabled(has_guide)
+    btn.setToolTip("전략 구성 가이드 보기" if has_guide
+                   else "이 전략은 구성 가이드가 없습니다")
+
+
+# ── 구성 가이드 팝업 직접 호출 ──────────────────────────────────
+
+def _show_guide_popup(self):
+    """📋 버튼 클릭 → 현재 전략의 구성 가이드 팝업 강제 표시 (suppress 무시)."""
+    strat = self.combo_strat.currentText() if hasattr(self, 'combo_strat') else ""
+    guide = STRATEGY_SETUP_GUIDE.get(strat)
+    if guide is None:
+        for key, val in STRATEGY_SETUP_GUIDE.items():
+            if key in strat or strat in key:
+                guide = val
+                break
+    if guide is None:
+        return
+    try:
+        from combo_strategy_guide_popup import StrategyGuidePopup, _SUPPRESS_SET
+        # 버튼 직접 클릭 시에는 suppress 무시하고 강제 표시
+        title = guide.get("title", "")
+        _SUPPRESS_SET.discard(title)
+        popup = StrategyGuidePopup(guide, parent=self)
+        popup.show()
+    except Exception:
+        pass
 
 
 # ── Net Price 재계산 ─────────────────────────────────────────
@@ -177,6 +236,8 @@ def _on_leg_item_changed(self, item):
         return
     if item.column() in (4, 5):
         _recalc_net_price(self)
+    # 전략 변경 시마다 가이드 버튼 상태 갱신
+    _update_guide_btn_state(self)
 
 
 def _recalc_net_price(self) -> float:
@@ -204,7 +265,6 @@ def _recalc_net_price(self) -> float:
     net       = round(buy_total - sell_total, 2)
     lmt_price = round(abs(net), 2)
 
-    # ── 전광판 위젯 갱신 ──────────────────────────────────────
     display = getattr(self, 'net_price_display', None)
     if display is not None:
         if lmt_price == 0.0:
