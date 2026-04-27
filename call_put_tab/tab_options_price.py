@@ -3,13 +3,20 @@
       (중복 정의 제거 — MRO 충돌 및 _ps_expiry 미세팅 문제 해소)
       _build_tbl_panel 에서 price/position을 QSplitter로 분리 (panels.py에서 호출)
       _update_price_panel_opt → 전략 패널 _strat_on_chain_click 연동 [S9]
+
+[수정]
+  ① 글자 중복 버그 수정: col0=Ask/Bid 레이블, col2=값 → col0=레이블, col1=값 (2컬럼, 중복 lbl 제거)
+  ② 폰트 +2: 14px → 16px (_S_ASK_VAL, _S_BID_VAL)
+  ③ 패널 고정 해제: setSizes([220,160]) → setStretchFactor(0,1)/setStretchFactor(1,1) 자유 드래그
+  ④ ▼현재가↑ / ▲잔고↑ 버튼 추가 → _price_pos_spl.setSizes() 직접 호출
+  ⑤ 스플리터 핸들 두껍고 명확하게 스타일 변경
 """
 
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QPushButton, QGroupBox, QFrame, QSplitter,
+    QLabel, QPushButton, QGroupBox, QFrame, QSplitter, QWidget,
     QTableWidget, QHeaderView, QAbstractItemView, QTableWidgetItem,
 )
 from PyQt5.QtCore import Qt
@@ -33,10 +40,15 @@ _S_TIME       = "color:#2a2a6a;font-size:9px;border:none;"
 _S_SP_LBL     = "color:#888;font-size:10px;border:none;"
 _S_SP_VAL     = "color:#ffd700;font-size:11px;font-weight:bold;border:none;"
 _S_OPT        = "color:#90caf9;font-size:10px;border:none;"
-_S_ASK_VAL    = ("color:#ff6666;font-size:14px;font-weight:bold;border:none;"
+# ② 폰트 +2: 14px → 16px
+_S_ASK_VAL    = ("color:#ff6666;font-size:16px;font-weight:bold;border:none;"
                  "background:#0a0510;border-radius:2px;padding:1px 4px;")
-_S_BID_VAL    = ("color:#33aaff;font-size:14px;font-weight:bold;border:none;"
+_S_BID_VAL    = ("color:#33aaff;font-size:16px;font-weight:bold;border:none;"
                  "background:#050a10;border-radius:2px;padding:1px 4px;")
+# ④ 확대 버튼 스타일
+_S_SIZE_BTN   = ("QPushButton{background:#1a1a2a;color:#aaa;font-size:10px;"
+                 "border:1px solid #3a3a6a;border-radius:3px;padding:1px 5px;}"
+                 "QPushButton:hover{background:#2a2a4a;color:#fff;}")
 
 
 class PricePanelMixin:
@@ -80,27 +92,32 @@ class PricePanelMixin:
         sep1.setStyleSheet(_S_SEP)
         v.addWidget(sep1)
 
+        # ① 2컬럼 그리드 (중복 lbl 완전 제거): col0=레이블, col1=값
         grid = QGridLayout(); grid.setSpacing(2); grid.setContentsMargins(0, 0, 0, 0)
-        for col, txt in enumerate(["", "호가", "값"]):
-            lh = QLabel(txt); lh.setAlignment(Qt.AlignCenter)
-            lh.setStyleSheet("color:#555;font-size:9px;border:none;"); grid.addWidget(lh, 0, col)
 
-        for row_i, (tag_s, val_s, attr, cb) in enumerate([
-            ("color:#ff6666;font-size:10px;font-weight:bold;border:none;",
-             _S_ASK_VAL, '_pp_lbl_ask_val', lambda e: self._on_pp_quote_click(0, 1)),
-            ("color:#33aaff;font-size:10px;font-weight:bold;border:none;",
-             _S_BID_VAL, '_pp_lbl_bid_val', lambda e: self._on_pp_quote_click(1, 1)),
-        ], start=1):
-            side = "Ask" if row_i == 1 else "Bid"
-            tag = QLabel(side); tag.setAlignment(Qt.AlignCenter); tag.setStyleSheet(tag_s)
-            lbl = QLabel(side); lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet(tag_s.replace("font-weight:bold;", ""))
-            val = QLabel("―"); val.setAlignment(Qt.AlignCenter); val.setStyleSheet(val_s)
-            val.setCursor(Qt.PointingHandCursor); val.mousePressEvent = cb
-            setattr(self, attr, val)
-            grid.addWidget(tag, row_i, 0); grid.addWidget(lbl, row_i, 1); grid.addWidget(val, row_i, 2)
+        lbl_ask = QLabel("Ask")
+        lbl_ask.setAlignment(Qt.AlignCenter)
+        lbl_ask.setStyleSheet("color:#ff6666;font-size:10px;font-weight:bold;border:none;")
+        self._pp_lbl_ask_val = QLabel("―")
+        self._pp_lbl_ask_val.setAlignment(Qt.AlignCenter)
+        self._pp_lbl_ask_val.setStyleSheet(_S_ASK_VAL)
+        self._pp_lbl_ask_val.setCursor(Qt.PointingHandCursor)
+        self._pp_lbl_ask_val.mousePressEvent = lambda e: self._on_pp_quote_click(0, 1)
 
-        grid.setColumnStretch(2, 1)
+        lbl_bid = QLabel("Bid")
+        lbl_bid.setAlignment(Qt.AlignCenter)
+        lbl_bid.setStyleSheet("color:#33aaff;font-size:10px;font-weight:bold;border:none;")
+        self._pp_lbl_bid_val = QLabel("―")
+        self._pp_lbl_bid_val.setAlignment(Qt.AlignCenter)
+        self._pp_lbl_bid_val.setStyleSheet(_S_BID_VAL)
+        self._pp_lbl_bid_val.setCursor(Qt.PointingHandCursor)
+        self._pp_lbl_bid_val.mousePressEvent = lambda e: self._on_pp_quote_click(1, 1)
+
+        grid.addWidget(lbl_ask, 0, 0)
+        grid.addWidget(self._pp_lbl_ask_val, 0, 1)
+        grid.addWidget(lbl_bid, 1, 0)
+        grid.addWidget(self._pp_lbl_bid_val, 1, 1)
+        grid.setColumnStretch(1, 1)
         v.addLayout(grid)
 
         hint = QLabel("↑ 클릭 → 주문창 가격 입력")
@@ -169,7 +186,6 @@ class PricePanelMixin:
         self.tbl_positions.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl_positions.setMinimumHeight(0)
         self.tbl_positions.setStyleSheet(_tbl_s)
-        # _on_position_row_click은 OrderUtilMixin에 정의 — 런타임에 바인딩
         self.tbl_positions.cellClicked.connect(
             lambda r, c: self._on_position_row_click(r, c))
         v.addWidget(self.tbl_positions, 1)
@@ -180,17 +196,44 @@ class PricePanelMixin:
         return gb
 
     # ── Price+Position 수직 분할 위젯 (panels.py에서 호출) ────
-    def _build_price_pos_widget(self) -> QSplitter:
-        """현재가(상단) + 잔고(하단) 수직 QSplitter."""
-        spl = QSplitter(Qt.Vertical)
-        spl.setHandleWidth(4)
-        spl.setStyleSheet(
-            "QSplitter::handle{background:#2a2a5a;}"
-            "QSplitter::handle:hover{background:#4a4a9a;}")
-        spl.addWidget(self._build_price_panel())
-        spl.addWidget(self._build_position_panel())
-        spl.setSizes([220, 160])
-        return spl
+    def _build_price_pos_widget(self) -> QWidget:
+        """현재가(상단) + 잔고(하단) 수직 QSplitter + ④ 확대 버튼 행."""
+        root = QWidget()
+        vlay = QVBoxLayout(root)
+        vlay.setContentsMargins(0, 0, 0, 0)
+        vlay.setSpacing(2)
+
+        # ④ ▼현재가↑ / ▲잔고↑ 버튼 행
+        btn_row = QHBoxLayout(); btn_row.setSpacing(4)
+        btn_price_up = QPushButton("▼ 현재가↑")
+        btn_price_up.setStyleSheet(_S_SIZE_BTN)
+        btn_price_up.setToolTip("현재가 패널 확대 (340 / 40)")
+        btn_price_up.clicked.connect(
+            lambda: self._price_pos_spl.setSizes([340, 40]))
+        btn_pos_up = QPushButton("▲ 잔고↑")
+        btn_pos_up.setStyleSheet(_S_SIZE_BTN)
+        btn_pos_up.setToolTip("잔고 패널 확대 (80 / 300)")
+        btn_pos_up.clicked.connect(
+            lambda: self._price_pos_spl.setSizes([80, 300]))
+        btn_row.addWidget(btn_price_up)
+        btn_row.addWidget(btn_pos_up)
+        btn_row.addStretch()
+        vlay.addLayout(btn_row)
+
+        # ③⑤ 스플리터 — 자유 드래그, 두꺼운 핸들
+        self._price_pos_spl = QSplitter(Qt.Vertical)
+        self._price_pos_spl.setHandleWidth(6)
+        self._price_pos_spl.setStyleSheet(
+            "QSplitter::handle{background:#3a3a7a;}"
+            "QSplitter::handle:hover{background:#6a6aba;}")
+        self._price_pos_spl.addWidget(self._build_price_panel())
+        self._price_pos_spl.addWidget(self._build_position_panel())
+        # ③ setSizes 제거 → setStretchFactor 자유 드래그
+        self._price_pos_spl.setStretchFactor(0, 1)
+        self._price_pos_spl.setStretchFactor(1, 1)
+
+        vlay.addWidget(self._price_pos_spl)
+        return root
 
     # ── Update helpers ─────────────────────────────────────────
     def _pp_set_quote(self, ask, bid):
@@ -205,7 +248,6 @@ class PricePanelMixin:
         price = getattr(self, 'und_price', None)
         prev  = getattr(self, 'und_prev',  None)
 
-        # ── 기초자산 가격 버퍼 push (5분/20분 전 추적용) ────────
         if price:
             try:
                 from trade_log.und_saver import push as und_push
@@ -229,7 +271,6 @@ class PricePanelMixin:
         self._pp_lbl_opt_info.setText("")
         self._pp_lbl_time.setText(datetime.now().strftime("%H:%M:%S"))
 
-        # ── 사이드바 기초자산 패널 동기화 ────────────────────────
         if hasattr(self, '_side_und_price'):
             self._side_und_sym.setText(sym)
             if price:
@@ -246,10 +287,8 @@ class PricePanelMixin:
                     self._side_und_chg.setStyleSheet("color:#aaa;font-size:10px;border:none;")
             else:
                 self._side_und_price.setText("―")
-            # 만기 동기화
             if hasattr(self, 'combo_exp'):
                 self._side_und_exp.setText(f"만기: {self.combo_exp.currentText()}")
-            # Zone 동기화
             zone = getattr(self, '_zone', 'ATM')
             zone_colors = {
                 "OTM2": "#00b894", "OTM1": "#00e676",
@@ -266,14 +305,12 @@ class PricePanelMixin:
         self._pp_mode = "opt"; self._pp_opt_side = side
         self._pp_opt_strike = strike; self._pp_opt_bid = bid; self._pp_opt_ask = ask
         label = "CALL" if side == "C" else "PUT"
-        # ✅ CALL=빨강, PUT=파랑 — 한국형 HTS 표준
         col   = "#ff6666" if side == "C" else "#33aaff"
         sym   = self.edit_sym.text().strip().upper() if hasattr(self, 'edit_sym') else ""
         self._pp_lbl_sym.setText(f"{sym}  {label}")
         self._pp_lbl_sym.setStyleSheet(f"color:{col};font-size:14px;font-weight:bold;border:none;")
         mid_price = (bid+ask)/2 if bid and ask else (ask if ask else None)
         self._pp_lbl_price.setText(f"{mid_price:.2f}" if mid_price else "―")
-        # ✅ 기초자산 급등락 ≥5% 시 Bold 강조
         und_price = getattr(self, 'und_price', None)
         und_prev  = getattr(self, 'und_prev',  None)
         if und_price and und_prev and und_prev > 0:
@@ -290,13 +327,11 @@ class PricePanelMixin:
         self._pp_lbl_opt_info.setText(f"Δ {delta:+.4f}" if delta is not None else "")
         self._pp_lbl_time.setText(datetime.now().strftime("%H:%M:%S"))
 
-        # [S9] 전략 패널 연동 — 세트 완성(seq>=2) 시에는 덮어쓰지 않음
         if hasattr(self, '_strat_on_chain_click'):
             seq = getattr(self, '_strat_click_seq', 0)
             if seq < 2:
                 self._strat_on_chain_click(
                     side, float(strike) if strike else 0.0, bid or 0.0, ask or 0.0)
-            # [S11-2] 만기 자동 동기화
             if hasattr(self, '_sync_strat_expiry'):
                 self._sync_strat_expiry()
 
@@ -307,9 +342,7 @@ class PricePanelMixin:
         self._pp_lbl_opt_info.setText("")
         self._update_price_panel()
 
-    # ── Click handlers ─────────────────────────────────────────
     def _safe_strike_int(self, strike) -> str:
-        """빈 문자열/None strike 안전 변환."""
         try:
             if strike is None or str(strike).strip() == "": return ""
             return str(int(float(strike)))
@@ -317,13 +350,10 @@ class PricePanelMixin:
             return str(strike)
 
     def _on_pp_quote_click(self, row: int, col: int):
-        """Ask(row=0) or Bid(row=1) → fill quick-order price."""
         if not hasattr(self, 'qord_price'): return
         mode = getattr(self, '_pp_mode', 'und')
         if mode == 'opt':
-            # ✅ getattr 방어코드 — AttributeError 완전 차단
             raw = getattr(self, '_pp_opt_ask', None) if row == 0 else getattr(self, '_pp_opt_bid', None)
-            # ✅ NANOS 호가 ×10 보정
             val = raw * 10 if raw and getattr(self, '_pp_is_nanos', False) else raw
         else:
             val = getattr(self, '_pp_ask', None) if row == 0 else getattr(self, '_pp_bid', None)

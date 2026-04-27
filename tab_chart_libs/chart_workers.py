@@ -105,6 +105,9 @@ class IBKRBarTimer(QTimer):
     ─ historicalDataUpdate → hist_bar_update → 실시간 봉 push
     ─ 5초 타이머는 watchdog 용도로만 유지
       (TWS 끊김 감지 → 자동 재구독)
+
+    [수정] bridge 시그널 연결을 start()에서만 수행.
+    __init__에서 연결하면 stop() 전 위젯 파괴 시 dangling → SIGABRT.
     """
     bar_updated = pyqtSignal(dict)
 
@@ -112,22 +115,23 @@ class IBKRBarTimer(QTimer):
 
     def __init__(self, ib, symbol, parent=None):
         super().__init__(parent)
-        self.ib          = ib
-        self.symbol      = symbol
-        self._rid        = REQ_HIST
-        self._subscribed = False
-        self._last_bar_t = 0    # 마지막 바 수신 시각 (epoch)
-
-        # hist_bar       → 과거 봉 (historicalData 콜백)
-        # hist_bar_update → 실시간 봉 (historicalDataUpdate 콜백)
-        bridge.hist_bar.connect(self._on_bar)
-        bridge.hist_bar_update.connect(self._on_bar_update)
+        self.ib           = ib
+        self.symbol       = symbol
+        self._rid         = REQ_HIST
+        self._subscribed  = False
+        self._last_bar_t  = 0
+        self._bridge_connected = False   # 시그널 중복 연결 방지
 
         # watchdog 타이머
         self.timeout.connect(self._watchdog)
 
     def start(self, msec=None):
-        """최초 구독 시작."""
+        """최초 구독 시작 — bridge 연결도 여기서 수행."""
+        # bridge 시그널은 start() 시점에만 연결 (중복 방지)
+        if not self._bridge_connected:
+            bridge.hist_bar.connect(self._on_bar)
+            bridge.hist_bar_update.connect(self._on_bar_update)
+            self._bridge_connected = True
         self._subscribe()
         super().start(self._WATCHDOG_MS)
 

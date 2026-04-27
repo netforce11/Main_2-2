@@ -1,5 +1,5 @@
 """
-tab_options_settings.py — 화면 설정 저장/복원  v6.4
+tab_options_settings.py — 화면 설정 저장/복원  v6.5
 ════════════════════════════════════════════════════════════════
   CallPutGrid 에서 분리 (tab_options.py 에 mixin으로 사용)
 
@@ -10,15 +10,27 @@ tab_options_settings.py — 화면 설정 저장/복원  v6.4
   - _get_layout_snapshot() / _apply_layout_snapshot()
   - _refresh_layout_presets()
   - _save_layout_preset() / _load_layout_preset() / _del_layout_preset()
+
+  [추가]
+  - _build_layout_group() : 좌측 사이드 패널 하단에 삽입할 화면설정 GroupBox
+  - _save_layout_simple() / _load_layout_simple() : 단순 저장/불러오기 (저장시각 표시)
+  - _auto_load_layout()   : 앱 시작 시 QTimer.singleShot(100, self._auto_load_layout) 로 호출
 ════════════════════════════════════════════════════════════════
 """
 
+import os
+from datetime import datetime
 from pathlib import Path
 
 from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import (
+    QMessageBox, QGroupBox, QVBoxLayout, QPushButton, QLabel,
+)
 
 from core import save_json, load_json, SAVE_DIR
+
+# 단순 저장용 파일명 (프리셋과 별도)
+_SIMPLE_LAYOUT_FILE = "layout_state.json"
 
 
 class SettingsMixin:
@@ -26,6 +38,74 @@ class SettingsMixin:
 
     _GEO_FILE    = "window_geometry.json"
     _LAYOUT_FILE = "callput_layouts.json"
+
+    # ─────────────────────────────────────────────────────────
+    # [추가] 화면설정 GroupBox (좌측 사이드 패널 하단에 삽입)
+    # ─────────────────────────────────────────────────────────
+    def _build_layout_group(self) -> QGroupBox:
+        """💾/📂 단순 저장·불러오기 GroupBox — 사이드 패널 하단에 addWidget."""
+        grp = QGroupBox("화면설정")
+        grp.setStyleSheet(
+            "QGroupBox{font-size:10px;color:#aaa;border:1px solid #333;"
+            "border-radius:3px;margin-top:5px;padding-top:4px;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:6px;}")
+        vlay = QVBoxLayout(grp)
+        vlay.setSpacing(3); vlay.setContentsMargins(4, 4, 4, 4)
+
+        _ss_btn = ("QPushButton{background:#1a1a2a;color:#ccc;font-size:10px;"
+                   "border:1px solid #333;border-radius:3px;padding:2px;}"
+                   "QPushButton:hover{background:#2a2a3a;}")
+
+        btn_save = QPushButton("💾 화면설정 저장")
+        btn_save.setStyleSheet(_ss_btn)
+        btn_save.clicked.connect(self._save_layout_simple)
+
+        btn_load = QPushButton("📂 화면설정 불러오기")
+        btn_load.setStyleSheet(_ss_btn)
+        btn_load.clicked.connect(self._load_layout_simple)
+
+        self._lbl_layout_simple_status = QLabel("")
+        self._lbl_layout_simple_status.setStyleSheet("color:#888;font-size:9px;")
+
+        vlay.addWidget(btn_save)
+        vlay.addWidget(btn_load)
+        vlay.addWidget(self._lbl_layout_simple_status)
+        return grp
+
+    # ─────────────────────────────────────────────────────────
+    # [추가] 단순 저장/불러오기 (layout_state.json)
+    # ─────────────────────────────────────────────────────────
+    def _save_layout_simple(self):
+        """현재 스플리터 상태를 layout_state.json 에 저장."""
+        snap = self._get_layout_snapshot()
+        try:
+            save_json(_SIMPLE_LAYOUT_FILE, snap)
+            ts = datetime.now().strftime("%H:%M:%S")
+            self._lbl_layout_simple_status.setText(f"✅ 저장 {ts}")
+        except Exception as e:
+            self._lbl_layout_simple_status.setText(f"❌ 저장 실패")
+            self._log(f"[layout] 저장 실패: {e}")
+
+    def _load_layout_simple(self):
+        """layout_state.json 을 읽어 스플리터 복원."""
+        snap = load_json(_SIMPLE_LAYOUT_FILE, {})
+        if not snap:
+            self._lbl_layout_simple_status.setText("❌ 저장 파일 없음")
+            return
+        self._apply_layout_snapshot(snap)
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._lbl_layout_simple_status.setText(f"📂 복원 {ts}")
+
+    # ─────────────────────────────────────────────────────────
+    # [추가] 앱 시작 시 자동 복원
+    # 사용법: CallPutGrid.__init__ 말미에
+    #         QTimer.singleShot(100, self._auto_load_layout)
+    # ─────────────────────────────────────────────────────────
+    def _auto_load_layout(self):
+        """스플리터 초기화 완료(100ms) 후 자동 복원. 파일 없으면 기본 레이아웃 유지."""
+        snap = load_json(_SIMPLE_LAYOUT_FILE, {})
+        if snap:
+            self._apply_layout_snapshot(snap)
 
     # ─────────────────────────────────────────────────────────
     # 윈도우 geometry 저장/복원/후킹

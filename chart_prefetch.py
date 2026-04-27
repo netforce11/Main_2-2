@@ -108,7 +108,7 @@ class PrefetchWorker(QThread):
     """한 종목의 7거래일치 데이터를 백그라운드에서 다운로드."""
     progress = pyqtSignal(str)   # 상태 메시지
     finished = pyqtSignal(str)   # 종목명 (완료 시)
-    need_ibkr = pyqtSignal(str, object)   # (sym, [missing dates]) → IBKR 요청용
+    need_ibkr = pyqtSignal(str, list)    # (sym, [missing dates]) → IBKR 요청용
 
     def __init__(self, sym: str, trading_days: List[date], api_key: str):
         super().__init__()
@@ -146,6 +146,11 @@ class PrefetchManager(QObject):
     """
     관심종목 리스트를 받아 PrefetchWorker 를 순차 실행.
     병목 방지: 한 번에 1개 워커만 실행 (큐 방식).
+
+    [수정]
+    - need_ibkr 시그널 타입 object → list (큐잉 가능 타입으로 변경)
+    - _on_finished: 이전 worker wait() 후 해제 → Destroyed 방지
+    - is_running(): tab_chart.py 중복 실행 방지용
     """
     all_done   = pyqtSignal()
     status_msg = pyqtSignal(str)
@@ -155,13 +160,18 @@ class PrefetchManager(QObject):
         super().__init__(parent)
         self._queue:   List  = []
         self._worker:  Optional[PrefetchWorker] = None
-        self._ibkr_warned = False   # 팝업 중복 방지
+        self._ibkr_warned = False
+        self._running = False
+
+    def is_running(self) -> bool:
+        return self._running
 
     def start(self, symbols: List[str], api_key: str, mw=None):
-        self._mw       = mw
-        self._api_key  = api_key
+        self._mw          = mw
+        self._api_key     = api_key
         self._ibkr_warned = False
-        trading_days   = _last_n_trading_days(7)
+        self._running     = True
+        trading_days      = _last_n_trading_days(7)
 
         # 마커 미완성 종목만 큐에 추가
         pending = []
@@ -172,6 +182,7 @@ class PrefetchManager(QObject):
 
         if not pending:
             self.status_msg.emit("✅ 관심종목 전체 캐시 완료 (다운로드 불필요)")
+            self._running = False
             self.all_done.emit()
             return
 
@@ -183,17 +194,39 @@ class PrefetchManager(QObject):
     def _next(self):
         if not self._queue:
             self.status_msg.emit("✅ 관심종목 선행 다운로드 완료")
+            self._running = False
             self.all_done.emit()
             return
 
         sym, days = self._queue.pop(0)
-        self._worker = PrefetchWorker(sym, days, self._api_key)
-        self._worker.progress.connect(self.status_msg)
-        self._worker.finished.connect(self._on_finished)
-        self._worker.need_ibkr.connect(self._on_need_ibkr)
-        self._worker.start()
+        worker = PrefetchWorker(sym, days, self._api_key)
+        # status_msg 는 QLabel.setText 에만 연결할 것.
+        # QTextEdit(로그창)에 연결하면 QTextCursor 크래시 발생.
+        worker.progress.connect(self.status_msg)
+        worker.finished.connect(self._on_finished)
+        worker.need_ibkr.connect(self._on_need_ibkr)
+        self._worker = worker
+        worker.start()
 
     def _on_finished(self, sym: str):
+        # 완료된 worker 안전 정리 (Destroyed while running 방지)
+        w = self._worker
+        if w is not None:
+            try:
+                if not w.wait(3000):
+                    w.terminate()
+                    w.wait(1000)
+            except Exception:
+                pass
+            # 시그널 연결 해제
+            try:
+                w.progress.disconnect(self.status_msg)
+                w.finished.disconnect(self._on_finished)
+                w.need_ibkr.disconnect(self._on_need_ibkr)
+            except Exception:
+                pass
+            self._worker = None
+
         remaining = len(self._queue)
         if remaining:
             self.status_msg.emit(

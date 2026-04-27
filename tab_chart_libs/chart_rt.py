@@ -36,8 +36,9 @@ except Exception:
 
 from chart_workers import PolygonWorker, IBKRBarTimer
 
-# ── 탭7 전용 틱 구독 reqId (REQ_HIST=6000~6099 이후) ─────────
-REQ_CHART_TICK = 6500
+# ── 탭7 전용 틱 구독 reqId ───────────────────────────────────
+# ※ 6500은 core_fetch._OPT_SNAP_REQ(옵션 스냅샷)와 충돌 → 6600 사용
+REQ_CHART_TICK = 6600
 
 
 def on_rt_btn(self):
@@ -106,10 +107,25 @@ def start_stream(self, symbol):
 
 
 def stop_rt(self):
+    # ── PolygonWorker 정리 ───────────────────────────────────
     if self.worker:
-        self.worker.stop(); self.worker.wait(); self.worker = None
+        try:
+            self.worker.stop()
+            if not self.worker.wait(3000):   # 최대 3초 대기
+                self.worker.terminate()
+                self.worker.wait(1000)
+        except Exception:
+            pass
+        self.worker = None
+
+    # ── IBKRBarTimer 정리 ────────────────────────────────────
+    # stop() 내부에서 bridge 시그널 disconnect + cancelHistoricalData 처리
     if self.ibkr_timer:
-        self.ibkr_timer.stop(); self.ibkr_timer = None
+        try:
+            self.ibkr_timer.stop()
+        except Exception:
+            pass
+        self.ibkr_timer = None
 
     # ── 틱 구독 해제 ─────────────────────────────────────────
     _stop_tick_subscription(self)

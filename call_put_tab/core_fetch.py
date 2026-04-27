@@ -23,6 +23,7 @@ except ImportError:
 from core import (
     SYMBOL_CFG, DEFAULT_CFG, REQ_UND, REQ_CALL, REQ_PUT,
     make_opt_contract, make_und_contract, auto_mdt, tbl_set,
+    save_json, load_json, SAVE_DIR,
 )
 
 
@@ -1104,15 +1105,56 @@ class CoreFetchMixin(CoreFetchPosMixin):
         except Exception:
             pass
 
+    # ── 관심종목 파일 경로 ──────────────────────────────────────
+    _WATCH_FILE = "watchlist.json"
+
     def _w_add(self):
         t, ok = QInputDialog.getText(self, "추가", "심볼:")
         if ok and t.strip():
             self.watchlist.addItem(t.strip().upper())
+            self._w_save()          # 추가 즉시 저장
 
     def _w_del(self):
         r = self.watchlist.currentRow()
         if r >= 0:
             self.watchlist.takeItem(r)
+            self._w_save()          # 삭제 즉시 저장
+
+    def _w_save(self):
+        """관심종목 전체를 SAVE_DIR/watchlist.json 에 저장."""
+        items = [self.watchlist.item(i).text()
+                 for i in range(self.watchlist.count())]
+        try:
+            save_json(self._WATCH_FILE, items)
+        except Exception as e:
+            self._log(f"[watchlist] 저장 실패: {e}")
+
+    def _w_load(self):
+        """watchlist.json 을 읽어 관심종목 리스트를 복원."""
+        items = load_json(self._WATCH_FILE, [])
+        if not items:
+            return
+        self.watchlist.blockSignals(True)
+        self.watchlist.clear()
+        for sym in items:
+            self.watchlist.addItem(sym)
+        self._apply_watchlist_font()    # 복원 후 폰트 적용
+        self.watchlist.blockSignals(False)
+
+    def _apply_watchlist_font(self):
+        """관심종목 QListWidget 폰트 +3, 굵은 글씨 적용."""
+        from PyQt5.QtGui import QFont
+        f = self.watchlist.font()
+        # 이미 적용된 경우 중복 증가 방지
+        if not getattr(self, '_watch_font_applied', False):
+            f.setPointSize(f.pointSize() + 3)
+            self._watch_font_applied = True
+        f.setBold(True)
+        self.watchlist.setFont(f)
+        for i in range(self.watchlist.count()):
+            item = self.watchlist.item(i)
+            if item:
+                item.setFont(f)
 
 # ──────────────────────────────────────────────────────────────
 # _DummyLabel — _poll_hist lbl 인자용 더미 (CoreFetchMixin 외부)

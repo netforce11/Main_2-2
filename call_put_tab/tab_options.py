@@ -235,9 +235,23 @@ class CallPutGrid(
             "border:1px solid #2a2a5a;border-radius:3px;}"
             "QListWidget::item:selected{background:#1c3a6a;color:#fff;}"
             "QListWidget::item:hover{background:#12122a;}")
-        for sym in ["SPX","NDX","RUT","VIX","SPY","QQQ",
-                    "AAPL","NVDA","TSLA","AMZN","META","MSFT"]:
+
+        # ── 저장된 관심종목 복원 (없으면 기본 목록 사용) ────────
+        from core import load_json
+        _saved = load_json("watchlist.json", [])
+        _default = ["SPX","NDX","RUT","VIX","SPY","QQQ",
+                    "AAPL","NVDA","TSLA","AMZN","META","MSFT"]
+        for sym in (_saved if _saved else _default):
             self.watchlist.addItem(sym)
+
+        # ── 폰트 +3, 굵은 글씨 ──────────────────────────────────
+        from PyQt5.QtGui import QFont as _QFont
+        _wf = self.watchlist.font()
+        _wf.setPointSize(_wf.pointSize() + 3)
+        _wf.setBold(True)
+        self.watchlist.setFont(_wf)
+        self._watch_font_applied = True   # core_fetch._apply_watchlist_font 중복 방지
+
         self.watchlist.itemClicked.connect(self._on_watch_single_click)
         self.watchlist.itemDoubleClicked.connect(self._on_watch_dbl)
         v.addWidget(self.watchlist, 1)

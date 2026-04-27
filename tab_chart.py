@@ -317,6 +317,15 @@ class ChartGrid(QWidget):
         if self._prefetch_done_today == today:
             return   # 오늘 이미 실행
 
+        # 이전 매니저가 아직 실행 중이면 중복 시작 방지
+        if self._prefetch_manager is not None:
+            try:
+                if self._prefetch_manager.is_running():
+                    return
+            except Exception:
+                pass
+            self._prefetch_manager = None
+
         symbols = [self.watch_list.item(i).text().strip().upper()
                    for i in range(self.watch_list.count())
                    if self.watch_list.item(i).text().strip()]
@@ -324,12 +333,38 @@ class ChartGrid(QWidget):
             return
 
         self._prefetch_done_today = today
-        self._prefetch_manager    = PrefetchManager(self)
-        self._prefetch_manager.status_msg.connect(
-            lambda msg: self.status_lbl.setText(msg))
-        self._prefetch_manager.ibkr_alert.connect(
+        mgr = PrefetchManager(self)
+        mgr.status_msg.connect(self._safe_status)
+        mgr.ibkr_alert.connect(
             lambda msg: QMessageBox.warning(self, "IBKR 미연결", msg))
-        self._prefetch_manager.all_done.connect(
-            lambda: print("[Prefetch] 전체 완료"))
-        self._prefetch_manager.start(
-            symbols, self.api_key, mw=self.mw)
+        mgr.all_done.connect(self._on_prefetch_done)
+        self._prefetch_manager = mgr
+        mgr.start(symbols, self.api_key, mw=self.mw)
+
+    def _on_prefetch_done(self):
+        print("[Prefetch] 전체 완료")
+        # all_done 시점에 매니저 참조 해제 → GC 가능 상태로 전환
+        # (바로 None으로 세우면 시그널 disconnect 전 파괴 위험 → singleShot으로 지연)
+        QTimer.singleShot(500, self._clear_prefetch_manager)
+
+    def _clear_prefetch_manager(self):
+        self._prefetch_manager = None
+
+    def _safe_status(self, msg: str):
+        """QThread → GUI 안전 상태 메시지 업데이트.
+        status_lbl 이 QLabel 이면 setText, QTextEdit 이면 append 대신 setPlainText.
+        QTextCursor 를 워커 스레드에서 건드리지 않도록 이 메서드 경유 필수."""
+        from PyQt5.QtWidgets import QLabel, QTextEdit
+        try:
+            lbl = self.status_lbl
+            if isinstance(lbl, QLabel):
+                lbl.setText(msg)
+            elif isinstance(lbl, QTextEdit):
+                # QTextEdit 은 메인 스레드에서만 수정 가능
+                # 시그널이 Qt.QueuedConnection 으로 큐잉되므로 여기서는 안전하지만
+                # setText 대신 setPlainText 로 QTextCursor 생성을 최소화
+                lbl.setPlainText(msg)
+            else:
+                lbl.setText(msg)
+        except Exception:
+            pass
