@@ -79,9 +79,10 @@ def _build_intraday_tab(host):
     btn_3d = QPushButton("3일"); btn_3d.setFixedHeight(22); btn_3d.setFixedWidth(30)
     for b in (btn_1d, btn_2d, btn_3d):
         b.setStyleSheet(_BTN_STYLE)
-    btn_1d.clicked.connect(lambda: (host.spin_intra_bars.setValue(300),  host._fetch_intraday()))
-    btn_2d.clicked.connect(lambda: (host.spin_intra_bars.setValue(600),  host._fetch_intraday()))
-    btn_3d.clicked.connect(lambda: (host.spin_intra_bars.setValue(900),  host._fetch_intraday()))
+    # [수정④] N일 명시 조회 — _fetch_intraday_ndays(N) 사용
+    btn_1d.clicked.connect(lambda: (host.spin_intra_bars.setValue(390),  host._fetch_intraday_ndays(1)))
+    btn_2d.clicked.connect(lambda: (host.spin_intra_bars.setValue(780),  host._fetch_intraday_ndays(2)))
+    btn_3d.clicked.connect(lambda: (host.spin_intra_bars.setValue(1170), host._fetch_intraday_ndays(3)))
 
     host.chk_intra_ext = QCheckBox("시간외")
     host.chk_intra_ext.setStyleSheet("color:#90caf9;font-size:11px;")

@@ -13,7 +13,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QToolButton, QLabel, QFrame
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QToolButton, QLabel, QFrame, QApplication
+from PyQt5.QtGui import QFont, QFontDatabase
 from PyQt5.QtCore import Qt
 
 # ══════════════════════════════════════════════════════════════
@@ -28,6 +29,40 @@ DB_PATH    = REPORT_DIR / "reports.db"
 # ══════════════════════════════════════════════════════════════
 REC_TRADE   = "trade"    # 매매 복기
 REC_PRODUCT = "product"  # 상품·전략 메모
+
+# ══════════════════════════════════════════════════════════════
+# 한글 폰트
+# ══════════════════════════════════════════════════════════════
+KOREAN_FONTS = [
+    "Malgun Gothic",   # Windows 기본 한글 폰트
+    "맑은 고딕",
+    "NanumGothic",     # 나눔고딕 설치 시
+    "나눔고딕",
+    "AppleGothic",     # macOS
+    "UnDotum",         # Linux
+    "Noto Sans KR",    # 크로스 플랫폼
+]
+
+FONT_FAMILY = (
+    "'Malgun Gothic', '맑은 고딕', 'NanumGothic', '나눔고딕', "
+    "'AppleGothic', 'Noto Sans KR', sans-serif"
+)
+
+
+def apply_korean_font(app: QApplication | None = None) -> str:
+    """
+    시스템에서 사용 가능한 한글 폰트를 찾아 QApplication 전체에 적용.
+    app 이 None 이면 QApplication.instance() 를 사용.
+    적용된 폰트명을 반환 (없으면 빈 문자열).
+    """
+    target = app or QApplication.instance()
+    families = QFontDatabase().families()
+    for name in KOREAN_FONTS:
+        if name in families:
+            target.setFont(QFont(name, 10))
+            return name
+    return ""
+
 
 # ══════════════════════════════════════════════════════════════
 # 폰트 크기
@@ -180,13 +215,14 @@ def section_label(text: str) -> QLabel:
     lbl.setStyleSheet(
         f"font-weight:bold;font-size:{FS_SECTION};"
         f"color:#ddd;padding:4px 0 2px 0;"
+        f"font-family:{FONT_FAMILY};"
     )
     return lbl
 
 
 def field_label(text: str) -> QLabel:
     lbl = QLabel(text)
-    lbl.setStyleSheet(f"color:#aaa;font-size:{FS_BODY};")
+    lbl.setStyleSheet(f"color:#aaa;font-size:{FS_BODY};font-family:{FONT_FAMILY};")
     return lbl
 
 
@@ -196,14 +232,17 @@ def field_label(text: str) -> QLabel:
 STYLE_INPUT = (
     f"background:#1e1e2e;color:#fff;border:1px solid #555;"
     f"border-radius:4px;padding:4px 8px;font-size:{FS_BODY};"
+    f"font-family:{FONT_FAMILY};"
 )
 STYLE_TEXTEDIT = (
     f"background:#1a1a2e;color:#ddd;border:1px solid #444;"
     f"border-radius:4px;padding:6px;font-size:{FS_BODY};"
+    f"font-family:{FONT_FAMILY};"
 )
 STYLE_COMBO = (
     f"background:#1e1e2e;color:#ccc;border:1px solid #555;"
     f"border-radius:4px;padding:3px 6px;font-size:{FS_BODY};"
+    f"font-family:{FONT_FAMILY};"
 )
 
 

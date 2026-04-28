@@ -64,6 +64,11 @@ os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 os.environ.setdefault("QT_XCB_GL_INTEGRATION", "none")
 os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
 
+# ── fcitx 한글 입력기 연동 ────────────────────────────────────
+os.environ.setdefault("QT_IM_MODULE",  "fcitx")
+os.environ.setdefault("XMODIFIERS",    "@im=fcitx")
+os.environ.setdefault("GTK_IM_MODULE", "fcitx")
+
 import sys, threading
 from datetime import datetime
 

@@ -1,23 +1,28 @@
 """
-SPX 0DTE Option  1분봉 히스토리 Fetcher  v3
+SPX 0DTE Option  1분봉 히스토리 Fetcher  v4.1
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 · ibapi (공식 TWS API)  /  IB Gateway 포트 4001
 · 만기일 16:15 ET 자동 실행 + 수동 버튼
+· 장 마감 후 프로그램 시작 시 자동 조회 1회
 · ATM ±100pt 행사가 범위 (5pt 간격)
 · 당일 / +1영업일 / +2영업일 만기 옵션
 · reqHistoricalData → 1분봉 OHLCV 전체
 · CSV 컬럼:
     expiry, strike, right, datetime,
     open, high, low, close, volume
+· 폴더 구조:
+    OUTPUT_DIR/
+      YYYYMMDD/          ← D+0 (당일 만기)
+        D+1/             ← D+1 만기
+        D+2/             ← D+2 만기
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[v3 수정]
-· req_id 전역 카운터로 변경 → 만기 간 reqId 충돌 방지
-· 빈 응답(데이터 없음)도 정상 처리
-· 에러 코드별 상세 로그
-· 장 마감 후 테스트: useRTH=1 로 자동 전환
+[v4.1 수정]
+· error() — 2107 코드 추가 (HMDS inactive 정보성 메시지)
+· error() — reqId=-1 시스템 전반 메시지 별도 분기
+· connect() — HMDS 서버 워밍업 딜레이 3초 추가
+· fetch_expiry() — 첫 번째 요청 타임아웃 60초로 연장
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-
 import sys, os, csv, threading, time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -58,26 +63,32 @@ except ModuleNotFoundError:
 # ═══════════════════════════════════════════════
 # 설정
 # ═══════════════════════════════════════════════
-TWS_HOST     = "127.0.0.1"
-TWS_PORT     = 4001          # IB Gateway: 4001 / TWS: 7497
-CLIENT_ID    = 15            # core.py(1) 와 겹치지 않게
-
-STRIKE_RANGE = 100           # ATM ± pt
-STRIKE_STEP  = 5
-ET_TZ        = ZoneInfo("America/New_York")
-AUTO_HOUR    = 16
-AUTO_MIN     = 15
-
-OUTPUT_DIR   = Path("/home/netforce/US_Data/Data/SPX_0DTE")
+TWS_HOST      = "127.0.0.1"
+TWS_PORT      = 4001          # IB Gateway: 4001 / TWS: 7497
+CLIENT_ID     = 15
+STRIKE_RANGE  = 100           # ATM ± pt
+STRIKE_STEP   = 5
+ET_TZ         = ZoneInfo("America/New_York")
+AUTO_HOUR     = 16
+AUTO_MIN      = 15
+OUTPUT_DIR    = Path("/home/netforce/US_Data/Data/SPX_0DTE")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# reqId — 8100부터 시작하는 전역 카운터 (만기 간 충돌 방지)
-REQ_UND_ID   = 8001
-REQ_HIST_START = 8100        # 히스토리 reqId 시작값
+REQ_UND_ID     = 8001
+REQ_HIST_START = 8100         # 히스토리 reqId 시작값
+BAR_SIZE       = "1 min"
+WHAT_TO_SHOW   = "TRADES"
 
-BAR_SIZE     = "1 min"
-WHAT_TO_SHOW = "TRADES"
+# 정보성 에러 코드 (무시 대상)
+# 2104: Market data farm connection OK
+# 2106: HMDS data farm connection OK
+# 2107: HMDS data farm connection inactive (★ v4.1 추가)
+# 2119: Market data farm is connecting
+# 2158: Sec-def data farm connection OK
+INFO_CODES = {2104, 2106, 2107, 2119, 2158}
 
+# 폴더 레이블
+EXPIRY_LABELS = ["D+0", "D+1", "D+2"]
 
 # ═══════════════════════════════════════════════
 # 신호 (스레드 → Qt)
@@ -89,7 +100,6 @@ class Sig(QObject):
     done     = pyqtSignal(str)
     err      = pyqtSignal(str)
 
-
 # ═══════════════════════════════════════════════
 # IBapi 래퍼
 # ═══════════════════════════════════════════════
@@ -98,11 +108,8 @@ if IBAPI_OK:
         def __init__(self):
             EWrapper.__init__(self)
             EClient.__init__(self, self)
-
             self.und_price: float = 0.0
             self.und_ready        = threading.Event()
-
-            # 히스토리 버퍼 — reqId 키
             self.hist_buf:    dict = {}   # reqId → [bar, ...]
             self.hist_events: dict = {}   # reqId → Event
             self.hist_error:  dict = {}   # reqId → str
@@ -141,8 +148,18 @@ if IBAPI_OK:
 
         # ── 에러 ──────────────────────────────
         def error(self, reqId, errorCode, errorString, advancedOrderRejectJson=""):
-            if errorCode in (2104, 2106, 2158, 2119):
+
+            # ① 정보성 메시지 — 완전 무시
+            if errorCode in INFO_CODES:
                 return
+
+            # ② reqId=-1: 특정 요청과 무관한 시스템 전반 상태 메시지
+            #    (연결 상태, 팜 서버 알림 등) → 로그만 출력하고 종료
+            if reqId == -1:
+                print(f"[IBKR 시스템] code={errorCode} {errorString}")
+                return
+
+            # ③ 특정 요청에 대한 실제 에러
             print(f"[IBKR] reqId={reqId} code={errorCode} {errorString}")
             if reqId in self.hist_events:
                 self.hist_error[reqId] = f"[{errorCode}] {errorString}"
@@ -151,15 +168,14 @@ if IBAPI_OK:
         def connectionClosed(self):
             print("[IBKR] 연결 끊김")
 
-
 # ═══════════════════════════════════════════════
 # 조회 엔진
 # ═══════════════════════════════════════════════
 class Fetcher:
     def __init__(self, sig: Sig):
-        self.sig    = sig
+        self.sig     = sig
         self.app: "_IBApp | None" = None
-        self._req_id = REQ_HIST_START   # ← 전역 카운터 (리셋 안 함)
+        self._req_id = REQ_HIST_START
 
     def _next_req_id(self) -> int:
         rid = self._req_id
@@ -171,13 +187,19 @@ class Fetcher:
         if not IBAPI_OK:
             raise RuntimeError("ibapi 미설치: pip install ibapi")
         self.app = _IBApp()
-        self._req_id = REQ_HIST_START   # 재연결 시 리셋
+        self._req_id = REQ_HIST_START
         self.app.connect(TWS_HOST, TWS_PORT, clientId=CLIENT_ID)
         threading.Thread(target=self.app.run, daemon=True).start()
         time.sleep(1.5)
         if not self.app.isConnected():
             raise ConnectionError(f"IBKR 연결 실패 ({TWS_HOST}:{TWS_PORT})")
         self.sig.log.emit(f"[연결] IBKR 연결 성공 ({TWS_HOST}:{TWS_PORT})")
+
+        # ★ HMDS 서버 워밍업 대기
+        # 연결 직후 2107 메시지가 발생할 수 있음
+        # 서버가 "demand" 시 자동 연결되므로 3초 여유를 준 뒤 데이터 요청
+        self.sig.log.emit("[연결] HMDS 서버 준비 대기 중... (3초)")
+        time.sleep(3.0)
 
     def disconnect(self):
         if self.app and self.app.isConnected():
@@ -208,6 +230,7 @@ class Fetcher:
 
     # ── 영업일 만기 목록 ──────────────────────
     def expiry_dates(self) -> list:
+        """당일 포함 3 영업일 만기 반환 (인덱스 0=당일)"""
         today = datetime.now(ET_TZ).date()
         result, d = [], today
         while len(result) < 3:
@@ -232,7 +255,7 @@ class Fetcher:
         return c
 
     # ── 만기 하루치 1분봉 조회 ─────────────────
-    def fetch_expiry(self, expiry: str, atm: float) -> list:
+    def fetch_expiry(self, expiry: str, atm: float, is_first_expiry: bool = False) -> list:
         lo      = int((atm - STRIKE_RANGE) / STRIKE_STEP) * STRIKE_STEP
         hi      = int((atm + STRIKE_RANGE) / STRIKE_STEP) * STRIKE_STEP + STRIKE_STEP
         strikes = list(range(lo, hi + 1, STRIKE_STEP))
@@ -242,22 +265,20 @@ class Fetcher:
             f"({len(strikes)}행사가 × 2 = {total}계약)"
         )
 
-        # endDateTime: 만기일 16:15 ET → UTC 변환 (IBKR 권장 형식)
         from datetime import timezone
-        naive = datetime.strptime(f"{expiry} 16:15:00", "%Y%m%d %H:%M:%S")
-        et    = naive.replace(tzinfo=ET_TZ)
-        utc   = et.astimezone(timezone.utc)
-        end_dt = utc.strftime("%Y%m%d-%H:%M:%S")  # UTC: yyyymmdd-hh:mm:ss
-        rows       = []
-        skip_cnt   = 0
-        empty_cnt  = 0
+        naive  = datetime.strptime(f"{expiry} 16:15:00", "%Y%m%d %H:%M:%S")
+        et     = naive.replace(tzinfo=ET_TZ)
+        utc    = et.astimezone(timezone.utc)
+        end_dt = utc.strftime("%Y%m%d-%H:%M:%S")
+
+        rows, skip_cnt, empty_cnt = [], 0, 0
+        is_first_req = is_first_expiry   # 전체 첫 번째 요청 여부 추적
 
         for strike in strikes:
             for right in ("C", "P"):
                 contract = self._contract(strike, right, expiry)
-                rid      = self._next_req_id()   # ← 매번 새 reqId
-
-                ev = threading.Event()
+                rid      = self._next_req_id()
+                ev       = threading.Event()
                 self.app.hist_buf[rid]    = []
                 self.app.hist_events[rid] = ev
                 self.app.hist_error.pop(rid, None)
@@ -275,7 +296,11 @@ class Fetcher:
                     [],
                 )
 
-                ev.wait(timeout=30)
+                # ★ 첫 번째 요청은 HMDS 서버 깨어나는 시간을 고려해 60초
+                #   이후 요청은 30초로 복귀
+                timeout = 60 if is_first_req else 30
+                ev.wait(timeout=timeout)
+                is_first_req = False     # 이후 요청부터 30초 적용
 
                 bars = self.app.hist_buf.pop(rid, [])
                 err  = self.app.hist_error.pop(rid, None)
@@ -301,7 +326,6 @@ class Fetcher:
                             "close":    bar["close"],
                             "volume":   bar["volume"],
                         })
-
                 time.sleep(0.2)   # pacing: 60req/10sec 제한
 
         self.sig.log.emit(
@@ -309,6 +333,19 @@ class Fetcher:
             f"(스킵={skip_cnt} 빈응답={empty_cnt})"
         )
         return rows
+
+    # ── 폴더 경로 결정 ────────────────────────
+    @staticmethod
+    def _resolve_dir(base_date: str, label: str) -> Path:
+        """
+        label = 'D+0' → OUTPUT_DIR/YYYYMMDD/
+        label = 'D+1' → OUTPUT_DIR/YYYYMMDD/D+1/
+        label = 'D+2' → OUTPUT_DIR/YYYYMMDD/D+2/
+        """
+        root = OUTPUT_DIR / base_date
+        d    = root if label == "D+0" else root / label
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     # ── 전체 실행 ─────────────────────────────
     def run(self):
@@ -319,32 +356,43 @@ class Fetcher:
             atm      = self.get_spx_price()
             self.sig.progress.emit(20)
 
-            expiries = self.expiry_dates()
-            self.sig.log.emit(f"[만기일] {', '.join(expiries)}")
+            expiries  = self.expiry_dates()   # [D+0, D+1, D+2]
+            base_date = expiries[0]           # 당일 YYYYMMDD → 루트 폴더명
+            self.sig.log.emit(
+                f"[만기일] {', '.join(expiries)}  "
+                f"(기준폴더: {base_date})"
+            )
 
-            all_rows = []
-            for i, exp in enumerate(expiries):
-                self.sig.status.emit(f"조회 중: {exp} ({i+1}/3)...")
-                rows = self.fetch_expiry(exp, atm)
-                all_rows.extend(rows)
-                self.sig.progress.emit(30 + i * 22)
-
-            # ── CSV 저장 ──────────────────────
-            ts       = datetime.now(ET_TZ).strftime("%Y%m%d_%H%M%S")
-            filepath = OUTPUT_DIR / f"SPX_0DTE_1min_{ts}.csv"
-            fields   = [
+            ts     = datetime.now(ET_TZ).strftime("%Y%m%d_%H%M%S")
+            fields = [
                 "expiry", "strike", "right",
                 "datetime", "open", "high", "low", "close", "volume"
             ]
-            with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
-                w = csv.DictWriter(f, fieldnames=fields)
-                w.writeheader()
-                w.writerows(all_rows)
+
+            for i, (exp, label) in enumerate(zip(expiries, EXPIRY_LABELS)):
+                self.sig.status.emit(
+                    f"조회 중: {exp} [{label}] ({i+1}/3)..."
+                )
+                # D+0 첫 번째 만기에서만 첫 요청 타임아웃 60초 적용
+                rows = self.fetch_expiry(exp, atm, is_first_expiry=(i == 0))
+                self.sig.progress.emit(30 + i * 22)
+
+                save_dir  = self._resolve_dir(base_date, label)
+                filepath  = save_dir / f"SPX_{label}_{exp}_{ts}.csv"
+                with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
+                    w = csv.DictWriter(f, fieldnames=fields)
+                    w.writeheader()
+                    w.writerows(rows)
+                self.sig.log.emit(
+                    f"  [저장] [{label}] {len(rows)}행 → {filepath}"
+                )
 
             self.sig.progress.emit(100)
-            self.sig.log.emit(f"[완료] 총 {len(all_rows)}행 저장")
-            self.sig.log.emit(f"[파일] {filepath}")
-            self.sig.done.emit(str(filepath))
+            self.sig.log.emit(
+                f"[완료] 3개 만기 저장 완료\n"
+                f"  폴더: {OUTPUT_DIR / base_date}"
+            )
+            self.sig.done.emit(str(OUTPUT_DIR / base_date))
 
         except Exception as e:
             self.sig.err.emit(str(e))
@@ -352,7 +400,6 @@ class Fetcher:
         finally:
             self.disconnect()
             self.sig.progress.emit(0)
-
 
 # ═══════════════════════════════════════════════
 # 메인 GUI
@@ -364,16 +411,14 @@ class MainWindow(QMainWindow):
         self.fetcher    = Fetcher(self.sig)
         self.timer      = QTimer(self)
         self.running    = False
-        self._auto_done = None
-
+        self._auto_done = None   # 마지막 자동 조회 완료 날짜 (YYYYMMDD)
         self._ui()
         self._bind()
         self._sched_start()
 
     def _ui(self):
-        self.setWindowTitle("SPX 0DTE  1분봉 Fetcher  v3  ·  IBKR")
-        self.setMinimumSize(840, 660)
-
+        self.setWindowTitle("SPX 0DTE  1분봉 Fetcher  v4.1  ·  IBKR")
+        self.setMinimumSize(860, 680)
         root = QWidget(); self.setCentralWidget(root)
         vb = QVBoxLayout(root)
         vb.setSpacing(10); vb.setContentsMargins(12, 12, 12, 8)
@@ -386,7 +431,7 @@ class MainWindow(QMainWindow):
             ("행사가 범위", f"ATM ±{STRIKE_RANGE}pt", "#00bcd4"),
             ("데이터",     "1분봉 OHLCV",             "#00e676"),
             ("자동 실행",  f"{AUTO_HOUR:02d}:{AUTO_MIN:02d} ET", "#ffa726"),
-            ("저장 경로",   str(OUTPUT_DIR),           "#888"),
+            ("폴더 구조",  "날짜/D+0,D+1,D+2",        "#ce93d8"),
         ]:
             fr = QFrame(); fl = QVBoxLayout(fr); fl.setSpacing(1)
             tl = QLabel(title); tl.setStyleSheet("color:#888;font-size:10px;")
@@ -445,11 +490,11 @@ class MainWindow(QMainWindow):
 
         lg = QGroupBox("실행 로그")
         ll = QVBoxLayout(lg)
-        self.log = QTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setFont(QFont("Consolas", 10))
-        self.log.setStyleSheet("background:#0d0d0d;color:#b0bec5;border:none;")
-        ll.addWidget(self.log)
+        self.log_te = QTextEdit()
+        self.log_te.setReadOnly(True)
+        self.log_te.setFont(QFont("Consolas", 10))
+        self.log_te.setStyleSheet("background:#0d0d0d;color:#b0bec5;border:none;")
+        ll.addWidget(self.log_te)
         vb.addWidget(lg, 1)
 
         self.sb = QStatusBar()
@@ -463,7 +508,6 @@ class MainWindow(QMainWindow):
             QGroupBox::title{subcontrol-origin:margin;left:8px;}
             QStatusBar{background:#111;color:#555;}
         """)
-
         if not IBAPI_OK:
             self._log("[경고] ibapi 미설치 → pip install ibapi")
             self.btn_fetch.setEnabled(False)
@@ -477,36 +521,49 @@ class MainWindow(QMainWindow):
         self.sig.err.connect(self._on_err)
         self.btn_fetch.clicked.connect(self._manual)
         self.btn_dir.clicked.connect(self._open_dir)
-        self.btn_clr.clicked.connect(self.log.clear)
+        self.btn_clr.clicked.connect(self.log_te.clear)
 
     def _sched_start(self):
         self.timer.timeout.connect(self._tick)
         self.timer.start(30_000)
-        self._tick()
+        self._tick()   # 시작 즉시 1회 체크 (마감 후 기동 감지 포함)
 
     def _tick(self):
-        now = datetime.now(ET_TZ)
-        s   = now.strftime("%Y%m%d")
-        tgt = now.replace(hour=AUTO_HOUR, minute=AUTO_MIN, second=0, microsecond=0)
-        if now >= tgt:
+        now     = datetime.now(ET_TZ)
+        today_s = now.strftime("%Y%m%d")
+        tgt     = now.replace(
+            hour=AUTO_HOUR, minute=AUTO_MIN, second=0, microsecond=0
+        )
+
+        # ── 장 마감 후 자동 조회 판정 ──────────────────────────
+        # 조건: 영업일 + 16:15 ET 이후 + 당일 미조회 + 미실행 중
+        market_closed_today = (
+            now.weekday() < 5
+            and now >= tgt
+            and self._auto_done != today_s
+            and not self.running
+        )
+        if market_closed_today:
+            self._auto_done = today_s
+            self._log(
+                f"[자동] 장 마감 후 자동 조회 시작  "
+                f"({now.strftime('%H:%M')} ET)"
+            )
+            self._go()
             tgt += timedelta(days=1)
-        diff   = tgt - now
+
+        # ── 다음 자동 실행 표시 ────────────────────────────────
+        diff   = tgt - now if now < tgt else tgt + timedelta(days=1) - now
         h, rem = divmod(int(diff.total_seconds()), 3600)
         m      = rem // 60
         self.next_lbl.setText(
-            f"다음 자동 실행: {tgt.strftime('%m/%d %H:%M')} ET  (약 {h}시간 {m}분 후)"
+            f"다음 자동 실행: {tgt.strftime('%m/%d %H:%M')} ET  "
+            f"(약 {h}시간 {m}분 후)"
         )
-        if (now.weekday() < 5
-                and now.hour   == AUTO_HOUR
-                and now.minute == AUTO_MIN
-                and self._auto_done != s
-                and not self.running):
-            self._auto_done = s
-            self._log("[자동] 만기 시간 도달 → 자동 조회 시작")
-            self._go()
 
     def _manual(self):
-        if self.running: return
+        if self.running:
+            return
         self._log("[수동] 수동 조회 시작")
         self._go()
 
@@ -517,11 +574,11 @@ class MainWindow(QMainWindow):
         self.sb.showMessage("IBKR 연결 중...")
         threading.Thread(target=self.fetcher.run, daemon=True).start()
 
-    def _on_done(self, path: str):
+    def _on_done(self, folder: str):
         self.running = False
         self.btn_fetch.setEnabled(True)
         self.btn_fetch.setText("▶  지금 즉시 조회")
-        self.sb.showMessage(f"완료 → {os.path.basename(path)}")
+        self.sb.showMessage(f"완료 → {folder}")
 
     def _on_err(self, msg: str):
         self.running = False
@@ -531,8 +588,8 @@ class MainWindow(QMainWindow):
 
     def _log(self, msg: str):
         ts = datetime.now(ET_TZ).strftime("%H:%M:%S ET")
-        self.log.append(f"[{ts}]  {msg}")
-        self.log.ensureCursorVisible()
+        self.log_te.append(f"[{ts}]  {msg}")
+        self.log_te.ensureCursorVisible()
 
     def _open_dir(self):
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -540,7 +597,6 @@ class MainWindow(QMainWindow):
         if   sys.platform == "win32":  os.startfile(p)
         elif sys.platform == "darwin": os.system(f'open "{p}"')
         else:                          os.system(f'xdg-open "{p}"')
-
 
 # ═══════════════════════════════════════════════
 # 진입점

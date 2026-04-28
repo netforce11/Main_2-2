@@ -606,102 +606,132 @@ class CoreFetchMixin(CoreFetchPosMixin):
                 tbl.setItem(r, c, _mk("―"))
 
     def _tbl_click(self, row, col, side):
-        # ── 더블클릭 억제: Qt는 dblclick 직전에 click을 먼저 발화한다.
-        #    _tbl_dbl 에서 플래그를 True 로 세우고 QTimer(0) 으로 리셋하므로,
-        #    연속 click+dblclick 구분이 가능하다.
+        """1클릭 → 현재가 패널 옵션 모드 전환 + 이후 tick 자동 수신.
+
+        핵심 수정:
+          - _chart_strike / _chart_side 설정
+            → _apply_tick_price() 내 _refresh_opt_panel() 조건 통과
+          - _pp_mode='opt', _pp_opt_side, _pp_opt_strike, _pp_opt_bid/ask 설정
+            → _refresh_opt_panel() 3가지 조건 모두 충족
+          - cancelMktData/재구독 금지: _fetch()가 구독 중인 rid를
+            cancel하면 Bid/Ask 한쪽만 오는 TWS 버그 발생
+        """
         if getattr(self, '_dbl_pending', False):
             return
 
         strikes = self.call_strikes if side == "C" else self.put_strikes
-        if row >= len(strikes): return
+        if row >= len(strikes):
+            return
 
-        # ── 주문 패널용 가격·델타 조회 ──────────────────────────
-        rid        = (REQ_CALL if side == "C" else REQ_PUT) + row
-        data_dict  = (self.call_data if side == "C" else self.put_data)
+        strike = strikes[row]
+        rid    = (REQ_CALL if side == "C" else REQ_PUT) + row
+
+        # ── _refresh_opt_panel() 조건 충족을 위한 상태 설정 ─────
+        # _apply_tick_price()에서 Bid/Ask tick이 올 때
+        # 아래 3가지 조건을 모두 만족해야 패널이 갱신된다:
+        #   1) self._pp_mode == 'opt'
+        #   2) self._pp_opt_side == side
+        #   3) abs(self._pp_opt_strike - strike) <= 0.5
+        self._chart_strike   = strike          # tick 라우팅 조건
+        self._chart_side     = side
+        self._pp_mode        = 'opt'           # 현재가 패널 옵션 모드
+        self._pp_opt_side    = side            # _refresh_opt_panel 조건2
+        self._pp_opt_strike  = str(int(strike))  # _refresh_opt_panel 조건3
+        self._pp_opt_bid     = None            # tick 수신 전 초기화
+        self._pp_opt_ask     = None
+
+        # ── 미구독 상태(fetch 전)면 신규 구독 ──────────────────
+        # _fetch()가 이미 구독 중이면 cancel 없이 그대로 유지
+        # (cancel → 재구독 시 Bid/Ask 중 하나만 즉시 발화되는 TWS 현상)
+        data_dict_chk = self.call_data if side == "C" else self.put_data
+        if self.mw.connected and rid not in data_dict_chk:
+            try:
+                expiry, tag = self._get_expiry()
+                sym = self.edit_sym.text().strip().upper() or "SPX"
+                contract = make_opt_contract_safe(sym, strike, side, expiry, tag)
+                self.mw.ib.reqMktData(rid, contract, "100,101,104,106", False, False, [])
+                self._log(f"{'CALL' if side=='C' else 'PUT'} {int(strike)} 호가 신규 구독")
+            except Exception as e:
+                self._log(f"⚠ 호가 구독 오류: {e}")
+
+        # ── 기존 수신 데이터 읽기 ───────────────────────────────
+        data_dict  = self.call_data if side == "C" else self.put_data
         tick_entry = data_dict.get(rid, {})
 
-        # ※ or 체인 대신 is None 체크: 가격이 0.0이면 or 체인에서 falsy로 건너뜀
         _p = tick_entry.get("last")
         if _p is None: _p = tick_entry.get("bid")
         if _p is None: _p = tick_entry.get("ask")
         cur_price = _p
         cur_delta = tick_entry.get("delta")
+        cur_bid   = tick_entry.get("bid")
+        cur_ask   = tick_entry.get("ask")
 
         if cur_price is None:
             tbl = self.tbl_call if side == "C" else self.tbl_put
-            price_item = tbl.item(row, 1)
-            if price_item:
-                try:
-                    cur_price = float(price_item.text())
-                except:
-                    pass
+            item = tbl.item(row, 1)
+            if item:
+                try: cur_price = float(item.text())
+                except Exception: pass
         if cur_delta is None:
             tbl = self.tbl_call if side == "C" else self.tbl_put
-            delta_item = tbl.item(row, 3)
-            if delta_item:
-                try:
-                    cur_delta = float(delta_item.text())
-                except:
-                    pass
+            item = tbl.item(row, 3)
+            if item:
+                try: cur_delta = float(item.text())
+                except Exception: pass
 
-        # ── 빠른 주문 패널에 행사가·가격·정보 전달 ──────────────
-        self._qord_fill(side, str(int(strikes[row])), cur_price, source="← 테이블 클릭")
+        # 이미 수신된 bid/ask를 _pp_opt_bid/ask에도 설정 (패널 즉시 표시)
+        if cur_bid is not None: self._pp_opt_bid = cur_bid
+        if cur_ask is not None: self._pp_opt_ask = cur_ask
 
-        # ── 감시 패널 행사가 동기화 ──────────────────────────────
+        # ── 현재가 패널 옵션 모드로 전환 + 즉시 표시 ───────────
+        if hasattr(self, '_update_price_panel_opt'):
+            self._update_price_panel_opt(
+                side, str(int(strike)), cur_bid, cur_ask, cur_delta)
+
+        # ── 주문 패널 ───────────────────────────────────────────
+        self._qord_fill(side, str(int(strike)), cur_price, source="← 테이블 클릭")
+
+        # ── 감시 패널 ───────────────────────────────────────────
         if hasattr(self, 'watch_side'):   self.watch_side.setText(side)
-        if hasattr(self, 'watch_strike'): self.watch_strike.setText(str(int(strikes[row])))
+        if hasattr(self, 'watch_strike'): self.watch_strike.setText(str(int(strike)))
 
-        # ── 잔고 컬럼 클릭 시 포지션 매도 패널 ──────────────────
+        # ── 잔고 컬럼 → 포지션 매도 패널 ───────────────────────
         if col == 6 and hasattr(self, '_show_pos_sell_panel'):
             tbl = self.tbl_call if side == "C" else self.tbl_put
             pos_item = tbl.item(row, 6)
             hold_qty = 0
             if pos_item:
-                try:
-                    hold_qty = int(pos_item.text())
-                except:
-                    pass
+                try: hold_qty = int(pos_item.text())
+                except Exception: pass
             if hold_qty > 0:
                 self._show_pos_sell_panel(
-                    side, str(int(strikes[row])), qty=hold_qty, price=cur_price)
+                    side, str(int(strike)), qty=hold_qty, price=cur_price)
 
-        # ── 현재가 패널 옵션 정보 업데이트 ──────────────────────
-        if hasattr(self, '_pp_opt_bid'):
-            self._pp_opt_bid = None
-            self._pp_opt_ask = None
-        if hasattr(self, '_update_price_panel_opt'):
-            self._update_price_panel_opt(
-                side, str(int(strikes[row])), None, cur_price, cur_delta)
-
-        # ── 스나이퍼 탭 타깃 동기화 ─────────────────────────────
+        # ── 스나이퍼 탭 ─────────────────────────────────────────
         try:
             expiry_sn, _ = self._get_expiry()
             if expiry_sn and hasattr(self, 'set_sniper_target'):
                 self.set_sniper_target(
-                    strike=str(int(strikes[row])),
-                    right=side,
-                    expiry=expiry_sn,
-                )
+                    strike=str(int(strike)), right=side, expiry=expiry_sn)
         except Exception:
             pass
 
         label = 'CALL' if side == 'C' else 'PUT'
-        self._log(f"주문 패널 전달: {label} {int(strikes[row])}"
-                  + (f"  가격={cur_price:.2f}" if cur_price else ""))
+        self._log(f"1클릭: {label} {int(strike)}"
+                  + (f"  bid={cur_bid:.2f}" if cur_bid else "")
+                  + (f"  ask={cur_ask:.2f}" if cur_ask else ""))
 
     def _tbl_dbl(self, row, col, side):
-        """더블클릭 → 옵션 행사가 차트 스냅샷 조회.
+        """2클릭 → 차트 분봉(reqHistoricalData) 조회.
 
+        [수정②] 1클릭은 호가 구독, 2클릭은 차트 분봉 요청만 수행.
         처리 순서:
           1. _dbl_pending 플래그 설정 → 선행 cellClicked(_tbl_click) 억제
           2. _chart_strike / _chart_side 확정
           3. 차트 실시간 버퍼 초기화 (탭0 깨끗하게 비움)
           4. 옵션 계약 스냅샷 히스토리 조회 (_fetch_option_snapshot)
-          5. 차트 탭을 분봉(탭2) 또는 실시간(탭0)으로 전환
         """
         # ── 범위 체크를 플래그 설정 전에 수행 ───────────────────
-        # _dbl_pending=True 설정 후 return 하면 _tbl_click 이 억제된 채
-        # QTimer(0) 리셋도 발화되지 않아 이후 단클릭이 모두 무시된다.
         strikes = self.call_strikes if side == "C" else self.put_strikes
         if not strikes or row >= len(strikes):
             return
@@ -713,7 +743,6 @@ class CoreFetchMixin(CoreFetchPosMixin):
         strike = strikes[row]
         label  = 'CALL' if side == 'C' else 'PUT'
 
-        # ── _chart_strike 확정 ───────────────────────────────────
         self._chart_strike = strike
         self._chart_side   = side
 
@@ -727,11 +756,11 @@ class CoreFetchMixin(CoreFetchPosMixin):
             self._redraw_candles()
 
         if hasattr(self, 'chart_lbl'):
-            self.chart_lbl.setText(f"차트: {label}  {int(strike)}  📊 조회 중…")
+            self.chart_lbl.setText(f"차트: {label}  {int(strike)}  ⏳ 분봉 조회 중…")
 
-        self._log(f"차트 더블클릭: {label} {int(strike)}  → 스냅샷 차트 조회")
+        self._log(f"차트 2클릭: {label} {int(strike)}  → 분봉 reqHistoricalData")
 
-        # ── 옵션 스냅샷 차트 조회 ────────────────────────────────
+        # ── 옵션 분봉 스냅샷 조회 ────────────────────────────────
         self._fetch_option_snapshot(strike, side)
 
     # ── 옵션 스냅샷 차트 조회 ────────────────────────────────────
@@ -823,7 +852,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
                 req,
                 contract,
                 "",          # endDateTime: 빈 문자열 = 현재 시각
-                "1 D",       # durationStr
+                "2 D",       # durationStr — 전일 봉 100개 + 당일치 포함
                 "1 min",     # barSizeSetting
                 "TRADES",    # whatToShow — 옵션은 TRADES가 가장 안정적
                 0,           # useRTH: 0 = 전체 세션
@@ -945,16 +974,9 @@ class CoreFetchMixin(CoreFetchPosMixin):
     _INDEX_SYMS = {"SPX", "NDX", "RUT", "VIX", "DJX", "XSP", "NQ", "ES", "MES", "MNQ"}
 
     def _on_watch_dbl(self, item):
-        """더블클릭 → 종목 변경 + 옵션 테이블 전체 재조회 (스트림 구독).
+        """2클릭 → 종목 변경 + 기초자산 + 옵션 전체 조회(_fetch 포함).
 
-        [크래시 방어 수정]
-        1. _alive 체크: 위젯 파괴 후 콜백 진입 방어
-        2. _und_timer 중지: 더블클릭 직후 _refresh_und 가 동시에
-           _req_und 를 재호출하면 cancelMktData 중복 → 소켓 버퍼 누적
-        3. _und_is_futures 리셋: 이전 /ES 구독 상태가 남아있으면
-           새 종목 _req_und 에서 잘못된 선물 계약으로 분기될 수 있음
-        4. _auto_select_next_expiry QTimer 취소: 이전 /ES 전환으로
-           예약된 만기 자동 선택이 새 종목 선택 후 발화되면 만기 덮어쓰기
+        [수정③] 2클릭만 옵션 재조회. 선물 더블클릭 시에도 동일.
         """
         if not _alive(self):
             return
@@ -971,13 +993,10 @@ class CoreFetchMixin(CoreFetchPosMixin):
             QMessageBox.warning(self, "미연결", "TWS에 연결하세요.")
             return
 
-        # ① _und_timer 즉시 중지 — _refresh_und 동시 실행 방지
+        # 기존 타이머/상태 정리
         self._und_timer.stop()
-
-        # ② 이전 /ES 상태 리셋 — 새 종목은 항상 현물부터 시도
         self._und_is_futures = False
 
-        # ③ 예약된 만기 자동 선택 타이머 취소
         t_exp = getattr(self, '_next_expiry_timer', None)
         if t_exp is not None:
             t_exp.stop()
@@ -986,6 +1005,10 @@ class CoreFetchMixin(CoreFetchPosMixin):
             if hasattr(self, '_refresh_expiry_list'):
                 self._refresh_expiry_list()
 
+        # 사이드바 심볼 갱신
+        if hasattr(self, '_side_und_sym'):
+            self._side_und_sym.setText(sym)
+
         self.und_price = None
         self.lbl_und.setText("조회 중…")
         if hasattr(self, '_pp_switch_to_und'):
@@ -993,14 +1016,36 @@ class CoreFetchMixin(CoreFetchPosMixin):
 
         self._req_und(sym)
 
-        # ④ _req_und 내부에서 재예약된 만기 자동 선택 타이머 즉시 재취소
-        # → 더블클릭 시 combo_exp 날짜가 강제 변경되는 버그 방지
-        #   (_req_und 가 장외 감지 시 _next_expiry_timer.start(1000) 을 재호출하므로
-        #    ③번 취소만으로는 부족하며, _req_und 호출 직후 한 번 더 취소해야 함)
+        # _req_und 가 재예약한 만기 타이머 즉시 재취소
         t_exp = getattr(self, '_next_expiry_timer', None)
         if t_exp is not None:
             t_exp.stop()
 
+        # ── 차트 조회 + 탭 전환 ────────────────────────────────
+        from core import is_market_open
+        market_open = is_market_open()
+        is_spx = sym in getattr(self, '_SPX_SYMS', {"SPX", "SPXW"})
+
+        # 장외 SPX → /ES 선물 플래그 설정 (차트 조회 전에 결정)
+        if not market_open and is_spx:
+            self._und_is_futures = True
+
+        if market_open:
+            # 장중: 스냅샷 100개 먼저 그린 뒤 실시간 스트림 연결
+            if hasattr(self, '_fetch_intraday_with_live'):
+                self._fetch_intraday_with_live()
+            if hasattr(self, '_chart_tabs'):
+                self._chart_tabs.setCurrentIndex(2)
+        else:
+            if hasattr(self, '_fetch_daily'):
+                self._fetch_daily()
+            if hasattr(self, '_fetch_intraday'):
+                self._fetch_intraday()
+            if hasattr(self, '_chart_tabs'):
+                tab_idx = 2 if is_spx else 1
+                self._chart_tabs.setCurrentIndex(tab_idx)
+
+        # 1초 후 옵션 전체 재조회 (_fetch)
         t = getattr(self, '_watch_dbl_timer', None)
         if t is None:
             self._watch_dbl_timer = QTimer(self)
@@ -1010,8 +1055,14 @@ class CoreFetchMixin(CoreFetchPosMixin):
             self._watch_dbl_timer.stop()
         self._watch_dbl_timer.start(1000)
 
+        self._log(f"관심종목 2클릭: {sym}  → 차트 조회 + 옵션 전체 재조회")
+
     def _on_watch_single_click(self, item):
-        """단일클릭 → 기초자산 스냅샷만 조회."""
+        """1클릭 → 기초자산 구독 + 현재가 테이블 출력만.
+
+        [수정③] _fetch() 호출 없음 → 옵션 테이블 재조회 없음.
+        선물(SPX 장외) 더블클릭과 달리 1클릭은 현재가만 갱신한다.
+        """
         sym = item.text().strip().upper().replace("SPXW", "SPX")
 
         if hasattr(self, 'edit_sym'):
@@ -1021,6 +1072,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
             if hasattr(self, '_refresh_expiry_list'):
                 self._refresh_expiry_list()
 
+        # 현재가 패널 초기화
         if hasattr(self, '_pp_switch_to_und'):
             self._pp_switch_to_und()
         if hasattr(self, '_pp_lbl_sym'):
@@ -1034,48 +1086,26 @@ class CoreFetchMixin(CoreFetchPosMixin):
             self._pp_tbl_quote.setItem(0, 1, _mk("―", "#ff6666"))
             self._pp_tbl_quote.setItem(1, 1, _mk("―", "#33aaff"))
 
-        # ── _req_und 호출 전에 _und_is_futures 미리 결정 ────────
-        # _req_und() 내부에서 플래그를 설정하지만,
-        # 차트 조회(_fetch_intraday 등)가 즉시 이어지므로
-        # 여기서 먼저 판단해서 설정해야 use_fut 조건이 올바르게 동작함.
+        # 사이드바 심볼 갱신
+        if hasattr(self, '_side_und_sym'):
+            self._side_und_sym.setText(sym)
+
+        # _und_is_futures 사전 결정
         from core import is_market_open
         market_open = is_market_open()
         is_spx = sym in getattr(self, '_SPX_SYMS', {"SPX", "SPXW"})
+        self._und_is_futures = (not market_open and is_spx)
 
-        if not market_open and is_spx:
-            self._und_is_futures = True
-        else:
-            self._und_is_futures = False
-
+        # 기초자산 구독만 (옵션 체인 구독 없음)
         self._req_und(sym)
 
+        # 실시간 차트 히스트 초기화
         if PG:
             self._und_hist.clear()
             if hasattr(self, '_c_und'):
                 self._c_und.setData([])
 
-        if market_open:
-            # 장중: 분봉 탭
-            if hasattr(self, '_fetch_intraday'):
-                self._fetch_intraday()
-            if hasattr(self, '_chart_tabs'):
-                self._chart_tabs.setCurrentIndex(2)
-            self._log(f"관심종목 선택: {sym}  (장 중 — 분봉 차트 조회)")
-        else:
-            # 장외: /ES 선물이면 선물 차트, 아니면 기존 Polygon/IBKR
-            if hasattr(self, '_fetch_daily'):
-                self._fetch_daily()
-            if hasattr(self, '_fetch_intraday'):
-                self._fetch_intraday()
-            if hasattr(self, '_chart_tabs'):
-                # SPX 장외 → 분봉 탭(/ES 히스토리) 바로 표시
-                # 기타 종목 → 일봉 탭
-                tab_idx = 2 if (is_spx and not market_open) else 1
-                self._chart_tabs.setCurrentIndex(tab_idx)
-            if is_spx:
-                self._log(f"관심종목 선택: {sym}  (장 외 — /ES 선물 차트 조회)")
-            else:
-                self._log(f"관심종목 선택: {sym}  (장 외 — 일봉+분봉 차트 조회)")
+        self._log(f"관심종목 1클릭: {sym}  → 기초자산 구독 (옵션 미조회)")
 
     def on_tab_deactivate(self):
         old_gen = getattr(self, '_fetch_gen', 0)
