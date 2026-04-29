@@ -29,9 +29,16 @@ class MiniChartCanvas(FigureCanvas):
         self._fig.patch.set_facecolor("#ffffff")
         self._ax = self._fig.add_subplot(111)
         self._ax_vol = self._ax.twinx()
+        # 거래량 축(ax_vol)을 왼쪽으로 이동
+        self._ax_vol.yaxis.set_label_position("left")
+        self._ax_vol.yaxis.tick_left()
         super().__init__(self._fig)
         self.setParent(parent)
-        self._fig.subplots_adjust(left=0.06, right=0.94, top=0.92, bottom=0.14)
+        self._fig.subplots_adjust(left=0.02, right=0.88, top=0.92, bottom=0.14)
+
+        # 가격 Y축을 우측으로 이동
+        self._ax.yaxis.set_label_position("right")
+        self._ax.yaxis.tick_right()
 
         # vline state: {hhmm: {"line": Line2D, "visible": bool}}
         self._vline_map: Dict[str, dict] = {}
@@ -43,6 +50,12 @@ class MiniChartCanvas(FigureCanvas):
         self._ax_vol.cla()
         self._ax.set_facecolor("#fafafa")
         self._ax_vol.set_facecolor("#fafafa")
+        # 가격 Y축 우측 유지 (cla() 후 초기화되므로 재설정)
+        self._ax.yaxis.set_label_position("right")
+        self._ax.yaxis.tick_right()
+        # 거래량 Y축 좌측 유지
+        self._ax_vol.yaxis.set_label_position("left")
+        self._ax_vol.yaxis.tick_left()
         # vline objects are gone after cla() — clear refs but keep keys/visibility
         for hhmm, v in self._vline_map.items():
             v["line"] = None
@@ -195,16 +208,19 @@ class MiniChartCanvas(FigureCanvas):
                 zip(opens, highs, lows, closes, vols)):
             color = "#e53935" if c >= o else "#1e88e5"
             is_big = (vol_highlight is not None and v >= vol_highlight)
-            lw_wick = 2.5 if is_big else 0.8
-            lw_body = 1.5 if is_big else 0.5
+            is_last = (i == len(times) - 1)
+            # 마지막 봉: 더 넓고 굵게
+            lw_wick = 3.0 if is_last else (2.5 if is_big else 0.8)
+            lw_body = 2.5 if is_last else (1.5 if is_big else 0.5)
+            body_half = 0.45 if is_last else 0.3
             # Wick
             self._ax.plot([i, i], [l, h], color=color,
                           linewidth=lw_wick, zorder=2)
             # Body
             body_h = max(abs(c - o), 1e-9)
-            edge_color = "#ffffff" if is_big else color
+            edge_color = "#ffffff" if (is_last or is_big) else color
             rect = matplotlib.patches.Rectangle(
-                (i - 0.3, min(o, c)), 0.6, body_h,
+                (i - body_half, min(o, c)), body_half * 2, body_h,
                 facecolor=color, edgecolor=edge_color,
                 linewidth=lw_body, zorder=3
             )

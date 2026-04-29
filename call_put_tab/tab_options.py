@@ -242,7 +242,11 @@ class CallPutGrid(
         _default = ["SPX","NDX","RUT","VIX","SPY","QQQ",
                     "AAPL","NVDA","TSLA","AMZN","META","MSFT"]
         for sym in (_saved if _saved else _default):
-            self.watchlist.addItem(sym)
+            # watchlist.json이 {"symbol": "SPX"} 형태의 딕셔너리일 때 대응
+            if isinstance(sym, dict):
+                self.watchlist.addItem(sym.get("symbol", ""))
+            else:
+                self.watchlist.addItem(sym)
 
         # ── 폰트 +3, 굵은 글씨 ──────────────────────────────────
         from PyQt5.QtGui import QFont as _QFont
