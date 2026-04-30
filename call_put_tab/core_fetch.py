@@ -894,6 +894,9 @@ class CoreFetchMixin(CoreFetchPosMixin):
 
         def _on_timeout_with_restore():
             _restore_mdt()
+            # ✅ FIX 🟠-1: 타임아웃 시에도 라우터 슬롯 정리 (buf 누적 방지)
+            if hasattr(self, '_hist_router'):
+                self._hist_router.pop(req, None)
             self._on_opt_snapshot_timeout()
 
         self._poll_hist(
@@ -1116,6 +1119,11 @@ class CoreFetchMixin(CoreFetchPosMixin):
             if t:
                 t.stop()
             self._log("⏸ 탭 비활성화 — 구독 루프 중단, _fetch_busy 해제")
+        # ✅ FIX 🟠-2: 탭 비활성 시 불필요한 타이머 중지
+        if hasattr(self, '_watch_timer') and self._watch_timer.isActive():
+            self._watch_timer.stop()
+        if hasattr(self, '_und_timer') and self._und_timer.isActive():
+            self._und_timer.stop()
 
     def on_tab_activate(self):
         if not getattr(getattr(self, 'mw', None), 'connected', False):
@@ -1125,6 +1133,11 @@ class CoreFetchMixin(CoreFetchPosMixin):
         if getattr(self, '_fetch_busy', False):
             return
         self._log("▶ 탭 활성화 — 체인 재구독")
+        # ✅ FIX 🟠-2: 탭 활성화 시 타이머 재시작
+        if hasattr(self, '_watch_timer') and not self._watch_timer.isActive():
+            self._watch_timer.start()
+        if hasattr(self, '_und_timer') and not self._und_timer.isActive():
+            self._und_timer.start()
         self._fetch()
 
     def _notify_sniper_sync(self):

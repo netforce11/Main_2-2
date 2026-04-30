@@ -112,19 +112,30 @@ class ChartMixin(HistoryMixin):
     # ─────────────────────────────────────────────────────────
     def _on_tick_price(self, rid, tt, price, attrib=None):
         # attrib=None: TWS가 4번째 인자(TickAttrib)를 전달할 수 있음.
+        # attrib=None: TWS가 4번째 인자(TickAttrib)를 전달할 수 있음.
         # Linux/Python 3.12: price가 float이 아닌 타입으로 올 수 있으므로 변환.
         try:
             price = float(price)
         except (TypeError, ValueError):
             return
         if price <= 0: return
-        QTimer.singleShot(0, lambda: self._apply_tick_price(rid, tt, price))
+        # ✅ FIX 🔴-3: weakref로 self 캡처 → 탭 닫힌 후 위젯 GC 허용
+        import weakref as _wr
+        _self = _wr.ref(self)
+        def _cb(r=rid, t=tt, p=price):
+            obj = _self()
+            if obj is not None:
+                obj._apply_tick_price(r, t, p)
+        QTimer.singleShot(0, _cb)
 
     def _apply_tick_price(self, rid, tt, price):
         # QTimer.singleShot 딜레이 사이에 위젯이 파괴될 수 있음 → 즉시 체크
         try:
             self.objectName()
         except RuntimeError:
+            return
+        # ✅ FIX 🟠-3: _fetch() clear 후 도착한 이전 세대 tick 무시
+        if rid != REQ_UND and rid not in self.call_data and rid not in self.put_data:
             return
         if rid == REQ_UND:
             if tt in (4, 68, 75, 14, 9):
@@ -266,8 +277,14 @@ class ChartMixin(HistoryMixin):
             return
         _iv   = iv   if (iv   and 0 < iv   < 10)   else None
         _vega = vega if (vega and abs(vega) < 1e6) else None
-        QTimer.singleShot(0, lambda: self._apply_tick_option(
-            rid, tt, delta, theta, gamma, iv=_iv, vega=_vega))
+        # ✅ FIX 🔴-3: weakref로 self 캡처 → 탭 닫힌 후 위젯 GC 허용
+        import weakref as _wr
+        _self = _wr.ref(self)
+        def _cb(r=rid, t=tt, d=delta, th=theta, g=gamma, i=_iv, v=_vega):
+            obj = _self()
+            if obj is not None:
+                obj._apply_tick_option(r, t, d, th, g, iv=i, vega=v)
+        QTimer.singleShot(0, _cb)
 
     def _apply_tick_option(self, rid, tt, delta, theta, gamma, iv=None, vega=None):
         if REQ_CALL <= rid < REQ_CALL + self._MAX_STRIKES:
@@ -383,13 +400,19 @@ class ChartMixin(HistoryMixin):
 
         # ── pyqtgraph 실시간 차트 ─────────────────────────────────
         if PG:
+            # ✅ FIX 🟢-1: deque(maxlen) 사용으로 append만 하면 자동 제거
             self._und_hist.append(price)
-            if len(self._und_hist) > self._BUF:
-                del self._und_hist[0]
             if hasattr(self, '_c_und'):
-                self._c_und.setData(self._und_hist)
+                self._c_und.setData(list(self._und_hist))
 
         # ── 현재가 패널 연동 ──────────────────────────────────────
+        # ✅ FIX 🟠-4: und_push 호출을 여기서만 수행 (tab_options_price.py 에서 제거됨)
+        if price is not None:
+            try:
+                from trade_log.und_saver import push as und_push
+                und_push(price)
+            except Exception:
+                pass
         if hasattr(self, '_update_price_panel'):
             self._update_price_panel()
 
@@ -397,23 +420,20 @@ class ChartMixin(HistoryMixin):
         c = self.call_data.get(REQ_CALL, {}).get("last")
         p = self.put_data.get(REQ_PUT, {}).get("last")
         if c and p and PG:
+            # ✅ FIX 🟢-1: deque 자동 제거
             self._spreads.append(c - p)
-            if len(self._spreads) > self._BUF:
-                del self._spreads[0]
 
     def _push_price(self, price):
         if not PG: return
         now_et   = datetime.utcnow() - timedelta(hours=4 if self._is_dst() else 5)
         now_unix = now_et.timestamp()
+        # ✅ FIX 🟢-1: deque 자동 제거 (del list[0] O(n) 제거)
         self._prices.append(price)
         self._price_times.append(now_unix)
-        if len(self._prices) > self._BUF:
-            del self._prices[0]
-            del self._price_times[0]
 
         min_len = min(len(self._prices), len(self._price_times))
-        xs = self._price_times[-min_len:]
-        ys = self._prices[-min_len:]
+        xs = list(self._price_times)[-min_len:]
+        ys = list(self._prices)[-min_len:]
         if len(xs) == 0: return
 
         self._c_p.setData(x=xs, y=ys)
@@ -431,15 +451,23 @@ class ChartMixin(HistoryMixin):
             b['l'] = min(b['l'], price)
             b['c'] = price
         else:
+            # ✅ FIX 🔴-1: 최대 _CANDLE_MAX 개 유지 (무제한 증가 방지)
+            if len(self._candle_bars) >= getattr(self, '_CANDLE_MAX', 500):
+                oldest = min(self._candle_bars)
+                del self._candle_bars[oldest]
             self._candle_bars[bar_key] = {'o': price, 'h': price, 'l': price, 'c': price, 't': bar_key}
         self._redraw_candles()
 
     def _redraw_candles(self):
         if not PG or not hasattr(self, '_pw_candle'): return
+        # ✅ FIX 🔴-2: scene() 확인 후 제거 (removeItem 실패 시 씬 잔존 방지)
         for it in self._candle_items:
             try:
-                self._pw_candle.removeItem(it)
-            except:
+                if hasattr(it, 'scene') and it.scene() is not None:
+                    self._pw_candle.removeItem(it)
+                else:
+                    self._pw_candle.removeItem(it)
+            except Exception:
                 pass
         self._candle_items.clear()
         bars = sorted(self._candle_bars.values(), key=lambda b: b['t'])
@@ -463,9 +491,8 @@ class ChartMixin(HistoryMixin):
 
     def _push_greeks(self, delta):
         if not PG: return
+        # ✅ FIX 🟢-1: deque 자동 제거
         self._deltas.append(delta)
-        if len(self._deltas) > self._BUF:
-            del self._deltas[0]
 
     # ─────────────────────────────────────────────────────────
     # 장외 시간 기초자산 종가 Fallback (Polygon SPY 우회)
@@ -488,7 +515,7 @@ class ChartMixin(HistoryMixin):
 
         def _run():
             from datetime import datetime, timedelta
-            from PyQt5.QtCore import QTimer
+            from PyQt5.QtCore import QMetaObject, Qt as _Qt, Q_ARG
 
             query_sym = "SPY" if sym in ("SPX", "SPXW") else sym
             end   = datetime.today().date()
@@ -499,10 +526,19 @@ class ChartMixin(HistoryMixin):
                 last_close = bars[-1]["c"]
                 if sym in ("SPX", "SPXW"):
                     last_close = last_close * 10.0
-                QTimer.singleShot(0, lambda: self._apply_fallback_price(last_close, query_sym))
+                # ✅ FIX 🟢-2: singleShot 대신 invokeMethod로 메인 스레드 안전 호출
+                QMetaObject.invokeMethod(
+                    self, "_apply_fallback_price_slot",
+                    _Qt.QueuedConnection,
+                    Q_ARG(float, last_close),
+                    Q_ARG(str, query_sym),
+                )
             else:
-                QTimer.singleShot(0, lambda: self._log(
-                    f"🌙 장외 시간: Polygon 우회 조회 실패 ({query_sym} 데이터 없음)"))
+                QMetaObject.invokeMethod(
+                    self, "_log_fallback_fail_slot",
+                    _Qt.QueuedConnection,
+                    Q_ARG(str, query_sym),
+                )
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -512,6 +548,17 @@ class ChartMixin(HistoryMixin):
             self.und_prev  = price
             self._update_und_display()
             self._log(f"🌙 장외 시간: Polygon {source_sym} 종가 기반({price:,.2f})으로 체인 조회 진행")
+
+    # ✅ FIX 🟢-2: QMetaObject.invokeMethod 용 slot 래퍼
+    from PyQt5.QtCore import pyqtSlot as _pyqtSlot
+
+    @_pyqtSlot(float, str)
+    def _apply_fallback_price_slot(self, price: float, source_sym: str):
+        self._apply_fallback_price(price, source_sym)
+
+    @_pyqtSlot(str)
+    def _log_fallback_fail_slot(self, query_sym: str):
+        self._log(f"🌙 장외 시간: Polygon 우회 조회 실패 ({query_sym} 데이터 없음)")
     # ─────────────────────────────────────────────────────────
     # 텔레그램 차트 캡처
     # ─────────────────────────────────────────────────────────

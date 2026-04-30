@@ -24,78 +24,46 @@ from PyQt5.QtCore import Qt, QDate, pyqtSignal, pyqtSlot, QTimer
 
 from spxw_core import (
     build_spx_zero_day_symbol,
-    PolygonDataProvider, _load_api_key_from_file,
+    _load_api_key_from_file,
     _is_summer_time,
-    fetch_minutes_polygon, normalize_rows,
     MiniChartCanvas,
-    _SAVE_BASE_DIR, _make_save_path, _save_rows_xlsx,
+    _OPT_1MIN_DIR,
+    _make_save_path, _save_rows_xlsx,
     _load_rows_xlsx, _list_xlsx_for_date,
-    _HAS_OPENPYXL,
 )
 
-# 1분봉 저장 폴더는 1초봉과 별도 관리
-_MIN_SAVE_BASE_DIR = r"C:\data\Zeroday_option_1Min"
+# ── 1분봉 경로 규칙 ──────────────────────────────────────────────────
+# /home/netforce/US_Data/Zeroday_option_1Min/{expiry}/{expiry}_{symbol}.csv
+_MIN_SAVE_BASE_DIR = _OPT_1MIN_DIR
 
 
 def _make_1min_save_path(expiry: str, symbol_raw: str) -> str:
-    sym = symbol_raw.replace("O:", "").strip()
-    folder = os.path.join(_MIN_SAVE_BASE_DIR, expiry)
-    os.makedirs(folder, exist_ok=True)
-    return os.path.join(folder, f"{expiry}_{sym}.xlsx")
+    """
+    옵션 1분봉 저장 경로 (= spxw_core._make_save_path 와 동일):
+      /home/netforce/US_Data/Zeroday_option_1Min/{expiry}/{expiry}_{symbol}.csv
+    """
+    return _make_save_path(expiry, symbol_raw)
 
 
 def _list_1min_xlsx_for_date(expiry: str) -> List[str]:
-    folder = os.path.join(_MIN_SAVE_BASE_DIR, expiry)
-    if not os.path.isdir(folder):
-        return []
-    return sorted([f for f in os.listdir(folder) if f.endswith(".xlsx")])
+    """옵션 1분봉 폴더의 CSV 파일 목록 반환 (파일명만)."""
+    return _list_xlsx_for_date(expiry)
 
 
-def _fetch_1min_bars(api_key: str, symbol: str, date_str: str,
-                     limit: int = 500) -> List[Dict[str, Any]]:
-    """Polygon 1분봉 수집."""
-    from spxw_core import opt_ticker, _requests_module
-    ticker = opt_ticker(symbol)
-    try:
-        import requests as _req
-        url = (f"https://api.polygon.io/v2/aggs/ticker/{ticker}"
-               f"/range/1/minute/{date_str}/{date_str}"
-               f"?adjusted=false&sort=asc&limit={limit}&apiKey={api_key}")
-        resp = _req.get(url, timeout=30)
-        resp.raise_for_status()
-        results = resp.json().get("results", [])
-        rows: List[Dict[str, Any]] = []
-        from datetime import datetime, timezone, timedelta
-        try:
-            import pytz
-            KST = pytz.timezone("Asia/Seoul")
-        except ImportError:
-            KST = None
-
-        for r in results:
-            ts_ms = r.get("t", 0)
-            try:
-                if KST:
-                    from datetime import datetime as _dt
-                    dt_kst = _dt.fromtimestamp(ts_ms / 1000.0, tz=KST)
-                else:
-                    from datetime import datetime as _dt, timezone as _tz
-                    dt_kst = _dt.utcfromtimestamp(ts_ms / 1000.0) + timedelta(hours=9)
-                time_str = dt_kst.strftime("%H:%M")
-            except Exception:
-                time_str = "??:??"
-            rows.append({
-                "time":   time_str,
-                "open":   float(r.get("o", 0)),
-                "high":   float(r.get("h", 0)),
-                "low":    float(r.get("l", 0)),
-                "close":  float(r.get("c", 0)),
-                "volume": float(r.get("v", 0)),
-            })
-        return rows
-    except Exception as e:
-        print(f"[1분봉 오류] {symbol}: {e}")
-        return []
+def _load_1min_bars_from_file(expiry: str, symbol_raw: str) -> List[Dict[str, Any]]:
+    """
+    저장된 CSV 파일에서 1분봉 데이터 로드.
+    경로: /home/netforce/US_Data/Zeroday_option_1Min/{expiry}/{expiry}_{symbol}.csv
+    캐시 파일(_cache.csv)이 있으면 우선 사용.
+    """
+    path = _make_1min_save_path(expiry, symbol_raw)
+    base, ext = os.path.splitext(path)
+    cache_path = base + "_cache" + ext
+    if os.path.exists(cache_path):
+        return _load_rows_xlsx(cache_path)
+    if os.path.exists(path):
+        return _load_rows_xlsx(path)
+    return []
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -335,48 +303,42 @@ class OneMiniTab(QWidget):
     #  수집 실행
     # ────────────────────────────────────────────────────────────────
     def on_fetch_clicked(self):
+        """심볼+만기일로 저장된 CSV 파일을 직접 로드해 화면에 표시."""
         symbol   = self.symbol_edit.text().strip()
+        expiry   = self.expiry_edit.date().toString("yyyy-MM-dd")
         date_str = self.date_edit.date().toString("yyyy-MM-dd")
         if not symbol:
-            QMessageBox.warning(self, "오류", "심볼을 입력하세요.")
-            return
-        if not self.api_key:
-            QMessageBox.warning(self, "오류", "API Key가 없습니다.")
+            QMessageBox.warning(self, "오류", "심볼을 입력하거나 자동 생성하세요.")
             return
 
         self._current_date_str = date_str
         summer = _is_summer_time(date_str)
         s_tag  = "섬머" if summer else "비섬머"
         self.session_lbl.setText(f"📌 {date_str} [{s_tag}]")
-        self.status_lbl.setText(f"🔄 1분봉 수집 중... {symbol}")
+        self.status_lbl.setText(f"🔄 파일 로드 중... {symbol}")
         self.fetch_btn.setEnabled(False)
         self.gen_btn.setEnabled(False)
 
-        api_key = self.api_key
-        limit   = self.limit_spin.value()
-        rq      = self._result_queue
+        rq = self._result_queue
 
         def _worker():
             try:
-                rows = _fetch_1min_bars(api_key, symbol, date_str, limit=limit)
+                rows = _load_1min_bars_from_file(expiry, symbol)
             except Exception as e:
                 rows = []
-                print(f"[1min fetch] {e}")
+                print(f"[1min load] {e}")
             rq.put((symbol, rows))
 
         threading.Thread(target=_worker, daemon=True).start()
 
     def _on_gen_fetch_save(self):
-        """콤보박스에 지정된 콜/풋으로 심볼 생성 → 수집 → 저장."""
+        """콤보박스에 지정된 콜/풋으로 심볼 자동생성 → 저장된 파일 로드."""
         expiry   = self.expiry_edit.date().toString("yyyy-MM-dd")
         date_str = self.date_edit.date().toString("yyyy-MM-dd")
         try:
             strike = float(self.strike_edit.text())
         except Exception:
             QMessageBox.warning(self, "오류", "행사가를 숫자로 입력하세요.")
-            return
-        if not self.api_key:
-            QMessageBox.warning(self, "오류", "API Key가 없습니다.")
             return
 
         side = self.side_combo.currentText()
@@ -386,32 +348,26 @@ class OneMiniTab(QWidget):
             return
 
         self.symbol_edit.setText(sym)
-        self._auto_task_queue   = [(sym, strike, side)]
-        self._auto_task_total   = 1
-        self._auto_task_done    = 0
-        self._auto_expiry       = expiry
-        self._auto_date_str     = date_str
-        self._auto_active       = True
-        self._pending_save      = True
+        self._auto_expiry             = expiry
+        self._auto_date_str           = date_str
         self._pending_expiry_override = expiry
 
         self.gen_btn.setEnabled(False)
         self.fetch_btn.setEnabled(False)
-        self.log_text.appendPlainText(f"🚀 수집: {sym}  [{side}]  날짜:{date_str}")
+        self.log_text.appendPlainText(f"📂 파일 조회: {sym}  [{side}]  날짜:{date_str}")
 
-        self._start_fetch_thread(sym, date_str)
+        self._start_fetch_thread(sym, expiry, date_str)
 
-    def _start_fetch_thread(self, symbol: str, date_str: str):
-        api_key = self.api_key
-        limit   = self.limit_spin.value()
-        rq      = self._result_queue
+    def _start_fetch_thread(self, symbol: str, expiry: str, date_str: str):
+        """저장된 CSV 파일을 비동기 로드해 Queue에 결과 전달."""
+        rq = self._result_queue
 
         def _worker():
             try:
-                rows = _fetch_1min_bars(api_key, symbol, date_str, limit=limit)
+                rows = _load_1min_bars_from_file(expiry, symbol)
             except Exception as e:
                 rows = []
-                print(f"[1min worker] {e}")
+                print(f"[1min load] {e}")
             rq.put((symbol, rows))
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -476,13 +432,14 @@ class OneMiniTab(QWidget):
     #  저장 / 캐시
     # ────────────────────────────────────────────────────────────────
     def _save_data(self, symbol: str, rows: List[Dict[str, Any]]):
-        if not rows or not _HAS_OPENPYXL:
+        """봉 데이터를 CSV로 저장 + 자동 캐시 생성."""
+        if not rows:
             return
         expiry = self._pending_expiry_override or \
                  self.expiry_edit.date().toString("yyyy-MM-dd")
         try:
-            path = _make_1min_save_path(expiry, symbol)
-            _save_rows_xlsx(path, rows)
+            path = _make_1min_save_path(expiry, symbol)   # → .csv
+            _save_rows_xlsx(path, rows)                    # 내부적으로 csv 저장
             fname = os.path.basename(path)
             self.log_text.appendPlainText(f"💾 저장: {fname}")
 
@@ -490,7 +447,7 @@ class OneMiniTab(QWidget):
             cache_n = self.cache_row_count.value()
             cache_rows = rows[-cache_n:] if len(rows) > cache_n else rows
             base, ext = os.path.splitext(path)
-            cache_path = base + "_cache" + ext
+            cache_path = base + "_cache" + ext             # _cache.csv
             _save_rows_xlsx(cache_path, cache_rows)
             self.log_text.appendPlainText(
                 f"📦 캐시: {os.path.basename(cache_path)} ({len(cache_rows)}봉)")
@@ -547,12 +504,13 @@ class OneMiniTab(QWidget):
     def _refresh_file_list(self, expiry: str):
         self._current_cal_date = expiry
         self.file_list.clear()
+        date8 = expiry.replace("-", "")          # 2026-04-27 → 20260427
         files = _list_1min_xlsx_for_date(expiry)
         if files:
             for f in files:
                 label = f"📦 {f}" if "_cache" in f else f"📄 {f}"
                 item  = QListWidgetItem(label)
-                item.setData(Qt.UserRole, os.path.join(_MIN_SAVE_BASE_DIR, expiry, f))
+                item.setData(Qt.UserRole, os.path.join(_MIN_SAVE_BASE_DIR, date8, f))
                 self.file_list.addItem(item)
             nc = sum(1 for f in files if "_cache" in f)
             self.file_status.setText(

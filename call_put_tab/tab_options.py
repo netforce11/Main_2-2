@@ -90,12 +90,16 @@ class CallPutGrid(
         self._open_orders_buf: list = []
 
         if PG:
+            # ✅ FIX 🟢-1: list → deque(maxlen) 교체 (del list[0] O(n) → O(1) 자동 제거)
+            from collections import deque as _deque
             self._BUF           = 500
-            self._prices:       list = []
-            self._price_times:  list = []
-            self._deltas:       list = []
-            self._spreads:      list = []
-            self._und_hist:     list = []
+            self._prices        = _deque(maxlen=self._BUF)
+            self._price_times   = _deque(maxlen=self._BUF)
+            self._deltas        = _deque(maxlen=self._BUF)
+            self._spreads       = _deque(maxlen=self._BUF)
+            self._und_hist      = _deque(maxlen=self._BUF)
+            # ✅ FIX 🔴-1: _candle_bars 최대 개수 상수 추가 (무제한 증가 방지)
+            self._CANDLE_MAX    = 500
             self._candle_bars:  dict = {}
             self._candle_items: list = []
 

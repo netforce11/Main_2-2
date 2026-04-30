@@ -2,9 +2,12 @@
 alert_logger.py — 알람 로그 파일 기록
 - 일별 alert_YYYYMMDD.log 자동 생성
 - 자정 넘어가면 새 파일로 자동 전환
+
+[수정 내역]
+- 중복 핸들러 방지: addHandler 전 기존 핸들러 전체 제거
+- write() 에 level 파라미터 타입 명시
 """
 
-import os
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -22,13 +25,13 @@ class AlertLogger:
         self._fh: Optional[logging.FileHandler] = None
         self._file_logger = logging.getLogger("alert_file")
         self._file_logger.setLevel(logging.INFO)
-        self._file_logger.propagate = False
+        self._file_logger.propagate = False  # 시스템 루트 로거로 전파 차단
 
     # ── 외부 진입점 ────────────────────────────────────────
 
     def write(self, level: int, msg: str):
         self._rotate_if_needed()
-        ts  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         line = f"{ts} [LV{level}] {msg}"
         self._file_logger.info(line)
 
@@ -46,6 +49,10 @@ class AlertLogger:
         path = self._log_dir / f"alert_{today}.log"
         fh = logging.FileHandler(path, encoding="utf-8")
         fh.setFormatter(logging.Formatter("%(message)s"))
+        # ✅ FIX: 기존 핸들러 모두 제거 후 추가 (재시작 시 중복 방지)
+        for old_fh in list(self._file_logger.handlers):
+            self._file_logger.removeHandler(old_fh)
+            old_fh.close()
         self._file_logger.addHandler(fh)
         self._fh = fh
         self._cur_date = today

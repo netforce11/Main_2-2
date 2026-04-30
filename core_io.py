@@ -166,8 +166,9 @@ def apply_saved_settings() -> None:
         # 기초자산 저장 주기
         interval = cfg.get("und_save_interval", 10)
         try:
-            from trade_log.und_saver import set_interval
+            from trade_log.und_saver import set_interval, warmup
             set_interval(interval)
+            warmup()   # ✅ 앱 시작 시 당일 DB → 버퍼 워밍업 (백그라운드 스레드)
         except ImportError:
             pass
         print(f"[Settings] 기초자산 저장 주기: {interval}초")

@@ -1,23 +1,18 @@
 {
   "cond_a": [
     {
-      "minutes": 10,
+      "minutes": 20,
       "points": 10.0,
       "direction": "양방향"
     },
     {
-      "minutes": 20,
-      "points": 25.0,
-      "direction": "양방향"
-    },
-    {
       "minutes": 30,
-      "points": 25.0,
+      "points": 10.0,
       "direction": "양방향"
     },
     {
       "minutes": 40,
-      "points": 30.0,
+      "points": 10.0,
       "direction": "양방향"
     }
   ],

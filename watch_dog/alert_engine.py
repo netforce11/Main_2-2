@@ -1,10 +1,17 @@
 """
 alert_engine.py — 감시 조건 A/B/C 처리 엔진
 - 조건A: SPX 등락 (행 1/2 각각 독립, 방향 선택)
-- 조건B: 선택 행사가 옵션 등락률 500% 이상 (최대 5개)
+- 조건B: 선택 행사가 옵션 등락률 (최대 5개)
 - 조건C: VIX 급등 %
 - 알람 5회 도달 시 해당 조건만 중지 (감시는 유지)
 - 콜백으로 알람 통보 → alert_notifier.py 가 처리
+
+[수정 내역]
+- _eval_cond_a(): 이중 포인트 체크 제거, 방향별 로직 명확화
+- _eval_cond_b(): 동일 이중 체크 제거, 양방향 음수 pct 발화 명시
+- COOLDOWN_SEC: 60 → 55초 (타이머 60초와 경계 충돌 방지)
+- push_spx(): minutes 매칭 시 두 행 모두 순회하도록 break 제거 확인
+- update_strike(): 기존 등록 행사가 threshold/direction 갱신 메서드 추가
 """
 
 from dataclasses import dataclass, field
@@ -14,8 +21,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-MAX_ALERT_COUNT = 5          # 조건별 최대 알람 횟수
-COOLDOWN_SEC    = 60         # 동일 조건 재발생 쿨다운(초)
+MAX_ALERT_COUNT = 5
+COOLDOWN_SEC    = 55   # ✅ FIX: 60→55 (타이머 60초와 경계 타이밍 충돌 방지)
 
 
 # ── 데이터 클래스 ─────────────────────────────────────────
@@ -23,8 +30,8 @@ COOLDOWN_SEC    = 60         # 동일 조건 재발생 쿨다운(초)
 @dataclass
 class CondARow:
     """조건A 한 행 (두 행 독립 운영)"""
-    minutes: int   = 5        # N분 전 대비
-    points: float  = 5.0      # 포인트 기준
+    minutes: int   = 5
+    points: float  = 5.0
     direction: str = "하락"   # "상승" | "하락" | "양방향"
     enabled: bool  = True
 
@@ -62,6 +69,10 @@ class AlertState:
         self.count += 1
         self.last_ts = datetime.now()
 
+    def reset(self):
+        self.count = 0
+        self.last_ts = None
+
 
 # ── 엔진 ──────────────────────────────────────────────────
 
@@ -74,19 +85,11 @@ class AlertEngine:
     def __init__(self, on_alert: Callable[[int, str], None]):
         self.on_alert = on_alert
 
-        # 조건 설정
-        self.cond_a: List[CondARow] = [CondARow(), CondARow()]
-        self.cond_b: List[CondBStrike] = []   # 최대 5개
-        self.cond_c: CondC = CondC()
+        self.cond_a: List[CondARow]    = [CondARow(), CondARow()]
+        self.cond_b: List[CondBStrike] = []
+        self.cond_c: CondC             = CondC()
 
-        # 상태 추적
-        self._spx_history: Dict[int, float] = {}  # minutes → price
-        self._opt_prev: Dict[float, float]  = {}  # strike → prev_price
-        self._vix_prev: Optional[float]     = None
-
-        # 알람 카운터 (키: "A0","A1","B{strike}","C")
         self._states: Dict[str, AlertState] = {}
-
         self._running = False
 
     # ── 공개 제어 ──────────────────────────────────────────
@@ -98,7 +101,13 @@ class AlertEngine:
         self._running = False
 
     def reset_counts(self):
+        """전체 카운터 초기화"""
         self._states.clear()
+
+    def reset_count_for(self, key: str):
+        """✅ NEW: 특정 조건 카운터만 개별 초기화 (억제 해제)"""
+        if key in self._states:
+            self._states[key].reset()
 
     # ── 조건B 행사가 관리 ──────────────────────────────────
 
@@ -111,6 +120,22 @@ class AlertEngine:
         self.cond_b.append(CondBStrike(strike, opt_type, pct, direction))
         return True
 
+    def update_strike(self, strike: float, opt_type: str,
+                      pct: float, direction: str) -> bool:
+        """✅ NEW: 이미 등록된 행사가의 threshold/direction 갱신"""
+        for b in self.cond_b:
+            if b.strike == strike and b.opt_type == opt_type:
+                b.pct_threshold = pct
+                b.direction     = direction
+                return True
+        return False
+
+    def update_all_strikes(self, pct: float, direction: str):
+        """✅ NEW: 등록된 전체 행사가 threshold/direction 일괄 갱신"""
+        for b in self.cond_b:
+            b.pct_threshold = pct
+            b.direction     = direction
+
     def remove_strike(self, strike: float, opt_type: str):
         self.cond_b = [b for b in self.cond_b
                        if not (b.strike == strike and b.opt_type == opt_type)]
@@ -118,10 +143,15 @@ class AlertEngine:
     # ── 데이터 수신 ────────────────────────────────────────
 
     def push_spx(self, minutes_ago: int, price_then: float, price_now: float):
-        """N분 전 가격과 현재 가격을 받아 조건A 행별로 평가"""
+        """
+        N분 전 가격과 현재 가격을 받아 조건A 행별로 평가.
+        minutes_ago 가 일치하는 모든 행을 평가한다 (두 행이 같은 분 설정 가능).
+        """
         if not self._running:
             return
-        change = price_now - price_then  # 양수=상승, 음수=하락
+        if price_then <= 0 or price_now <= 0:
+            return
+        change = price_now - price_then
         for idx, row in enumerate(self.cond_a):
             if not row.enabled or row.minutes != minutes_ago:
                 continue
@@ -152,29 +182,44 @@ class AlertEngine:
     # ── 내부 평가 ──────────────────────────────────────────
 
     def _eval_cond_a(self, idx: int, row: CondARow, change: float):
-        direction_ok = (
-            row.direction == "양방향"
-            or (row.direction == "하락" and change <= -row.points)
-            or (row.direction == "상승" and change >= row.points)
-        )
-        if not direction_ok:
-            return
-        if abs(change) < row.points:
-            return
+        """
+        ✅ FIX: 이중 포인트 체크 제거, 방향별 로직 명확화
+        - "하락" : change <= -points  (음수 하락이므로 points 이상 하락)
+        - "상승" : change >=  points
+        - "양방향": abs(change) >= points
+        """
+        if row.direction == "하락":
+            if change > -row.points:   # 하락폭 미달 또는 상승
+                return
+        elif row.direction == "상승":
+            if change < row.points:    # 상승폭 미달 또는 하락
+                return
+        else:  # 양방향
+            if abs(change) < row.points:
+                return
+
         arrow = "▼" if change < 0 else "▲"
         msg = (f"[조건A-{idx+1}] SPX {arrow}{abs(change):.1f}pt "
                f"({row.minutes}분 전 대비) | 기준 {row.points}pt/{row.direction}")
-        level = 1
-        self._fire(f"A{idx}", level, msg)
+        self._fire(f"A{idx}", 1, msg)
 
     def _eval_cond_b(self, b: CondBStrike, pct: float):
-        direction_ok = (
-            b.direction == "양방향"
-            or (b.direction == "상승" and pct >= b.pct_threshold)
-            or (b.direction == "하락" and pct <= -b.pct_threshold)
-        )
-        if not direction_ok or abs(pct) < b.pct_threshold:
-            return
+        """
+        ✅ FIX: 이중 체크 제거, 방향별 조건 명확화
+        - "상승" : pct >= +threshold
+        - "하락" : pct <= -threshold
+        - "양방향": abs(pct) >= threshold (상승/하락 모두 발화)
+        """
+        if b.direction == "상승":
+            if pct < b.pct_threshold:
+                return
+        elif b.direction == "하락":
+            if pct > -b.pct_threshold:
+                return
+        else:  # 양방향
+            if abs(pct) < b.pct_threshold:
+                return
+
         arrow = "▲" if pct > 0 else "▼"
         msg = (f"[조건B] {b.opt_type} {b.strike} "
                f"{arrow}{abs(pct):.0f}% | 기준 {b.pct_threshold:.0f}%/{b.direction}")
@@ -199,6 +244,10 @@ class AlertEngine:
 
     def get_counts(self) -> Dict[str, int]:
         return {k: s.count for k, s in self._states.items()}
+
+    def get_suppressed_keys(self) -> List[str]:
+        """✅ NEW: 억제 상태인 조건 키 목록 반환"""
+        return [k for k, s in self._states.items() if s.is_suppressed()]
 
     def total_alert_count(self) -> int:
         return sum(s.count for s in self._states.values())

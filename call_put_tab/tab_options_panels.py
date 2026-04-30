@@ -266,8 +266,12 @@ class PanelsMixin(PricePanelMixin):
     def _open_watch_popup(self):
         from PyQt5.QtWidgets import QDialog, QVBoxLayout as _V
         from PyQt5.QtCore import Qt as _Qt
-        if getattr(self, '_watch_popup', None) and self._watch_popup.isVisible():
-            self._watch_popup.raise_(); self._watch_popup.activateWindow(); return
+        # ✅ FIX 🔴-4: 기존 다이얼로그 재사용 (매번 새로 생성하면 이전 dlg 메모리 잔존)
+        if getattr(self, '_watch_popup', None) is not None:
+            self._watch_popup.show()
+            self._watch_popup.raise_()
+            self._watch_popup.activateWindow()
+            return
         dlg = QDialog(self)
         dlg.setWindowTitle("🔔 감시 패널")
         dlg.setWindowFlags(

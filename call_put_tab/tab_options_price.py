@@ -248,12 +248,8 @@ class PricePanelMixin:
         price = getattr(self, 'und_price', None)
         prev  = getattr(self, 'und_prev',  None)
 
-        if price:
-            try:
-                from trade_log.und_saver import push as und_push
-                und_push(price)
-            except Exception:
-                pass
+        # ✅ FIX 🟠-4: und_push 제거 — _update_und_display()에서 이미 호출됨 (이중 호출 방지)
+        # 동일 tick에 und_push가 2회 호출되어 DB 저장이 중복되던 문제 해소
         self._pp_lbl_sym.setText(sym); self._pp_lbl_sym.setStyleSheet(_S_SYM)
         if price:
             self._pp_lbl_price.setText(f"{price:,.2f}")
