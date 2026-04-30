@@ -1,11 +1,17 @@
 """
-combo_order_bag.py — BAG(Combo) 주문 전송 로직  v2.9
+combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.0
 ──────────────────────────────────────────────────────
-변경 (v2.9):
-  - _do_send(): _orig_cd / _orig_cd_end 복구 코드 제거 (잔류 코드)
-  - register_chaser() 호출 시 qty=ibord.totalQuantity 전달
-  - connect_order_callbacks() 호출 → orderStatus/execDetails 콜백 자동 연결
-  - 기존 주문 로직 변경 없음
+수정 (v3.0):
+  [BUG #1] _do_send_inner 미정의 → NameError 로 주문 전혀 안 되던 문제 수정.
+           _do_send_inner를 제거하고 실제 주문 로직을 _do_send 안으로 통합.
+  [BUG #2] 타임아웃 핸들러(_on_timeout)에서 _do_send()를 직접 호출해
+           lock 키 (_do_send_lock_{session}) 를 우회하던 문제 수정.
+           _on_timeout도 동일하게 _do_send() 경유하도록 변경.
+  [BUG #3] conId 세팅/zero_legs 체크/확인창/placeOrder 코드가
+           try/finally 블록 밖(함수 리턴 이후)에 위치해 절대 실행되지
+           않던 문제 수정. _do_send_body()로 추출해 try 안에서 호출.
+  [BUG #4] _chaser_current_oid(callbacks)와 _chaser_oid(chaser) 변수명
+           불일치 수정. placeOrder 성공 후 두 변수를 모두 동일 OID로 세팅.
 ──────────────────────────────────────────────────────
 Python 3.8 호환
 """
@@ -39,7 +45,6 @@ def _purge_stale_conid_keys() -> None:
     """
     Remove keys whose expiry date (YYYYMMDD, 4th field) is before today.
     Key format: 'SYMBOL|RIGHT|STRIKE|YYYYMMDD'
-    Runs once at startup — keeps cache lean without touching live entries.
     """
     from datetime import date
     today_str = date.today().strftime("%Y%m%d")
@@ -76,7 +81,7 @@ def _place_combo_legs(self, legs: list, strat: str) -> None:
     """BAG 주문 진입점. 호출마다 세션 무효화 → 이전 타이머 완전 차단."""
     self._bag_session = None
 
-    # ★ v2.9: orderStatus / execDetails 콜백 연결 (1회만)
+    # orderStatus / execDetails 콜백 연결 (1회만)
     connect_order_callbacks(self)
 
     try:
@@ -91,8 +96,8 @@ def _place_combo_legs(self, legs: list, strat: str) -> None:
     symbol = (sym_w.text().strip().upper() if sym_w else "SPX")
 
     bag = Contract()
-    bag.symbol  = symbol.replace("SPXW", "SPX")
-    bag.secType = "BAG"
+    bag.symbol   = symbol.replace("SPXW", "SPX")
+    bag.secType  = "BAG"
     bag.currency = "USD"
     bag.exchange = "SMART"
 
@@ -202,6 +207,7 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
             self._log(f"❌ reqContractDetails 레그{i+1}: {e}")
             resolved[i] = 0
 
+    # ── [BUG #2 수정] 타임아웃도 _do_send() 경유 → lock 정상 작동 ──
     def _on_timeout():
         if getattr(self, '_bag_session', None) != session:
             return
@@ -214,6 +220,7 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
                     f"  ⚠ 레그{i+1} conId 타임아웃 10초 — "
                     f"{opt_c.right} {int(opt_c.strike)} "
                     f"{opt_c.lastTradeDateOrContractMonth}")
+        # 직접 _do_send_body 호출하지 않고 _do_send 경유 → lock 정상 작동
         _do_send(self, bag, combo_legs, legs, strat, ib, total, resolved, session)
 
     QTimer.singleShot(10000, _on_timeout)
@@ -225,31 +232,46 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
 
 def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
              ib, total: int, resolved: dict, session: int) -> None:
-    """확인창 표시 후 BAG placeOrder. 세션 불일치/중복 호출 시 즉시 리턴."""
+    """
+    중복 호출 방지 lock → _do_send_body() 호출.
+    세션 불일치 시 즉시 리턴.
+
+    [BUG #1/#3 수정]
+    - 기존: _do_send_inner()를 호출했으나 함수가 존재하지 않아 NameError 발생.
+      실제 주문 코드(conId 세팅, 확인창, placeOrder)는 try/finally 블록 밖에
+      위치해 있어 절대 실행되지 않았음.
+    - 수정: _do_send_inner 제거. 실제 주문 로직을 _do_send_body()로 명명해
+      try 블록 안에서 올바르게 호출.
+    """
     if getattr(self, '_bag_session', None) != session:
         return
 
-    # 중복 호출 방지
-    # Fix #9: lock_key를 finally에서 반드시 삭제해 self에 키가 누적되는 버그 수정.
-    # 이전 코드는 setattr(self, lock_key, True)만 하고 delattr 없이 방치됨.
     lock_key = f'_do_send_lock_{session}'
     if getattr(self, lock_key, False):
         return
     setattr(self, lock_key, True)
 
     try:
-        _do_send_inner(self, bag, combo_legs, legs, strat, ib, total, resolved, session)
+        _do_send_body(self, bag, combo_legs, legs, strat, ib, total, resolved, session)
     finally:
-        # Fix #9: 호출 완료(성공/실패/예외 무관) 후 lock 키 제거
         try:
             delattr(self, lock_key)
         except AttributeError:
             pass
 
 
-    # ★ v2.9: _orig_cd 복구 코드 제거 (bridge 방식으로 교체됨, 잔류 코드였음)
+def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
+                  ib, total: int, resolved: dict, session: int) -> None:
+    """
+    실제 주문 전송 본체.
+    conId 세팅 → zero_legs 체크 → lmtPrice 계산 → 확인창 → placeOrder.
 
-    # conId 세팅
+    [BUG #3 수정]
+    - 기존: 이 코드 전체가 _do_send()의 try/finally 블록 밖에 위치해
+      함수 리턴 이후에 작성되어 있어 실행이 불가능했음.
+    - 수정: _do_send_body()로 분리해 _do_send() try 블록 안에서 호출.
+    """
+    # ── conId 세팅 ──────────────────────────────────────────
     for i, (cl, _) in enumerate(combo_legs):
         cl.conId = resolved.get(i, 0)
         self._log(
@@ -257,7 +279,7 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
             f"{legs[i]['dir']} {legs[i]['cp']} {int(legs[i]['strike'])}")
     bag.comboLegs = [cl for cl, _ in combo_legs]
 
-    # conId=0 레그 존재 시 주문 차단
+    # ── conId=0 레그 존재 시 주문 차단 ──────────────────────
     zero_legs = [i + 1 for i, (cl, _) in enumerate(combo_legs) if cl.conId == 0]
     if zero_legs:
         self._bag_session = None
@@ -271,7 +293,7 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
             f"잠시 기다렸다가 다시 시도하세요.")
         return
 
-    # lmtPrice 계산 — 전광판 위젯 실시간 가격 우선, 없으면 legs 데이터 폴백
+    # ── lmtPrice 계산 ───────────────────────────────────────
     buy_total  = sum(
         float(lg.get("prem", 0) or 0) * int(float(lg.get("qty", 1)))
         for lg in legs if lg["dir"] == "BUY")
@@ -280,13 +302,12 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
         for lg in legs if lg["dir"] == "SELL")
     net = round(buy_total - sell_total, 2)
 
-    # ★ 전광판 위젯에서 실시간 Mid-price 기반 순가격 수신
+    # 전광판 위젯에서 실시간 Mid-price 기반 순가격 수신
     display = getattr(self, 'net_price_display', None)
     if display is not None and display.get_net_price() != 0.0:
         params     = display.get_bag_params()
         lmt_price  = params["lmt_price"]
         bag_action = params["action"]
-        # net 부호는 위젯 값으로 재동기화
         net = lmt_price if bag_action == "BUY" else -lmt_price
     else:
         # 폴백: legs 데이터 or _recalc_net_price
@@ -303,7 +324,7 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
 
     type_label = "데빗 (지불)" if bag_action == "BUY" else "크레딧 (수취)"
 
-    # 확인 다이얼로그
+    # ── 확인 다이얼로그 ─────────────────────────────────────
     leg_lines = "\n".join(
         f"  {'매도(SELL)' if lg['dir'] == 'SELL' else '매수(BUY) '}  "
         f"{lg['cp']} {int(lg['strike'])}  ×{lg['qty']}  "
@@ -311,7 +332,7 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
         for lg in legs)
     expiry_str = legs[0].get("expiry", "") if legs else ""
     if len(expiry_str) == 8:
-        expiry_str = (f"{expiry_str[:4]}/{expiry_str[4:6]}/{expiry_str[6:]}")
+        expiry_str = f"{expiry_str[:4]}/{expiry_str[4:6]}/{expiry_str[6:]}"
 
     from PyQt5.QtWidgets import QMessageBox as _MB
     dlg = _MB(self)
@@ -327,12 +348,14 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
         self._bag_session = None
         return
 
+    # ── OID 발급 ────────────────────────────────────────────
     oid = ib.get_next_id()
     if oid is None:
         self._bag_session = None
         self._log("❌ nextOrderId 없음")
         return
 
+    # ── 주문 객체 생성 ──────────────────────────────────────
     from ibapi.order import Order as IbOrder
     ibord = IbOrder()
     ibord.action        = bag_action
@@ -344,6 +367,7 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
     ibord.firmQuoteOnly = False
     ibord.transmit      = True
 
+    # ── placeOrder ──────────────────────────────────────────
     try:
         ib.placeOrder(oid, bag, ibord)
         self._log(
@@ -353,10 +377,15 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
             f"   BUY=${buy_total:.2f}  SELL=${sell_total:.2f}  net=${net:+.2f}")
 
         self._chaser_bag_contract = bag
-        self._chaser_current_oid  = oid
         self._chaser_bag_order    = ibord
 
-        # 체결 후 합성 잔고에 추가하기 위해 주문 정보 캐시 (add_position은 Filled 콜백에서)
+        # [BUG #4 수정] _chaser_current_oid(callbacks용)와 _chaser_oid(chaser용)
+        # 두 변수가 불일치해 orderStatus 콜백 필터링이 안 되던 문제 수정.
+        # placeOrder 성공 후 두 변수를 모두 동일 OID로 세팅.
+        self._chaser_current_oid = oid   # combo_order_callbacks 가 참조
+        self._chaser_oid         = oid   # combo_order_chaser 가 참조
+
+        # 체결 후 합성 잔고에 추가하기 위해 주문 정보 캐시
         self._pending_position = {
             "strategy": strat,
             "qty":      int(ibord.totalQuantity),
@@ -368,22 +397,18 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
             "status":   "미체결",
         }
 
-        # ★ v2.9: qty 파라미터 추가 전달
         register_chaser(
             self, oid=oid, price=lmt_price,
             action=bag_action, qty=int(ibord.totalQuantity))
 
-        # ── 주문 접수 확인: 5초 후 on_open_orders 재사용하여 OID 직접 확인 ──
-        # Fix #3: Chaser 첫 정정(4초) + on_open_orders 락(2초) 충돌 방지를 위해
-        # 5초로 변경. Chaser 정정이 4초에 실행되고 조회는 5초에 시작하므로
-        # _oo_in_progress 락과 겹치지 않음.
+        # ── 주문 접수 확인: 5초 후 미체결 목록에서 OID 확인 ──
+        # Fix #3(원본): Chaser 첫 정정(4초) + on_open_orders 락(2초) 충돌 방지
         def _verify_order(check_oid=oid):
             from combo_order_open import on_open_orders
 
-            # 조회 완료 후 캐시에서 OID 확인 (조회 2초 + 0.5초 여유 = 2.5초 후)
             def _check_cache():
                 orders = getattr(self, '_cached_open_orders', [])
-                oids = [o.get('oid') for o in orders]
+                oids   = [o.get('oid') for o in orders]
                 if check_oid in oids:
                     self._log(f"✅ OID={check_oid} 주문 접수 확인 (TWS 미체결 목록)")
                 else:

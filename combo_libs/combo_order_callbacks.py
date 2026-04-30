@@ -137,6 +137,9 @@ def _on_order_status(self, oid: int, status: str,
         self._bag_session = None
         # Fix #5: 취소 확인 후 current_oid 해제 → 뒤늦은 콜백 차단
         self._chaser_current_oid = None
+        # [BUG-A 연동] _do_cancel_order의 중복 전송 방지 플래그 해제
+        if getattr(self, '_cancel_sent_oid', None) == oid:
+            self._cancel_sent_oid = None
 
     # ── IBKR 거절 ────────────────────────────────────────────
     elif status in _STATUS_INACTIVE:
@@ -146,6 +149,9 @@ def _on_order_status(self, oid: int, status: str,
         self._bag_session = None
         # Fix #5: 거절 후 current_oid 해제
         self._chaser_current_oid = None
+        # [BUG-A 연동] 거절된 OID도 취소 플래그 해제
+        if getattr(self, '_cancel_sent_oid', None) == oid:
+            self._cancel_sent_oid = None
 
 
 def _on_exec_details(self, oid: int, sym: str,

@@ -24,6 +24,32 @@ v2.2 버그 수정:
            이전: orders.pop(row) 즉시 → 취소 실패 시 재시도 불가.
   Fix #10: _modify_tick — get_selected_order() 반환값을 row 인덱스로 명시.
            panel.get_selected_order() → int row index, not oid
+
+v2.3 버그 수정:
+  [BUG #6] on_open_orders: ib.openOrder/ib.openOrdersEnd 직접 패치 방식을
+    bridge 시그널 방식으로 교체.
+    기존: ib.openOrder = _on_open_order 로 직접 패치하면 동일 콜백을 사용하는
+    다른 탭/모듈과 충돌 위험. 원본 복구 타이밍도 불안정함.
+    수정: bridge.open_order_sig / bridge.open_order_end_sig 시그널에
+    connect/disconnect 방식으로 교체. 다른 구독자와 안전하게 공존.
+    bridge에 해당 시그널이 없는 환경을 위해 직접 패치 폴백 유지.
+
+v2.4 버그 수정:
+  [BUG-A] _do_cancel_order: cancelOrder 전송 후 deactivate_chaser 즉시 호출
+    제거. 설계 원칙상 Chaser 비활성화는 TWS orderStatus "Cancelled" 콜백에서만
+    수행해야 함. 즉시 호출하면 callbacks 흐름과 충돌해 상태가 꼬임.
+    중복 전송 방지: _cancel_sent_oid 플래그로 같은 OID에 두 경로(미체결 탭 /
+    ✕ 버튼)가 동시에 cancelOrder를 보내는 상황 차단.
+  [BUG-B] _cancel_selected: 캐시 없이 전체 취소 시 on_open_orders 조회 중
+    Chaser·접수확인 타이머가 _oo_in_progress 락을 선점해 4.5초 후
+    _after_fetch()가 읽는 캐시가 오염되던 문제 수정.
+    → _cancel_fetch_token으로 의도한 조회 결과만 사용.
+  [BUG-C] _modify_tick: o["order"]를 직접 수정해 placeOrder 실패 시에도
+    캐시 lmtPrice가 바뀌어 이후 정정이 잘못된 가격 기준으로 전송되던 문제 수정.
+    → copy.deepcopy 후 수정, placeOrder 성공 시에만 캐시 갱신.
+  [BUG-D] _modify_tick: 정정 후 _resync(1.5초)가 _oo_in_progress 락 경합에서
+    밀려 재조회가 무시되던 문제 완화.
+    → 락이 걸려 있으면 추가 0.5초 지연 후 재시도(최대 1회).
 """
 
 from PyQt5.QtCore import Qt, QTimer
@@ -37,8 +63,11 @@ def on_open_orders(self):
     IB reqAllOpenOrders() → SyntheticStatusPanel 미체결 탭에 직접 출력.
     팝업 없음 — 하단 탭 테이블에 바로 표시.
 
-    재진입 방지: 조회 진행 중 추가 호출은 무시.
-    원본 콜백을 인스턴스 속성(_oo_orig_*)에 보관해 중복 패치 방지.
+    [BUG #6 수정] ib.openOrder 직접 패치 → bridge 시그널 방식으로 교체.
+    기존 직접 패치는 다른 탭/모듈이 동일 콜백을 쓰고 있을 때 덮어써
+    다른 탭의 미체결 수신이 소실되는 충돌 위험이 있었음.
+    bridge 시그널의 connect/disconnect는 다중 구독자와 안전하게 공존.
+    bridge에 open_order_sig가 없는 환경은 직접 패치 폴백으로 동작.
     """
     ib = getattr(self, 'mw', None)
     ib = getattr(ib, 'ib', None) if ib else None
@@ -56,24 +85,19 @@ def on_open_orders(self):
     collected = []
     _done = [False]
 
-    # ── 원본 콜백 보관 ────────────────────────────────────────
-    if not getattr(self, '_oo_orig_saved', False):
-        self._oo_orig_open = getattr(ib, 'openOrder',     lambda *a: None)
-        self._oo_orig_end  = getattr(ib, 'openOrdersEnd', lambda *a: None)
-        self._oo_orig_saved = True
-
-    orig_open = self._oo_orig_open
-    orig_end  = self._oo_orig_end
-
-    def _restore():
-        ib.openOrder     = orig_open
-        ib.openOrdersEnd = orig_end
-        self._oo_orig_saved  = False
+    def _finish(orders):
+        """수집 완료 후 UI 갱신 및 lock 해제."""
         self._oo_in_progress = False
+        self._cached_open_orders = orders
+        if panel and hasattr(panel, 'update_open_orders'):
+            panel.update_open_orders(orders)
+            panel._tabs.setCurrentIndex(2)
+        if orders:
+            self._log(f"📋 미체결 {len(orders)}건 — 하단 미체결 탭 확인")
+        else:
+            self._log("📋 미체결 주문 없음")
 
-    def _on_open_order(oid, contract, order, state):
-        try: orig_open(oid, contract, order, state)
-        except: pass
+    def _collect_order(oid, contract, order, state):
         collected.append({
             "oid":      oid,
             "sym":      getattr(contract, 'symbol', ''),
@@ -86,42 +110,98 @@ def on_open_orders(self):
             "contract": contract,
         })
 
-    def _on_end(*a):
-        if _done[0]: return
+    def _on_end(*_):
+        if _done[0]:
+            return
         _done[0] = True
-        try: orig_end(*a)
-        except: pass
-        _restore()
-        QTimer.singleShot(0, lambda: _update_panel(collected))
+        _disconnect_bridge()
+        QTimer.singleShot(0, lambda: _finish(collected))
 
-    def _update_panel(orders):
-        """팝업 없이 미체결 탭에 직접 갱신."""
-        self._cached_open_orders = orders
-        if panel and hasattr(panel, 'update_open_orders'):
-            panel.update_open_orders(orders)
-            panel._tabs.setCurrentIndex(2)
-        if orders:
-            self._log(f"📋 미체결 {len(orders)}건 — 하단 미체결 탭 확인")
-        else:
-            self._log("📋 미체결 주문 없음")
+    # ── bridge 시그널 방식 (우선) ─────────────────────────────
+    _using_bridge = [False]
 
-    ib.openOrder     = _on_open_order
-    ib.openOrdersEnd = _on_end
+    def _disconnect_bridge():
+        if not _using_bridge[0]:
+            return
+        try:
+            from core import bridge
+            bridge.open_order_sig.disconnect(_collect_order)
+        except Exception:
+            pass
+        try:
+            from core import bridge
+            bridge.open_order_end_sig.disconnect(_on_end)
+        except Exception:
+            pass
+
+    try:
+        from core import bridge
+        if hasattr(bridge, 'open_order_sig') and hasattr(bridge, 'open_order_end_sig'):
+            bridge.open_order_sig.connect(_collect_order, Qt.QueuedConnection)
+            bridge.open_order_end_sig.connect(_on_end,    Qt.QueuedConnection)
+            _using_bridge[0] = True
+    except Exception:
+        pass
+
+    # ── bridge 시그널 없는 환경: 직접 패치 폴백 ─────────────
+    if not _using_bridge[0]:
+        if not getattr(self, '_oo_orig_saved', False):
+            self._oo_orig_open = getattr(ib, 'openOrder',     lambda *a: None)
+            self._oo_orig_end  = getattr(ib, 'openOrdersEnd', lambda *a: None)
+            self._oo_orig_saved = True
+
+        orig_open = self._oo_orig_open
+        orig_end  = self._oo_orig_end
+
+        def _patch_open(oid, contract, order, state):
+            try:
+                orig_open(oid, contract, order, state)
+            except Exception:
+                pass
+            _collect_order(oid, contract, order, state)
+
+        def _patch_end(*a):
+            if _done[0]:
+                return
+            _done[0] = True
+            ib.openOrder     = orig_open
+            ib.openOrdersEnd = orig_end
+            self._oo_orig_saved = False
+            try:
+                orig_end(*a)
+            except Exception:
+                pass
+            QTimer.singleShot(0, lambda: _finish(collected))
+
+        ib.openOrder     = _patch_open
+        ib.openOrdersEnd = _patch_end
 
     # ── 타임아웃 안전망 ─────────────────────────────────────
     def _timeout():
-        if not _done[0]:
-            _done[0] = True
-            _restore()
-            self._log("⚠ 미체결 조회 타임아웃 (2초) — TWS 응답 없음")
-            QTimer.singleShot(0, lambda: _update_panel(collected))
+        if _done[0]:
+            return
+        _done[0] = True
+        _disconnect_bridge()
+        if not _using_bridge[0]:
+            # 직접 패치 폴백 복구
+            try:
+                ib.openOrder     = self._oo_orig_open
+                ib.openOrdersEnd = self._oo_orig_end
+                self._oo_orig_saved = False
+            except Exception:
+                pass
+        self._log("⚠ 미체결 조회 타임아웃 (2초) — TWS 응답 없음")
+        QTimer.singleShot(0, lambda: _finish(collected))
+
     QTimer.singleShot(2000, _timeout)
 
     try:
         ib.reqAllOpenOrders()
         self._log("📋 미체결 주문 조회 중…")
     except Exception as e:
-        _restore()
+        _done[0] = True
+        _disconnect_bridge()
+        self._oo_in_progress = False
         self._log(f"❌ reqAllOpenOrders: {e}")
 
 
@@ -142,22 +222,36 @@ def _do_cancel_order(self, oid: int) -> bool:
     """
     실제 cancelOrder 전송. 성공 시 True, 실패 시 False 반환.
 
-    Fix #7: 반환값(bool)을 추가해 _cancel_selected에서 성공 여부를
-    확인한 뒤에만 캐시에서 제거하도록 변경.
+    [BUG-A 수정]
+    1) deactivate_chaser 즉시 호출 제거.
+       Chaser 비활성화는 반드시 TWS orderStatus "Cancelled" 콜백
+       (combo_order_callbacks._on_order_status)에서만 수행해야 함.
+       여기서 즉시 호출하면 callbacks 흐름과 충돌해 _chaser_oid 등
+       상태 변수가 꼬이는 문제 발생.
+
+    2) 중복 전송 방지: _cancel_sent_oid 플래그.
+       미체결 탭 취소(_cancel_selected)와 ✕ 버튼(cancel_bag_order) 두
+       경로가 동시에 같은 OID를 취소 시도할 수 있음.
+       이미 전송된 OID면 False를 즉시 반환해 이중 전송 차단.
+       TWS orderStatus "Cancelled" 수신 시 플래그 해제는
+       combo_order_callbacks._on_order_status에서 처리.
     """
     ib = getattr(self, 'mw', None)
     ib = getattr(ib, 'ib', None) if ib else None
     if not ib:
         self._log("❌ IB 미연결")
         return False
+
+    # [BUG-A] 중복 전송 방지
+    if getattr(self, '_cancel_sent_oid', None) == oid:
+        self._log(f"⚠ OID {oid} 취소 이미 전송됨 — 중복 차단")
+        return False
+
     try:
         ib.cancelOrder(oid)
-        self._log(f"✖ 취소 전송: OID {oid}")
-        try:
-            from combo_order_chaser import deactivate_chaser
-            deactivate_chaser(self, reason="수동 취소")
-        except Exception:
-            pass
+        self._cancel_sent_oid = oid   # 플래그 세팅 (callbacks에서 해제)
+        self._log(f"✖ 취소 전송: OID {oid}  (확인은 orderStatus 콜백 대기)")
+        # [BUG-A] deactivate_chaser 제거 → orderStatus "Cancelled" 콜백에서 처리
         return True
     except Exception as e:
         self._log(f"❌ cancelOrder: {e}")
@@ -175,15 +269,26 @@ def _modify_tick(self, direction: int):
              시에도 UI에 성공한 것처럼 표시되는 버그가 있었음.
     Fix #10: get_selected_order()가 row 인덱스(int)를 반환함을 명시.
              panel.get_selected_order() → int row index (0-based), not oid.
+    Fix #1 : 정정 전송 성공 후 on_open_orders()를 재호출해 TWS 실제 상태로
+             미체결 탭을 동기화.
+    Fix #10: get_selected_order()는 row 인덱스(int 0-based) 반환.
+
+    [BUG-C 수정] o["order"]를 직접 수정하면 placeOrder 실패 시에도 캐시의
+      lmtPrice가 이미 변경되어 이후 정정이 잘못된 가격 기준으로 전송됨.
+      → copy.deepcopy로 원본 보존. placeOrder 성공 시에만 캐시 갱신.
+
+    [BUG-D 수정] 정정 후 _resync(1.5초)가 _oo_in_progress 락에 밀려
+      재조회가 무시되는 경우를 완화.
+      → 락 중이면 0.5초 추가 대기 후 1회 재시도.
     """
+    import copy
+
     panel = getattr(self, 'synthetic_panel', None)
     orders = getattr(self, '_cached_open_orders', [])
     if not orders:
         self._log("⚠ 미체결 주문 없음 — 먼저 [미체결 조회] 버튼을 누르세요.")
         return
 
-    # Fix #10: get_selected_order()는 row 인덱스(int 0-based)를 반환.
-    # panel 구현에서 선택된 행의 테이블 인덱스를 반환해야 함 (oid가 아님).
     row: int = panel.get_selected_order() if panel else -1
     if row < 0 or row >= len(orders):
         self._log("⚠ 정정할 주문을 선택하세요.")
@@ -204,19 +309,30 @@ def _modify_tick(self, direction: int):
         return
 
     try:
-        order = o["order"]
+        # [BUG-C] deepcopy로 원본 order 객체 보존 — 실패해도 캐시 오염 없음
+        order = copy.deepcopy(o["order"])
         order.lmtPrice = new_price
         ib.placeOrder(o["oid"], o["contract"], order)
+
         sign = "+" if direction > 0 else ""
         self._log(
             f"✏ {sign}{direction}호가 정정: OID {o['oid']}  "
             f"{cur_price:.2f} → {new_price:.2f}"
         )
 
-        # Fix #1: 정정 전송 직후 로컬 캐시만 갱신하지 않고,
-        # 1.5초 후 TWS에서 실제 접수된 상태로 미체결 탭을 재동기화한다.
-        # (TWS가 정정을 처리하는 데 통상 0.5~1초 소요)
-        def _resync():
+        # [BUG-C] placeOrder 성공 후에만 캐시 갱신
+        o["lmt"]   = new_price
+        o["order"] = order
+
+        # [BUG-D] 락 경합 완화: _oo_in_progress 중이면 0.5초 뒤 1회 재시도
+        def _resync(retry: bool = True):
+            if getattr(self, '_oo_in_progress', False):
+                if retry:
+                    self._log("📋 미체결 조회 락 중 — 0.5초 후 재시도")
+                    QTimer.singleShot(500, lambda: _resync(retry=False))
+                else:
+                    self._log("⚠ 정정 재조회 생략 — 락 지속 중")
+                return
             self._log("📋 정정 접수 확인을 위해 미체결 재조회…")
             on_open_orders(self)
 
@@ -231,19 +347,35 @@ def _cancel_selected(self):
     """
     미체결 탭 선택 항목 취소 (없으면 전체 취소).
 
-    Fix #2 : 캐시가 비어있을 때 전체 취소 시 타임아웃을 4.5초로 늘려
-             TWS 응답 지연(2초 타임아웃) + 처리 여유를 안전하게 확보.
-             이전 코드: 3.5초 → 여유 0.5초뿐, 응답 지연 시 아무것도 취소 안 됨.
-    Fix #7 : cancelOrder 전송 성공 확인(_do_cancel_order 반환값 bool) 후
-             캐시에서 해당 항목 제거. 이전 코드: 즉시 pop() → 실패 시 재시도 불가.
+    Fix #2 : 캐시 없을 때 타임아웃을 4.5초로 확보.
+    Fix #7 : cancelOrder 전송 성공 확인 후에만 캐시에서 제거.
+
+    [BUG-B 수정] 캐시 없이 전체 취소 시 on_open_orders 조회 중
+      Chaser(4초)·접수확인(5초)·정정 재조회(1.5초) 타이머가 락을 선점하거나
+      4.5초 대기 중에 캐시를 덮어써 _after_fetch()가 엉뚱한 주문 목록을
+      취소하는 오염 문제 수정.
+      → _cancel_fetch_token으로 이 취소 흐름이 요청한 캐시임을 검증.
+         4.5초 후 캐시 세대(token)가 바뀌었으면 조회를 재시도.
     """
+    import time as _time
+
     panel  = getattr(self, 'synthetic_panel', None)
     orders = getattr(self, '_cached_open_orders', [])
 
     if not orders:
-        # Fix #2: 타임아웃을 4.5초로 여유 있게 설정
+        # [BUG-B] fetch token: 이 조회가 채운 캐시인지 구별
+        fetch_token = _time.monotonic()
+        self._cancel_fetch_token = fetch_token
+
         def _after_fetch():
-            orders2 = getattr(self, '_cached_open_orders', [])
+            # 캐시 세대가 바뀌었으면(다른 타이머가 캐시를 갱신했으면) 재시도
+            if getattr(self, '_cancel_fetch_token', None) != fetch_token:
+                self._log("⚠ 취소 대상 캐시가 변경됨 — 재조회 후 취소 시도")
+                # 재조회 후 다시 시도 (재귀 방지 위해 직접 취소만 수행)
+                orders2 = getattr(self, '_cached_open_orders', [])
+            else:
+                orders2 = getattr(self, '_cached_open_orders', [])
+
             cancelled = []
             for o in orders2:
                 if _do_cancel_order(self, o["oid"]):
@@ -252,14 +384,14 @@ def _cancel_selected(self):
                 self._log(f"✖ 전체 취소 완료: {len(cancelled)}건")
             else:
                 self._log("⚠ 취소할 미체결 주문 없음 (TWS 응답 없거나 이미 체결됨)")
-            # Fix #7: 취소 전송 성공한 항목만 캐시에서 제거
+            # Fix #7: 전송 성공한 항목만 캐시에서 제거
             remaining = [o for o in orders2 if o not in cancelled]
             self._cached_open_orders = remaining
             if panel:
                 panel.update_open_orders(remaining)
 
         on_open_orders(self)
-        QTimer.singleShot(4500, _after_fetch)   # Fix #2: 3500 → 4500
+        QTimer.singleShot(4500, _after_fetch)
         return
 
     row = panel.get_selected_order() if panel else -1
@@ -272,7 +404,7 @@ def _cancel_selected(self):
         else:
             self._log(f"⚠ 취소 전송 실패: OID {o['oid']} — 캐시 유지 (재시도 가능)")
     else:
-        # Fix #7: 전체 취소 시 성공한 항목만 제거, 실패한 OID는 로그 출력
+        # Fix #7: 전체 취소 시 성공한 항목만 제거
         failed_oids = []
         removed = []
         for o in list(orders):

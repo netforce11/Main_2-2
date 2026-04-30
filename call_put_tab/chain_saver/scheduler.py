@@ -134,7 +134,14 @@ class ChainScheduler(QObject):
         self._t60.stop()
         self._t_stat.stop()
 
-        # ★ router 등록 해제 — 앱 종료/재시작 시 중복 등록 방지
+        # 활성 구독 전체 취소 (앱 종료/재시작 시 Duplicate ticker id 방지)
+        ib = getattr(self._cp.mw, 'ib', None)
+        if ib:
+            snap.cancel_map(ib, self._snap_map)
+            snap.cancel_map(ib, self._next_map)
+        self._snap_key = None  # 재시작 시 snap_map 재요청 강제
+
+        # router 등록 해제 — 앱 종료/재시작 시 중복 등록 방지
         router.unregister_price(self.on_tick_price)
         router.unregister_option(self.on_tick_option)
 
@@ -153,8 +160,17 @@ class ChainScheduler(QObject):
             return
 
         n_atm = getattr(cp, '_n_strikes', 10)
-        snap.request_otm(cp.mw.ib, sym, expiry, tag,
-                         und, n_atm, self._snap_map)
+
+        # snap_map은 만기/심볼/n_atm 변경 시에만 재요청
+        # 매 5초마다 cancel+재요청하면 스트림이 끊겨 틱 수신 불안정
+        snap_key = (sym, expiry, tag, n_atm)
+        if snap_key != getattr(self, '_snap_key', None):
+            self._snap_key = snap_key
+            snap.request_otm(cp.mw.ib, sym, expiry, tag,
+                             und, n_atm, self._snap_map)
+            log.info('[ChainScheduler] snap_map 재요청: %s', snap_key)
+
+        # flush는 매 5초마다 실행 (요청 여부와 무관)
         QTimer.singleShot(3_500, self._flush_and_save)
 
     def _flush_and_save(self):
@@ -183,11 +199,11 @@ class ChainScheduler(QObject):
         if und <= 0:
             return
         nxt = snap.request_next(cp.mw.ib, sym, und, self._next_map)
+        # next_map cancel은 다음 60초 재요청 시 request_next() 내부 cancel_map()에서 처리
+        # singleShot(3000, _cancel_next) 제거 — 3초 후 즉시 cancel하면
+        # map이 clear되어 그 이후 도착하는 틱이 entry=None으로 드롭됨
         if nxt:
-            QTimer.singleShot(3_000, self._cancel_next)
-
-    def _cancel_next(self):
-        snap.cancel_map(self._cp.mw.ib, self._next_map)
+            log.info('[ChainScheduler] next_map 요청 완료: %s', nxt)
 
     # ── 30초 tick — 수신 통계 ────────────────────────────────
     def _on_stat(self):

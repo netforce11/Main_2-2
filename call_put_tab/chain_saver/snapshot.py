@@ -37,19 +37,21 @@ def request_otm(ib, sym: str, expiry: str, tag: str,
     calls = [atm + (n_atm + i) * step for i in range(1, SNAP_SLOTS // 2 + 1)]
     puts  = [atm - (n_atm + i) * step for i in range(1, SNAP_SLOTS // 2 + 1)]
 
-    snap_map.clear()
+    # ★ 재요청 전 기존 구독 먼저 취소 — 미취소 시 ERR 322 Duplicate ticker id 발생
+    cancel_map(ib, snap_map)   # cancelMktData + snap_map.clear() 포함
+
     rid_c, rid_p = SNAP_C_START, SNAP_P_START
 
     for st in calls:
         if rid_c >= SNAP_C_START + SNAP_SLOTS: break
         snap_map[rid_c] = (expiry, st, "C")
-        _req(ib, rid_c, make_opt_contract(sym, st, "C", expiry, tag))
+        _req_stream(ib, rid_c, make_opt_contract(sym, st, "C", expiry, tag))
         rid_c += 1
 
     for st in puts:
         if rid_p >= SNAP_P_START + SNAP_SLOTS: break
         snap_map[rid_p] = (expiry, st, "P")
-        _req(ib, rid_p, make_opt_contract(sym, st, "P", expiry, tag))
+        _req_stream(ib, rid_p, make_opt_contract(sym, st, "P", expiry, tag))
         rid_p += 1
 
 
@@ -77,17 +79,19 @@ def request_next(ib, sym: str, und: float,
     else:
         tag = ""
 
-    next_map.clear()
+    # ★ 재요청 전 기존 구독 먼저 취소 — 미취소 시 ERR 322 Duplicate ticker id 발생
+    cancel_map(ib, next_map)   # cancelMktData + next_map.clear() 포함
+
     rid_c, rid_p = NEXT_C_START, NEXT_P_START
 
     for st in strikes:
         if rid_c < NEXT_C_START + NEXT_SLOTS:
             next_map[rid_c] = (nxt, st, "C")
-            _req(ib, rid_c, make_opt_contract(sym, st, "C", nxt, tag))
+            _req_stream(ib, rid_c, make_opt_contract(sym, st, "C", nxt, tag))
             rid_c += 1
         if rid_p < NEXT_P_START + NEXT_SLOTS:
             next_map[rid_p] = (nxt, st, "P")
-            _req(ib, rid_p, make_opt_contract(sym, st, "P", nxt, tag))
+            _req_stream(ib, rid_p, make_opt_contract(sym, st, "P", nxt, tag))
             rid_p += 1
 
     log.info("[Snapshot] request_next: %s 만기=%s tag=%s strikes=%d개",
@@ -103,10 +107,17 @@ def cancel_map(ib, req_map: Dict[int, Tuple]) -> None:
 
 
 # ── 내부 헬퍼 ────────────────────────────────────────────────
-def _req(ib, rid: int, contract) -> None:
+def _req_stream(ib, rid: int, contract) -> None:
+    """
+    스트림 모드 reqMktData.
+    - snapshot=False : 지속 수신 (True 이면 1회 후 자동취소 → 그릭스 드롭)
+    - genericTickList="106" : IV 명시 요청.
+      그릭스(delta/gamma/vega/theta)는 OPT 기본 틱에 자동 포함되므로
+      107은 별도 지정 불필요 (지정 시 ERR 321).
+    cancel 은 cancel_map() / scheduler._cancel_next() 에서 명시 처리.
+    """
     try:
-        # snapshot=True 모드에서는 genericTickList 비워야 함 (bM 에러 방지)
-        ib.reqMktData(rid, contract, "", True, False, [])
+        ib.reqMktData(rid, contract, "106", False, False, [])
     except Exception as e:
         log.warning("[Snapshot] reqMktData rid=%d: %s", rid, e)
 
