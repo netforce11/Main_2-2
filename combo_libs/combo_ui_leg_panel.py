@@ -179,10 +179,17 @@ def _build_leg_left(self) -> QWidget:
     # 재귀 방지 플래그 + itemChanged 연결
     self._leg_item_changing = False
     self._mid_ticks: dict   = {}
-    self.tbl_legs.itemChanged.connect(
-        lambda item: _on_leg_item_changed(self, item))
-    self.tbl_legs.itemChanged.connect(
-        lambda item: self.direction_banner.refresh(self.tbl_legs))
+
+    def _on_item_changed(item):
+        if getattr(self, '_leg_item_changing', False):
+            return                          # 블로킹 중이면 모든 콜백 차단
+        _on_leg_item_changed(self, item)    # Net Price 재계산
+        self.direction_banner.refresh(self.tbl_legs)  # 방향 배너
+        # 행사가(col 3) 변경 시 conId 조회 → Mid-price 스트리밍
+        from combo_ui_leg_extra import _on_strike_changed
+        _on_strike_changed(self, item)
+
+    self.tbl_legs.itemChanged.connect(_on_item_changed)
 
     # 초기 구성 가이드 버튼 상태 갱신
     _update_guide_btn_state(self)

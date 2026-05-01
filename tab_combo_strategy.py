@@ -50,10 +50,12 @@ from combo_ui_right_panel import RightPanelMixin
 from combo_logic       import PnlLogicMixin
 from combo_optimizer   import OptimizerPanelMixin
 from combo_trend_panel import TrendScorePanel
+from tab_combo_shortcut import ShortcutMixin
 
 
 # ══════════════════════════════════════════════════════════════
 class ComboStrategyGrid(
+    ShortcutMixin,
     LeftPanelMixin,
     RightPanelMixin,
     PnlLogicMixin,
@@ -117,6 +119,9 @@ class ComboStrategyGrid(
         self._sync_timer.setInterval(3000)
         self._sync_timer.timeout.connect(self._auto_sync_chain)
         self._sync_timer.start()
+
+        # 단축키 이벤트 필터 설치 (ShortcutMixin)
+        self._install_shortcuts()
 
     # ── v2.3: 좌측 = 옵션 체인(상단) + 추세점수판(하단) ────────
     def _build_left_with_trend(self) -> QSplitter:
@@ -190,27 +195,6 @@ class ComboStrategyGrid(
             self._und_price = price
             QTimer.singleShot(0, lambda: self.lbl_sym_price.setText(
                 f"현재가: {price:,.2f}"))
-
-    def keyPressEvent(self, event):
-        """Shift+1~4 단축키로 전략 빠른 변경."""
-        from PyQt5.QtCore import Qt
-        if event.modifiers() & Qt.ShiftModifier:
-            _map = {
-                Qt.Key_1: "콜 백 스프레드",
-                Qt.Key_2: "풋 백 스프레드",
-                Qt.Key_3: "콜 스프레드",
-                Qt.Key_4: "풋 스프레드",
-            }
-            strat_name = _map.get(event.key())
-            if strat_name:
-                combo = getattr(self, 'combo_strat', None)
-                if combo:
-                    for i in range(combo.count()):
-                        if strat_name in combo.itemText(i):
-                            combo.setCurrentIndex(i)
-                            self._log(f"⌨ {strat_name}")
-                            return
-        super().keyPressEvent(event)
 
     def _log(self, msg: str):
         self.log_box.append(f"[{ts()}] {msg}")
