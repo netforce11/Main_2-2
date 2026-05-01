@@ -129,8 +129,8 @@ class LeftPanelMixin:
         lbl.setStyleSheet("color:#33aaff;font-weight:bold;border:none;")
         lbl.setAlignment(Qt.AlignCenter)
 
-        self.tbl_chain_call = QTableWidget(0, 3)
-        self.tbl_chain_call.setHorizontalHeaderLabels(["행사가", "현재가", "IV"])
+        self.tbl_chain_call = QTableWidget(0, 4)
+        self.tbl_chain_call.setHorizontalHeaderLabels(["행사가", "현재가", "IV", "거리%"])
         self._apply_chain_style(self.tbl_chain_call, "#90caf9")
         self.tbl_chain_call.cellClicked.connect(
             lambda r, c: self._on_chain_click(r, c, "C"))
@@ -147,8 +147,8 @@ class LeftPanelMixin:
         lbl.setStyleSheet("color:#ff6666;font-weight:bold;border:none;")
         lbl.setAlignment(Qt.AlignCenter)
 
-        self.tbl_chain_put = QTableWidget(0, 3)
-        self.tbl_chain_put.setHorizontalHeaderLabels(["행사가", "현재가", "IV"])
+        self.tbl_chain_put = QTableWidget(0, 4)
+        self.tbl_chain_put.setHorizontalHeaderLabels(["행사가", "현재가", "IV", "거리%"])
         self._apply_chain_style(self.tbl_chain_put, "#ff9999")
         self.tbl_chain_put.cellClicked.connect(
             lambda r, c: self._on_chain_click(r, c, "P"))
@@ -247,8 +247,23 @@ class LeftPanelMixin:
             self.lbl_sym_price.setText(f"현재가: {price:,.2f}")
             if hasattr(self, 'edit_stock_price') and not self.edit_stock_price.text().strip():
                 self.edit_stock_price.setText(f"{price:.2f}")
+            # ── 현재가 갱신 시 거리% 컬럼 전체 재계산 ──────────────
+            self._refresh_dist_col(price)
         except RuntimeError:
             pass  # 위젯이 이미 소멸된 경우 무시
+
+    def _refresh_dist_col(self, und_price: float):
+        """CALL·PUT 체인 테이블의 거리% 컬럼(col 3) 일괄 재계산."""
+        for tbl, strikes, side in [
+            (getattr(self, 'tbl_chain_call', None), getattr(self, '_call_strikes', []), "C"),
+            (getattr(self, 'tbl_chain_put',  None), getattr(self, '_put_strikes',  []), "P"),
+        ]:
+            if tbl is None:
+                continue
+            for r, st in enumerate(strikes):
+                if r >= tbl.rowCount():
+                    break
+                tbl.setItem(r, 3, _make_dist_item(st, und_price, side))
 
     # ──────────────────────────────────────────────────────────
     # 체인 동기화
@@ -300,6 +315,9 @@ class LeftPanelMixin:
             self.tbl_chain_call.setItem(r, 1, mk_item(
                 f"{lp:.2f}" if lp else "―", "#33aaff"))
             self.tbl_chain_call.setItem(r, 2, mk_item("―"))
+            # ── 거리% ──────────────────────────────────────────────
+            dist_item = _make_dist_item(st, und_price, side="C")
+            self.tbl_chain_call.setItem(r, 3, dist_item)
 
         # PUT 체인 갱신
         self._put_strikes = list(cp.put_strikes)
@@ -315,6 +333,9 @@ class LeftPanelMixin:
             self.tbl_chain_put.setItem(r, 1, mk_item(
                 f"{lp:.2f}" if lp else "―", "#ff6666"))
             self.tbl_chain_put.setItem(r, 2, mk_item("―"))
+            # ── 거리% ──────────────────────────────────────────────
+            dist_item = _make_dist_item(st, und_price, side="P")
+            self.tbl_chain_put.setItem(r, 3, dist_item)
 
         # 만기 날짜 자동 수신 — 탭1의 현재 만기 읽기
         try:
@@ -395,6 +416,62 @@ class LeftPanelMixin:
         banner = getattr(self, 'direction_banner', None)
         if banner is not None:
             banner.refresh(self.tbl_legs)
+
+
+# ── 거리% 셀 생성 헬퍼 ─────────────────────────────────────────────
+
+def _make_dist_item(strike: float, und_price: float, side: str):
+    """
+    기초자산 현재가 대비 행사가 거리를 % 로 표시하는 QTableWidgetItem 반환.
+
+    계산:
+        dist_pct = (strike - und_price) / und_price * 100
+        CALL: +값이면 OTM(위), -값이면 ITM(아래) → 양수가 자연스러운 방향
+        PUT : -값이면 OTM(아래), +값이면 ITM(위)
+
+    색상 규칙:
+        |dist| < 1%   : 노랑  (#ffd700) — 거의 ATM
+        |dist| < 3%   : 연두  (#88dd55) — 근접 OTM
+        |dist| < 7%   : 연파  (#55aadd) — 중간 OTM
+        else          : 회색  (#888888) — 깊은 OTM/ITM
+        ITM 구간       : 붉은  (#ff7755) — 내가격
+    """
+    from PyQt5.QtWidgets import QTableWidgetItem
+    from PyQt5.QtCore import Qt
+
+    if not und_price or und_price <= 0:
+        item = QTableWidgetItem("―")
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        return item
+
+    dist_pct = (strike - und_price) / und_price * 100  # + = 행사가가 현재가보다 높음
+
+    # ITM 판정
+    if side == "C":
+        is_itm = strike < und_price   # CALL ITM: 행사가 < 현재가
+    else:
+        is_itm = strike > und_price   # PUT  ITM: 행사가 > 현재가
+
+    abs_dist = abs(dist_pct)
+    label = f"{dist_pct:+.2f}%"
+
+    if is_itm:
+        color = "#ff7755"
+    elif abs_dist < 1.0:
+        color = "#ffd700"
+    elif abs_dist < 3.0:
+        color = "#88dd55"
+    elif abs_dist < 7.0:
+        color = "#55aadd"
+    else:
+        color = "#888888"
+
+    item = QTableWidgetItem(label)
+    item.setTextAlignment(Qt.AlignCenter)
+    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+    item.setForeground(__import__('PyQt5.QtGui', fromlist=['QColor']).QColor(color))
+    return item
 
 
 # ── 당일 conId 일괄 조회 ────────────────────────────────────────
