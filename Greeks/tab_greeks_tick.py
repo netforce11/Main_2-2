@@ -41,7 +41,8 @@ def on_tick_opt(self, req_id: int, tick_type: int,
             print(f"[Greeks] ✅ 첫 tick reqId={req_id} {side}{int(strike)} "
                   f"iv={iv:.4f} delta={delta:.4f} tt={tick_type}")
         self._prev_data[k] = self._cell_data.get(k, {}).copy()
-        self._cell_data[k] = dict(expiry=exp, strike=strike, side=side,
+        # sym 필드 추가 — autosave에서 {**d, "sym": self._sym} 오버라이드와 일관성 유지
+        self._cell_data[k] = dict(sym=self._sym, expiry=exp, strike=strike, side=side,
                                   delta=delta, gamma=gamma, iv=iv, vanna=vanna,
                                   und_price=self._und_price, ts=ts)
         if is_new:
@@ -62,24 +63,29 @@ def on_tick_opt(self, req_id: int, tick_type: int,
         if self._snap_count_1dte % 10 == 0:
             self._status_saving(1, self._snap_count_1dte, "+1DTE 저장 중…")
 
-    # ── 경로 3: SnapshotManager 관할 (+1DTE / +2DTE) ──────────────────────
-    # S12-patch1: tick 데이터를 _cell_data 에 저장하고 slot>0 이면 DB 즉시 저장.
-    # 기존 코드는 record_received(rid) 만 호출해서 카운터만 올리고 데이터를 버렸음.
+    # ── 경로 3: SnapshotManager 관할 (0DTE snap_mgr / +1DTE / +2DTE) ──────────
+    # S12-patch2:
+    #   - 0DTE(slot=0): _cell_data만 갱신, 저장은 autosave(1분 주기)가 담당
+    #                   (즉시 저장 시 autosave와 이중 저장 발생)
+    #   - D+1/D+2(slot>0): tick 수신 즉시 저장
+    #                       (autosave는 self._expiry == 0DTE만 필터하므로 중복 없음)
     elif self._snap_mgr and self._snap_mgr.is_managed_req(req_id):
         info = self._snap_mgr.get_req_info(req_id)   # → (expiry, strike, side)
         if info:
             exp, strike, side = info
             k = (exp, strike, side)
 
-            # ① _cell_data 갱신 (화면 렌더링용)
+            # ① _cell_data 갱신 (화면 렌더링용) — sym 필드 포함
             self._prev_data[k] = self._cell_data.get(k, {}).copy()
-            self._cell_data[k] = dict(expiry=exp, strike=strike, side=side,
+            self._cell_data[k] = dict(sym=self._sym, expiry=exp, strike=strike, side=side,
                                       delta=delta, gamma=gamma, iv=iv, vanna=vanna,
                                       und_price=self._und_price, ts=ts)
 
-            # ② DB 즉시 저장
-            #    slot 1=+1DTE, slot 2=D+2 → tick 수신 즉시 저장
-            #    slot 0=0DTE  → autosave(1분 주기)가 담당하므로 생략 (중복 방지)
+            # ② DB 저장 분기
+            #    slot 0 (0DTE): _cell_data에만 올려두고 autosave(1분 주기)가 저장
+            #                   → 즉시 저장하면 autosave와 이중 저장 발생
+            #    slot 1/2 (D+1/D+2): tick 수신 즉시 저장
+            #                        (autosave는 self._expiry == 0DTE만 필터하므로 중복 없음)
             slot = self._snap_mgr._slot_for_expiry(exp)
             if slot > 0:
                 try:
@@ -91,7 +97,7 @@ def on_tick_opt(self, req_id: int, tick_type: int,
                 except Exception as e:
                     log.error("[Greeks] snap_mgr DB 저장 실패 rid=%d: %s", req_id, e)
 
-        # ③ 신호등 카운터 갱신 (기존 역할 유지)
+        # ③ 신호등 카운터 갱신
         self._snap_mgr.record_received(req_id)
 
     if not self._flush_t.isActive():
@@ -121,6 +127,18 @@ def on_snap_data(self, expiry: str, strike: float, side: str, data: dict):
 
 
 def on_ibkr_error(self, req_id: int, error_code: int, msg: str):
+    # 504: Not connected — 연결 끊긴 상태에서 reqMktData/cancelMktData 호출
+    # req_map에서 해당 reqId 제거해 dead reqId 누적 방지
+    if error_code == 504:
+        if req_id in self._req_map:
+            del self._req_map[req_id]
+        if self._snap_mgr and self._snap_mgr.is_managed_req(req_id):
+            try:
+                del self._snap_mgr._req_map[req_id]
+            except Exception:
+                pass
+        return  # 배너 노출 불필요 (연결 복구 후 자동 재구독)
+
     if req_id in self._req_map:
         print(f"[Greeks] ❌ IBKR 에러 reqId={req_id} code={error_code}: {msg}")
         self._banner.setText(f"❌ IBKR 에러 {error_code}: {msg}")

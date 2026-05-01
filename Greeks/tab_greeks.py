@@ -144,6 +144,19 @@ class GreeksGrid(QWidget):
         # S12-patch1: REQ_NEXT_C ~ REQ_NEXT_P+199 router 등록 제거
         #             (레거시 next_map 경로 삭제 — snap_mgr 가 5000~6799 블록 사용)
         router.register_option(REQ_CHAIN, REQ_CHAIN_P + 199, self._on_tick_opt)
+        # S12-patch2: snap_mgr 전용 범위(10000~12799) 명시 등록
+        #             snap_mgr.__init__에서 _dummy_tick으로 등록했지만,
+        #             실제 Greeks 처리(DB 저장, cell_data 갱신)는 GreeksGrid._on_tick_opt가 담당.
+        #             → 같은 범위를 GreeksGrid도 등록해야 on_tick_opt 경로 3이 호출됨.
+        from greeks_snapshot_mgr import (REQ_0DTE_C_BASE, REQ_0DTE_P_BASE, REQ_0DTE_RANGE,
+                                          REQ_1DTE_C_BASE, REQ_1DTE_P_BASE, REQ_1DTE_RANGE,
+                                          REQ_2DTE_C_BASE, REQ_2DTE_P_BASE, REQ_2DTE_RANGE)
+        router.register_option(REQ_0DTE_C_BASE, REQ_0DTE_P_BASE + REQ_0DTE_RANGE - 1,
+                               self._on_tick_opt)
+        router.register_option(REQ_1DTE_C_BASE, REQ_1DTE_P_BASE + REQ_1DTE_RANGE - 1,
+                               self._on_tick_opt)
+        router.register_option(REQ_2DTE_C_BASE, REQ_2DTE_P_BASE + REQ_2DTE_RANGE - 1,
+                               self._on_tick_opt)
         from core import bridge
         bridge.error_sig.connect(self._on_ibkr_error)
         bridge.tick_option.connect(self._on_raw_tick_option)
