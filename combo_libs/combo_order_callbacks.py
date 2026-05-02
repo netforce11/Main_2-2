@@ -117,6 +117,12 @@ def _on_order_status(self, oid: int, status: str,
             pending['status'] = '체결완료'
             if panel and hasattr(panel, 'add_position'):
                 panel.add_position(pending)
+            # ── 영속화: 파일 저장 (재연결 후 복원용) ────────────
+            try:
+                from combo_position_store import save_one_position
+                save_one_position(pending)
+            except Exception:
+                pass
             self._pending_position = None
 
         _set_panel_filled(panel, oid, avg)
@@ -140,6 +146,12 @@ def _on_order_status(self, oid: int, status: str,
         # [BUG-A 연동] _do_cancel_order의 중복 전송 방지 플래그 해제
         if getattr(self, '_cancel_sent_oid', None) == oid:
             self._cancel_sent_oid = None
+        # ── 영속화: 취소된 OID 파일에서 제거 ────────────────────
+        try:
+            from combo_position_store import remove_position
+            remove_position(oid)
+        except Exception:
+            pass
 
     # ── IBKR 거절 ────────────────────────────────────────────
     elif status in _STATUS_INACTIVE:

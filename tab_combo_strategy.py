@@ -188,6 +188,8 @@ class ComboStrategyGrid(
         bridge.tick_price.connect(self._on_tick_price)
         # [S11] 연결/재연결 시 계좌 표시 자동 갱신
         bridge.connected.connect(self._refresh_account_display)
+        # 재연결 시 합성 잔고 복원 (IB 서버 + 파일 병합)
+        bridge.connected.connect(self._on_pos_reconnect_hook)
 
     def _on_tick_price(self, rid, tt, price):
         REQ_COMBO_UND = 8500  # 콤보탭 전용 기초자산 reqId (combo_ui_left._req_sym_price 참조)
@@ -195,6 +197,14 @@ class ComboStrategyGrid(
             self._und_price = price
             QTimer.singleShot(0, lambda: self.lbl_sym_price.setText(
                 f"현재가: {price:,.2f}"))
+
+    def _on_pos_reconnect_hook(self):
+        """재연결 후 합성 잔고 복원 — combo_order_logic으로 위임."""
+        try:
+            from combo_order_logic import _on_pos_reconnect_hook as _hook
+            _hook(self)
+        except Exception as e:
+            self._log(f"⚠ 잔고 복원 오류: {e}")
 
     def _log(self, msg: str):
         self.log_box.append(f"[{ts()}] {msg}")

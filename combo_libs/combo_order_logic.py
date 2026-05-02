@@ -201,6 +201,14 @@ def _on_cancel_bag_order(self):
 
 def _on_close_position_order(self, pos: dict):
     """잔고 탭 청산 버튼 핸들러."""
+    # ── 영속화: 청산 시 파일에서 제거 ───────────────────────
+    oid = pos.get("oid")
+    if oid:
+        try:
+            from combo_position_store import remove_position
+            remove_position(oid)
+        except Exception:
+            pass
     legs = pos.get("legs", [])
     if not legs:
         _close_ib_position(self, pos)
@@ -328,14 +336,15 @@ def _on_chaser_mode_changed(self, mode: str):
 
 
 def _on_pos_reconnect_hook(self):
-    """재연결 후 IB 포지션 재조회."""
-    panel = getattr(self, 'synthetic_panel', None)
-    ib    = getattr(getattr(self, 'mw', None), 'ib', None)
-    if not panel or not ib:
-        return
-    self._log("🔄 재연결: IB 포지션 재조회 중…")
-    panel.clear_positions()
-    _load_ib_positions(self)
+    """
+    재연결 후 합성 잔고 복원.
+    IB reqPositions() + 파일 데이터를 병합해 패널에 표시.
+    """
+    try:
+        from combo_position_store import restore_on_reconnect
+        restore_on_reconnect(self)
+    except Exception as e:
+        self._log(f"⚠ 잔고 복원 오류: {e}")
 
 
 def _load_ib_positions(self):
