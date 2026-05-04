@@ -255,12 +255,59 @@ class PanelsMixin(PricePanelMixin):
             "QPushButton:pressed{background:#0a1a0a;}")
         btn_watch_popup.clicked.connect(self._open_watch_popup)
         qv.addWidget(btn_watch_popup)
+
+        # ★ v6.5 — 감시 상태 라벨 + 토글 버튼 ─────────────────
+        from PyQt5.QtCore import QTimer as _QTimer
+        watch_bar = QWidget(); watch_bar.setFixedHeight(26)
+        watch_bar.setStyleSheet("background:#08080f;")
+        wh = QHBoxLayout(watch_bar)
+        wh.setContentsMargins(6, 2, 6, 2); wh.setSpacing(6)
+
+        self._watch_status_lbl = QLabel("⏸ WATCHING OFF")
+        self._watch_status_lbl.setStyleSheet(
+            "color:#555;font-size:11px;font-weight:bold;border:none;")
+        wh.addWidget(self._watch_status_lbl)
+        wh.addStretch()
+
+        self._watch_toggle_btn = QPushButton("▶ 감시 켜기")
+        self._watch_toggle_btn.setFixedHeight(22)
+        self._watch_toggle_btn.setStyleSheet(
+            "QPushButton{background:#1a2a1a;color:#00ff88;font-size:11px;"
+            "border:1px solid #2a5a2a;border-radius:3px;padding:2px 8px;}"
+            "QPushButton:hover{background:#2a3a2a;}")
+        self._watch_toggle_btn.clicked.connect(self._toggle_watch)
+        wh.addWidget(self._watch_toggle_btn)
+        qv.addWidget(watch_bar)
+
+        # 깜빡임 타이머 (0.8초 간격) — 규칙 로드 후에만 시작
+        self._watch_blink_timer = _QTimer(self)
+        self._watch_blink_timer.setInterval(800)
+        self._watch_blink_timer.timeout.connect(self._on_watch_blink)
+        # 시작 안 함 — _load_watch_rules_from_file() 에서 규칙 있을 때만 start()
+        self._watch_blink_state = False
+        # ────────────────────────────────────────────────────────
+
         qv.addWidget(self._build_quick_order_panel(), 1)
 
         self._bot_splitter.addWidget(qord_container)
         self._bot_splitter.setSizes([820, 300])
         self._watch_splitter = self._bot_splitter
         return self._bot_splitter
+
+    def _on_watch_blink(self):
+        """깜빡임 타이머 콜백 — ● 표시 토글."""
+        lbl = getattr(self, '_watch_status_lbl', None)
+        if not lbl:
+            return
+        self._watch_blink_state = not self._watch_blink_state
+        if self._watch_blink_state:
+            lbl.setText("🟢 ON WATCHING ●")
+            lbl.setStyleSheet(
+                "color:#00ff88;font-size:11px;font-weight:bold;border:none;")
+        else:
+            lbl.setText("🟢 ON WATCHING  ")
+            lbl.setStyleSheet(
+                "color:#007744;font-size:11px;font-weight:bold;border:none;")
 
     # ── 감시 팝업 ─────────────────────────────────────────────
     def _open_watch_popup(self):

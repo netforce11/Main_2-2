@@ -1,24 +1,30 @@
 """
-watch_logic.py — 감시 규칙 등록·삭제·평가·체크 로직  v6.4
+watch_logic.py — 감시 규칙 등록·삭제·평가·체크 로직  v6.5
 ════════════════════════════════════════════════════════
 수정 대상: 감시 조건 평가 방식, 알람 트리거 동작
 포함 메서드:
-  _add_watch_rule()      감시 규칙 등록
-  _del_watch_rule()      단건 삭제
-  _clear_watch_rules()   전체 삭제
-  _eval_op()             연산자 평가 (<, <=, >, >=)
-  _check_watch_rules()   2초 타이머 체크
-  _load_watch_log()      로그 파일 불러오기
-  _open_watch_log_folder() 저장 폴더 열기
+  _add_watch_rule()          감시 규칙 등록
+  _del_watch_rule()          단건 삭제
+  _clear_watch_rules()       전체 삭제
+  _eval_op()                 연산자 평가 (<, <=, >, >=)
+  _check_watch_rules()       2초 타이머 체크
+  _save_watch_rules()        규칙 + 활성 상태 JSON 저장  ★ v6.5
+  _load_watch_rules_from_file() 앱 시작 시 자동 복원    ★ v6.5
+  _load_watch_log()          로그 파일 불러오기
+  _open_watch_log_folder()   저장 폴더 열기
 ════════════════════════════════════════════════════════
 """
 
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from PyQt5.QtWidgets import QMessageBox, QFileDialog
 
 from core import tbl_set, SAVE_DIR
+
+# 저장 파일 경로
+_WATCH_RULES_FILE = Path(SAVE_DIR) / "watch_rules.json"
 
 
 class WatchLogicMixin:
@@ -105,6 +111,7 @@ class WatchLogicMixin:
 
         self._watch_tabs.setCurrentIndex(2)   # 등록 목록 탭으로
         self._log(f"감시 등록: {side} {strike}  조건={cond_parts}")
+        self._save_watch_rules()   # ★ v6.5 자동 저장
 
     def _del_watch_rule(self, row):
         if row < 0 or row >= len(self._watch_rules): return
@@ -115,11 +122,13 @@ class WatchLogicMixin:
             for k, v in self._watch_prev.items() if k != row}
         self.tbl_watch_rules.removeRow(row)
         self._log(f"감시 삭제: row {row}")
+        self._save_watch_rules()   # ★ v6.5 자동 저장
 
     def _clear_watch_rules(self):
         self._watch_rules.clear(); self._watch_prev.clear()
         self.tbl_watch_rules.setRowCount(0)
         self._log("감시 전체 삭제")
+        self._save_watch_rules()   # ★ v6.5 자동 저장
 
     # ─────────────────────────────────────────────────────
     # 연산자 평가
@@ -264,6 +273,151 @@ class WatchLogicMixin:
     # ─────────────────────────────────────────────────────
     # 로그 불러오기 / 폴더 열기
     # ─────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────
+    # ★ v6.5 감시 규칙 저장 / 복원
+    # ─────────────────────────────────────────────────────
+    def _save_watch_rules(self):
+        """_watch_rules + 활성 상태를 watch_rules.json 에 저장."""
+        try:
+            active = self._watch_timer.isActive() \
+                if hasattr(self, '_watch_timer') else True
+            data = {
+                "active": active,
+                "rules":  self._watch_rules,
+            }
+            _WATCH_RULES_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _WATCH_RULES_FILE.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as e:
+            self._log(f"감시 규칙 저장 오류: {e}")
+
+    def _load_watch_rules_from_file(self):
+        """앱 시작 시 호출. watch_rules.json → _watch_rules 복원 + 테이블 재구성."""
+        if not _WATCH_RULES_FILE.exists():
+            # 파일 없음 → OFF 상태 유지
+            self._update_watch_status_label(False)
+            return
+        try:
+            data  = json.loads(_WATCH_RULES_FILE.read_text(encoding="utf-8"))
+            rules = data.get("rules", [])
+            active = data.get("active", True)
+
+            if not rules:
+                # 규칙 없음 → OFF 상태 유지
+                self._update_watch_status_label(False)
+                return
+
+            for rule in rules:
+                rule["fired"] = False   # 재시작 시 fired 초기화
+                idx = len(self._watch_rules)
+                self._watch_rules.append(rule)
+                self._watch_prev[idx] = {
+                    "price": None, "delta": None,
+                    "theta": None, "gamma": None}
+
+                r = self.tbl_watch_rules.rowCount()
+                self.tbl_watch_rules.insertRow(r)
+                side   = rule.get("side", "")
+                strike = rule.get("strike", "")
+                tbl_set(self.tbl_watch_rules, r, 0,
+                        f"{side} {strike}", "#ffd700")
+
+                cond = rule.get("cond", {})
+                cond_parts = []
+                if cond.get("price") is not None:
+                    cond_parts.append(
+                        f"P{cond['price_op']}{cond['price']:.2f}")
+                if cond.get("delta") is not None:
+                    cond_parts.append(
+                        f"Δ{cond['delta_op']}{cond['delta']:.3f}")
+                if cond.get("theta") is not None:
+                    cond_parts.append(
+                        f"θ{cond['theta_op']}{cond['theta']:.3f}")
+                if cond.get("gamma") is not None:
+                    cond_parts.append(
+                        f"γ{cond['gamma_op']}{cond['gamma']:.4f}")
+                tbl_set(self.tbl_watch_rules, r, 1,
+                        " & ".join(cond_parts) or "―")
+
+                and_c = rule.get("and", {})
+                and_parts = []
+                if and_c.get("time"):
+                    and_parts.append(
+                        f"T{and_c['time_op']}{and_c['time']}")
+                if and_c.get("delta") is not None:
+                    and_parts.append(
+                        f"Δ{and_c['delta_op']}{and_c['delta']:.3f}")
+                if and_c.get("gamma") is not None:
+                    and_parts.append(
+                        f"γ{and_c['gamma_op']}{and_c['gamma']:.4f}")
+                if and_c.get("theta") is not None:
+                    and_parts.append(
+                        f"θ{and_c['theta_op']}{and_c['theta']:.3f}")
+                tbl_set(self.tbl_watch_rules, r, 2,
+                        " & ".join(and_parts) or "―", "#aaa")
+                tbl_set(self.tbl_watch_rules, r, 3, "👁 감시 중", "#00ff88")
+
+            # 활성 상태 복원
+            if hasattr(self, '_watch_timer'):
+                if active:
+                    self._watch_timer.start()
+                else:
+                    self._watch_timer.stop()
+
+            # 상태 라벨 업데이트
+            self._update_watch_status_label(active)
+
+            self._log(f"감시 규칙 복원: {len(rules)}건  활성={active}")
+        except Exception as e:
+            self._log(f"감시 규칙 복원 오류: {e}")
+
+    def _update_watch_status_label(self, active: bool):
+        """상태 라벨 텍스트/색상 즉시 갱신. 깜빡임 타이머도 제어."""
+        lbl = getattr(self, '_watch_status_lbl', None)
+        blink_timer = getattr(self, '_watch_blink_timer', None)
+        btn = getattr(self, '_watch_toggle_btn', None)
+
+        if lbl:
+            if active:
+                lbl.setText("🟢 ON WATCHING ●")
+                lbl.setStyleSheet(
+                    "color:#00ff88;font-size:11px;font-weight:bold;border:none;")
+                if blink_timer:
+                    blink_timer.start()
+            else:
+                lbl.setText("⏸ WATCHING OFF")
+                lbl.setStyleSheet(
+                    "color:#555;font-size:11px;font-weight:bold;border:none;")
+                if blink_timer:
+                    blink_timer.stop()
+
+        if btn:
+            if active:
+                btn.setText("⏸ 감시 끄기")
+                btn.setStyleSheet(
+                    "QPushButton{background:#1a1a2a;color:#ff8800;font-size:11px;"
+                    "border:1px solid #3a3a2a;border-radius:3px;padding:2px 8px;}"
+                    "QPushButton:hover{background:#2a2a1a;}")
+            else:
+                btn.setText("▶ 감시 켜기")
+                btn.setStyleSheet(
+                    "QPushButton{background:#1a2a1a;color:#00ff88;font-size:11px;"
+                    "border:1px solid #2a5a2a;border-radius:3px;padding:2px 8px;}"
+                    "QPushButton:hover{background:#2a3a2a;}")
+
+    def _toggle_watch(self):
+        """감시 켜기/끄기 토글."""
+        if not hasattr(self, '_watch_timer'):
+            return
+        active = not self._watch_timer.isActive()
+        if active:
+            self._watch_timer.start()
+        else:
+            self._watch_timer.stop()
+        self._update_watch_status_label(active)
+        self._save_watch_rules()   # 활성 상태도 저장
+        self._log(f"감시 {'켜짐' if active else '꺼짐'}")
+
     def _load_watch_log(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "감시 알람 파일 불러오기", str(SAVE_DIR),

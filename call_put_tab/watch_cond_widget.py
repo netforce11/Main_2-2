@@ -369,6 +369,9 @@ class WatchAlertTabMixin:
         a_cnt = len(self._spx_engine.cond_a)
         b_cnt = len(self._spx_engine.cond_b)
         self._spx_log(f"SPX 감시 시작 — 조건A {a_cnt}개 / 조건B {b_cnt}개")
+        # ★ 메인 화면 깜빡임 라벨 ON 연동
+        if hasattr(self, '_update_watch_status_label'):
+            self._update_watch_status_label(True)
 
     def _spx_stop(self):
         if hasattr(self, '_spx_engine'):
@@ -377,6 +380,11 @@ class WatchAlertTabMixin:
         self._spx_btn_start.setEnabled(True)
         self._spx_btn_stop.setEnabled(False)
         self._spx_log("SPX 감시 중지")
+        # ★ 메인 화면 깜빡임 라벨 — _watch_timer도 꺼져 있으면 OFF 연동
+        if hasattr(self, '_update_watch_status_label'):
+            watch_timer_on = (hasattr(self, '_watch_timer')
+                              and self._watch_timer.isActive())
+            self._update_watch_status_label(watch_timer_on)
 
     # ── 저장 / 불러오기 ──────────────────────────────────
 

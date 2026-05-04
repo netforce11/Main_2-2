@@ -2,11 +2,12 @@
 chain_saver/scheduler.py — 저장 스케줄러
 ════════════════════════════════════════
 역할:
-  - 5초마다: OTM/ITM 스냅샷 요청 → 버퍼 flush → 저장 enqueue
-  - 60초마다: 내일 만기 스냅샷 요청
+  - 5초마다: 당일 OTM/ITM 스트리밍 → 버퍼 flush → 저장 enqueue
+  - 1분마다: D+1 만기 snapshot=True 요청 (ticker 한도 미포함)
+  - 2분마다: D+2 만기 snapshot=True 요청 (ticker 한도 미포함)
   - 장중(is_market_open)일 때만 저장 실행
   - 사이드바 상태 라벨 업데이트
-  ── v6.6: 수신 통계 상태 라벨 표시 추가
+  ── v6.7: D+1 1분/D+2 2분 스냅샷 분리, snapshot=True 전환
 
 스냅샷 요청 로직은 snapshot.py 에 분리됨.
 """
@@ -28,6 +29,7 @@ from call_put_tab.chain_saver.buffer import today_et
 from call_put_tab.chain_saver.snapshot import (
     SNAP_C_START, SNAP_P_START, SNAP_SLOTS,
     NEXT_C_START, NEXT_P_START, NEXT_SLOTS,
+    NEXT2_C_START, NEXT2_P_START, NEXT2_SLOTS,
 )
 
 log = logging.getLogger(__name__)
@@ -42,11 +44,12 @@ class ChainScheduler(QObject):
         self._worker  = worker
         self._status_lbl  = None
         self._detail_lbl  = None   # 수신 통계 전용 라벨 (선택)
-        self._snap_map: Dict[int, Tuple] = {}
-        self._next_map: Dict[int, Tuple] = {}
-        self._save_count_total = 0   # 누적 저장 건수
-        self._bulk_buf: list = []    # ★ bulk INSERT 버퍼
-        self._bulk_tick: int = 0     # flush 주기 카운터
+        self._snap_map:  Dict[int, Tuple] = {}
+        self._next_map:  Dict[int, Tuple] = {}
+        self._next2_map: Dict[int, Tuple] = {}   # ★ D+2
+        self._save_count_total = 0
+        self._bulk_buf: list = []
+        self._bulk_tick: int = 0
 
         # ── 파일 로거 초기화 ─────────────────────────────────
         self._log_dir  = r"C:\data\Greeks_history"
@@ -54,13 +57,14 @@ class ChainScheduler(QObject):
         self._file_log.propagate = False   # 콘솔 중복 출력 방지
         self._setup_file_logger()
 
-        self._t5  = QTimer(self); self._t5.setInterval(5_000)   # ★ 기본 5초
-        self._t60 = QTimer(self); self._t60.setInterval(60_000)
-        # 30초마다 수신 통계 로그 출력
+        self._t5    = QTimer(self); self._t5.setInterval(5_000)
+        self._t1min = QTimer(self); self._t1min.setInterval(60_000)   # D+1 1분
+        self._t2min = QTimer(self); self._t2min.setInterval(120_000)  # D+2 2분
         self._t_stat = QTimer(self); self._t_stat.setInterval(30_000)
 
         self._t5.timeout.connect(self._on_5s)
-        self._t60.timeout.connect(self._on_60s)
+        self._t1min.timeout.connect(self._on_1min)
+        self._t2min.timeout.connect(self._on_2min)
         self._t_stat.timeout.connect(self._on_stat)
 
     # ── 외부 인터페이스 ──────────────────────────────────────
@@ -106,42 +110,54 @@ class ChainScheduler(QObject):
 
     def start(self):
         self._t5.start()
-        self._t60.start()
+        self._t1min.start()
+        self._t2min.start()
         self._t_stat.start()
 
-        # ★ OTM/ITM 스냅샷 + 내일 만기 reqId 범위를 router 에 등록
-        # ChainScheduler.on_tick_price/on_tick_option 이 router 에 등록되지 않으면
-        # 4400~4649 범위 틱이 와도 버퍼에 전달되지 않아 D+1/D+2 저장 0건 발생
+        # 당일 OTM/ITM 스트리밍 router 등록
         router.register_price(
             SNAP_C_START, SNAP_C_START + SNAP_SLOTS - 1, self.on_tick_price)
         router.register_price(
             SNAP_P_START, SNAP_P_START + SNAP_SLOTS - 1, self.on_tick_price)
+        router.register_option(
+            SNAP_C_START, SNAP_C_START + SNAP_SLOTS - 1, self.on_tick_option)
+        router.register_option(
+            SNAP_P_START, SNAP_P_START + SNAP_SLOTS - 1, self.on_tick_option)
+
+        # D+1 snapshot router 등록
         router.register_price(
             NEXT_C_START, NEXT_C_START + NEXT_SLOTS - 1, self.on_tick_price)
         router.register_price(
             NEXT_P_START, NEXT_P_START + NEXT_SLOTS - 1, self.on_tick_price)
         router.register_option(
-            SNAP_C_START, SNAP_C_START + SNAP_SLOTS - 1, self.on_tick_option)
-        router.register_option(
-            SNAP_P_START, SNAP_P_START + SNAP_SLOTS - 1, self.on_tick_option)
-        router.register_option(
             NEXT_C_START, NEXT_C_START + NEXT_SLOTS - 1, self.on_tick_option)
         router.register_option(
             NEXT_P_START, NEXT_P_START + NEXT_SLOTS - 1, self.on_tick_option)
 
+        # D+2 snapshot router 등록
+        router.register_price(
+            NEXT2_C_START, NEXT2_C_START + NEXT2_SLOTS - 1, self.on_tick_price)
+        router.register_price(
+            NEXT2_P_START, NEXT2_P_START + NEXT2_SLOTS - 1, self.on_tick_price)
+        router.register_option(
+            NEXT2_C_START, NEXT2_C_START + NEXT2_SLOTS - 1, self.on_tick_option)
+        router.register_option(
+            NEXT2_P_START, NEXT2_P_START + NEXT2_SLOTS - 1, self.on_tick_option)
+
     def stop(self):
         self._t5.stop()
-        self._t60.stop()
+        self._t1min.stop()
+        self._t2min.stop()
         self._t_stat.stop()
 
-        # 활성 구독 전체 취소 (앱 종료/재시작 시 Duplicate ticker id 방지)
         ib = getattr(self._cp.mw, 'ib', None)
         if ib:
             snap.cancel_map(ib, self._snap_map)
-            snap.cancel_map(ib, self._next_map)
-        self._snap_key = None  # 재시작 시 snap_map 재요청 강제
+            # D+1/D+2 는 snapshot=True 이므로 cancel 불필요, map만 초기화
+            self._next_map.clear()
+            self._next2_map.clear()
+        self._snap_key = None
 
-        # router 등록 해제 — 앱 종료/재시작 시 중복 등록 방지
         router.unregister_price(self.on_tick_price)
         router.unregister_option(self.on_tick_option)
 
@@ -189,21 +205,35 @@ class ChainScheduler(QObject):
                 self._bulk_buf.clear()
                 self._bulk_tick = 0
 
-    # ── 60초 tick — 내일 만기 ────────────────────────────────
-    def _on_60s(self):
+    # ── 1분 tick — D+1 만기 스냅샷 ─────────────────────────
+    def _on_1min(self):
         if not is_market_open():
             return
         cp  = self._cp
+        if not getattr(cp.mw, 'connected', False):
+            return
         sym = cp.edit_sym.text().strip().upper() or "SPX"
         und = cp.und_price or 0.0
         if und <= 0:
             return
         nxt = snap.request_next(cp.mw.ib, sym, und, self._next_map)
-        # next_map cancel은 다음 60초 재요청 시 request_next() 내부 cancel_map()에서 처리
-        # singleShot(3000, _cancel_next) 제거 — 3초 후 즉시 cancel하면
-        # map이 clear되어 그 이후 도착하는 틱이 entry=None으로 드롭됨
         if nxt:
-            log.info('[ChainScheduler] next_map 요청 완료: %s', nxt)
+            log.info('[ChainScheduler] D+1 스냅샷 요청: %s', nxt)
+
+    # ── 2분 tick — D+2 만기 스냅샷 ─────────────────────────
+    def _on_2min(self):
+        if not is_market_open():
+            return
+        cp  = self._cp
+        if not getattr(cp.mw, 'connected', False):
+            return
+        sym = cp.edit_sym.text().strip().upper() or "SPX"
+        und = cp.und_price or 0.0
+        if und <= 0:
+            return
+        nxt2 = snap.request_next2(cp.mw.ib, sym, und, self._next2_map)
+        if nxt2:
+            log.info('[ChainScheduler] D+2 스냅샷 요청: %s', nxt2)
 
     # ── 30초 tick — 수신 통계 ────────────────────────────────
     def _on_stat(self):
@@ -252,7 +282,9 @@ class ChainScheduler(QObject):
 
     # ── tick 수신 (router 에서 호출) ─────────────────────────
     def on_tick_price(self, req_id: int, tick_type: int, price: float):
-        entry = self._snap_map.get(req_id) or self._next_map.get(req_id)
+        entry = (self._snap_map.get(req_id)
+                 or self._next_map.get(req_id)
+                 or self._next2_map.get(req_id))
         if not entry:
             return
         expiry, strike, side = entry
@@ -269,7 +301,9 @@ class ChainScheduler(QObject):
                        gamma: float, vega: float, theta: float):
         if tick_type not in (10, 11, 12, 13):
             return
-        entry = self._snap_map.get(req_id) or self._next_map.get(req_id)
+        entry = (self._snap_map.get(req_id)
+                 or self._next_map.get(req_id)
+                 or self._next2_map.get(req_id))
         if not entry:
             return
         expiry, strike, side = entry

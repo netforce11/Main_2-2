@@ -14,6 +14,11 @@
       "minutes": 40,
       "points": 10.0,
       "direction": "양방향"
+    },
+    {
+      "minutes": 10,
+      "points": 15.0,
+      "direction": "양방향"
     }
   ],
   "cond_b": []

@@ -978,8 +978,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
 
     def _on_watch_dbl(self, item):
         """2클릭 → 종목 변경 + 기초자산 + 옵션 전체 조회(_fetch 포함).
-
-        [수정③] 2클릭만 옵션 재조회. 선물 더블클릭 시에도 동일.
+        ★ v6.5: 선물/일반 두 패널 모두 연결됨.
         """
         if not _alive(self):
             return
@@ -1062,7 +1061,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
 
     def _on_watch_single_click(self, item):
         """1클릭 → 기초자산 구독 + 현재가 테이블 출력만.
-
+        ★ v6.5: 선물/일반 두 패널 모두 연결됨.
         [수정③] _fetch() 호출 없음 → 옵션 테이블 재조회 없음.
         선물(SPX 장외) 더블클릭과 달리 1클릭은 현재가만 갱신한다.
         """
@@ -1151,53 +1150,145 @@ class CoreFetchMixin(CoreFetchPosMixin):
     # ── 관심종목 파일 경로 ──────────────────────────────────────
     _WATCH_FILE = "watchlist.json"
 
+    # 선물 심볼 판별 접두사 — /ES /NQ /CL 등
+    _FUT_PREFIXES = ("/", "ES", "NQ", "CL", "GC", "SI", "RTY", "YM")
+
+    @staticmethod
+    def _is_futures_sym(sym: str) -> bool:
+        """심볼이 선물 종목인지 판별."""
+        s = sym.strip().upper()
+        if s.startswith("/"):
+            return True
+        return s in {"ES", "NQ", "CL", "GC", "SI", "RTY", "YM",
+                     "MES", "MNQ", "MCL"}
+
+    def _active_watchlist(self):
+        """현재 포커스가 있는 (또는 기본) QListWidget 반환.
+        선물 패널(watchlist_fut) / 일반 패널(watchlist) 중 선택된 것."""
+        # 선물 패널이 있고 포커스가 거기 있으면 선물 패널 반환
+        fut = getattr(self, 'watchlist_fut', None)
+        if fut and fut.currentRow() >= 0:
+            return fut
+        return self.watchlist
+
     def _w_add(self):
+        """심볼 입력 후 선물/일반 자동 분류하여 해당 패널에 추가."""
         t, ok = QInputDialog.getText(self, "추가", "심볼:")
-        if ok and t.strip():
-            self.watchlist.addItem(t.strip().upper())
-            self._w_save()          # 추가 즉시 저장
+        if not ok or not t.strip():
+            return
+        sym = t.strip().upper()
+        fut = getattr(self, 'watchlist_fut', None)
+        if fut and self._is_futures_sym(sym):
+            fut.addItem(sym)
+        else:
+            self.watchlist.addItem(sym)
+        self._apply_watchlist_font()
+        self._w_save()
 
     def _w_del(self):
-        r = self.watchlist.currentRow()
+        """현재 선택된 패널에서 선택 항목 삭제."""
+        lst = self._active_watchlist()
+        r = lst.currentRow()
         if r >= 0:
-            self.watchlist.takeItem(r)
-            self._w_save()          # 삭제 즉시 저장
+            lst.takeItem(r)
+            self._w_save()
+
+    def _w_move_up(self):
+        """선택 항목을 한 칸 위로 이동."""
+        lst = self._active_watchlist()
+        r = lst.currentRow()
+        if r <= 0:
+            return
+        item = lst.takeItem(r)
+        lst.insertItem(r - 1, item)
+        lst.setCurrentRow(r - 1)
+        self._w_save()
+
+    def _w_move_down(self):
+        """선택 항목을 한 칸 아래로 이동."""
+        lst = self._active_watchlist()
+        r = lst.currentRow()
+        if r < 0 or r >= lst.count() - 1:
+            return
+        item = lst.takeItem(r)
+        lst.insertItem(r + 1, item)
+        lst.setCurrentRow(r + 1)
+        self._w_save()
 
     def _w_save(self):
-        """관심종목 전체를 SAVE_DIR/watchlist.json 에 저장."""
-        items = [self.watchlist.item(i).text()
-                 for i in range(self.watchlist.count())]
+        """관심종목 전체를 SAVE_DIR/watchlist.json 에 저장.
+        ★ v6.5: 선물/일반 분리 구조 {"futures": [...], "stocks": [...]}
+        구버전 단순 리스트와도 호환.
+        """
+        stocks = [self.watchlist.item(i).text()
+                  for i in range(self.watchlist.count())]
+        fut_lst = getattr(self, 'watchlist_fut', None)
+        futures = ([fut_lst.item(i).text() for i in range(fut_lst.count())]
+                   if fut_lst else [])
         try:
-            save_json(self._WATCH_FILE, items)
+            save_json(self._WATCH_FILE, {"futures": futures, "stocks": stocks})
         except Exception as e:
             self._log(f"[watchlist] 저장 실패: {e}")
 
     def _w_load(self):
-        """watchlist.json 을 읽어 관심종목 리스트를 복원."""
-        items = load_json(self._WATCH_FILE, [])
-        if not items:
+        """watchlist.json 읽어 관심종목 복원.
+        ★ v6.5: 새 구조(dict) + 구버전(list) 모두 호환.
+        """
+        raw = load_json(self._WATCH_FILE, [])
+        if not raw:
             return
+
+        # 구버전 단순 리스트 → 자동 분류
+        if isinstance(raw, list):
+            futures = [s for s in raw if self._is_futures_sym(s)]
+            stocks  = [s for s in raw if not self._is_futures_sym(s)]
+        else:
+            futures = raw.get("futures", [])
+            stocks  = raw.get("stocks", [])
+
+        fut_lst = getattr(self, 'watchlist_fut', None)
+
         self.watchlist.blockSignals(True)
         self.watchlist.clear()
-        for sym in items:
+        for sym in stocks:
             self.watchlist.addItem(sym)
-        self._apply_watchlist_font()    # 복원 후 폰트 적용
         self.watchlist.blockSignals(False)
+
+        if fut_lst:
+            fut_lst.blockSignals(True)
+            fut_lst.clear()
+            for sym in futures:
+                fut_lst.addItem(sym)
+            fut_lst.blockSignals(False)
+        else:
+            # 선물 패널 없으면 일반 패널에 같이 표시
+            self.watchlist.blockSignals(True)
+            for sym in futures:
+                self.watchlist.addItem(sym)
+            self.watchlist.blockSignals(False)
+
+        self._apply_watchlist_font()
 
     def _apply_watchlist_font(self):
         """관심종목 QListWidget 폰트 +3, 굵은 글씨 적용."""
         from PyQt5.QtGui import QFont
-        f = self.watchlist.font()
-        # 이미 적용된 경우 중복 증가 방지
-        if not getattr(self, '_watch_font_applied', False):
-            f.setPointSize(f.pointSize() + 3)
-            self._watch_font_applied = True
-        f.setBold(True)
-        self.watchlist.setFont(f)
-        for i in range(self.watchlist.count()):
-            item = self.watchlist.item(i)
-            if item:
-                item.setFont(f)
+        targets = [self.watchlist]
+        fut_lst = getattr(self, 'watchlist_fut', None)
+        if fut_lst:
+            targets.append(fut_lst)
+
+        for lst in targets:
+            f = lst.font()
+            if not getattr(self, '_watch_font_applied', False):
+                f.setPointSize(f.pointSize() + 3)
+            f.setBold(True)
+            lst.setFont(f)
+            for i in range(lst.count()):
+                item = lst.item(i)
+                if item:
+                    item.setFont(f)
+
+        self._watch_font_applied = True
 
 # ──────────────────────────────────────────────────────────────
 # _DummyLabel — _poll_hist lbl 인자용 더미 (CoreFetchMixin 외부)

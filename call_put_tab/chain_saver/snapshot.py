@@ -1,7 +1,12 @@
 """
-chain_saver/snapshot.py — OTM/ITM + 내일 만기 스냅샷 요청
+chain_saver/snapshot.py — OTM/ITM + D+1 + D+2 만기 스냅샷 요청
 ════════════════════════════════════════════════════════
 scheduler.py 에서 분리. reqMktData 요청 로직만 담당.
+
+★ v6.7: D+1/D+2 를 snapshot=True (1회성) 로 변경
+  - snapshot=True 는 IBKR 100개 ticker 한도에 포함되지 않음
+  - D+1: 1분 주기 재요청, D+2: 2분 주기 재요청
+  - 당일 OTM/ITM(SNAP)만 스트리밍(snapshot=False) 유지
 """
 from __future__ import annotations
 import logging
@@ -14,21 +19,30 @@ log = logging.getLogger(__name__)
 
 # ── reqId 블록 정의 ──────────────────────────────────────────
 from core import REQ_CALL, REQ_PUT
-SNAP_C_START = REQ_CALL + 20   # 1020  오늘 OTM/ITM 콜
-SNAP_P_START = REQ_PUT  + 20   # 2020  오늘 OTM/ITM 풋
-SNAP_SLOTS   = 30
+SNAP_C_START  = REQ_CALL + 20   # 1020  당일 OTM/ITM 콜 (스트리밍)
+SNAP_P_START  = REQ_PUT  + 20   # 2020  당일 OTM/ITM 풋 (스트리밍)
+SNAP_SLOTS    = 14
 
-NEXT_C_START = 4400            # 내일 만기 콜
-NEXT_P_START = 4600            # 내일 만기 풋
-NEXT_SLOTS   = 50
+NEXT_C_START  = 4400            # D+1 만기 콜 (snapshot=True, 1분 주기)
+NEXT_P_START  = 4600            # D+1 만기 풋 (snapshot=True, 1분 주기)
+NEXT_SLOTS    = 12
+
+NEXT2_C_START = 4800            # D+2 만기 콜 (snapshot=True, 2분 주기)
+NEXT2_P_START = 5000            # D+2 만기 풋 (snapshot=True, 2분 주기)
+NEXT2_SLOTS   = 12
+
+# ── ticker 한도 계산 ─────────────────────────────────────────
+# 스트리밍: REQ_UND(1) + 화면콜풋(최대40) + SNAP콜풋(14x2=28) = 69개
+# D+1/D+2 는 snapshot=True -> IBKR 100개 한도 미포함
 
 
 def request_otm(ib, sym: str, expiry: str, tag: str,
                 und: float, n_atm: int,
                 snap_map: Dict[int, Tuple]) -> None:
     """
-    ATM 바깥 OTM/ITM 스냅샷 요청.
-    snap_map 에 reqId → (expiry, strike, side) 기록.
+    당일 ATM 바깥 OTM/ITM 스트리밍 구독.
+    snap_map 에 reqId -> (expiry, strike, side) 기록.
+    snapshot=False 지속 수신 (ticker 한도 포함)
     """
     _, _, _, step = SYMBOL_CFG.get(
         sym if sym != "SPXW" else "SPX", DEFAULT_CFG)
@@ -37,8 +51,7 @@ def request_otm(ib, sym: str, expiry: str, tag: str,
     calls = [atm + (n_atm + i) * step for i in range(1, SNAP_SLOTS // 2 + 1)]
     puts  = [atm - (n_atm + i) * step for i in range(1, SNAP_SLOTS // 2 + 1)]
 
-    # ★ 재요청 전 기존 구독 먼저 취소 — 미취소 시 ERR 322 Duplicate ticker id 발생
-    cancel_map(ib, snap_map)   # cancelMktData + snap_map.clear() 포함
+    cancel_map(ib, snap_map)
 
     rid_c, rid_p = SNAP_C_START, SNAP_P_START
 
@@ -58,48 +71,80 @@ def request_otm(ib, sym: str, expiry: str, tag: str,
 def request_next(ib, sym: str, und: float,
                  next_map: Dict[int, Tuple]) -> Optional[str]:
     """
-    내일 만기 스냅샷 요청. next_map 에 reqId → (expiry, strike, side) 기록.
+    D+1 만기 1회성 스냅샷 요청 (1분 주기 재호출).
+    snapshot=True -> IBKR ticker 한도 미포함.
     반환값: 요청한 만기일 (없으면 None)
     """
-    nxt = _next_trading_day()
+    nxt = _next_trading_day(days=1)
     if not nxt:
         return None
 
     _, _, _, step = SYMBOL_CFG.get(
         sym if sym != "SPXW" else "SPX", DEFAULT_CFG)
     atm     = round(und / step) * step
-    strikes = [atm + i * step for i in range(-10, 11)]
+    strikes = [atm + i * step for i in range(-6, 7)]
 
-    # ★ SPX/SPXW 는 만기일에 따라 tradingClass(tag) 가 달라짐
-    #   tag="" 로 요청하면 IBKR 이 계약을 찾지 못해 틱이 오지 않아 저장 0건 버그
-    #   → _resolve_spx_trading_class() 로 정확한 tag 계산 후 전달
     from core import _resolve_spx_trading_class
-    if sym in ("SPX", "SPXW"):
-        tag = _resolve_spx_trading_class(sym, nxt, "")
-    else:
-        tag = ""
+    tag = _resolve_spx_trading_class(sym, nxt, "") if sym in ("SPX", "SPXW") else ""
 
-    # ★ 재요청 전 기존 구독 먼저 취소 — 미취소 시 ERR 322 Duplicate ticker id 발생
-    cancel_map(ib, next_map)   # cancelMktData + next_map.clear() 포함
+    # snapshot=True 는 수신 완료 후 자동 해제 -> cancel 불필요, map만 초기화
+    next_map.clear()
 
     rid_c, rid_p = NEXT_C_START, NEXT_P_START
-
     for st in strikes:
         if rid_c < NEXT_C_START + NEXT_SLOTS:
             next_map[rid_c] = (nxt, st, "C")
-            _req_stream(ib, rid_c, make_opt_contract(sym, st, "C", nxt, tag))
+            _req_snapshot(ib, rid_c, make_opt_contract(sym, st, "C", nxt, tag))
             rid_c += 1
         if rid_p < NEXT_P_START + NEXT_SLOTS:
             next_map[rid_p] = (nxt, st, "P")
-            _req_stream(ib, rid_p, make_opt_contract(sym, st, "P", nxt, tag))
+            _req_snapshot(ib, rid_p, make_opt_contract(sym, st, "P", nxt, tag))
             rid_p += 1
 
-    log.info("[Snapshot] request_next: %s 만기=%s tag=%s strikes=%d개",
+    log.info("[Snapshot] D+1 요청: %s 만기=%s tag=%s strikes=%d개",
              sym, nxt, tag, len(strikes))
     return nxt
 
 
+def request_next2(ib, sym: str, und: float,
+                  next2_map: Dict[int, Tuple]) -> Optional[str]:
+    """
+    D+2 만기 1회성 스냅샷 요청 (2분 주기 재호출).
+    snapshot=True -> IBKR ticker 한도 미포함.
+    반환값: 요청한 만기일 (없으면 None)
+    """
+    nxt2 = _next_trading_day(days=2)
+    if not nxt2:
+        return None
+
+    _, _, _, step = SYMBOL_CFG.get(
+        sym if sym != "SPXW" else "SPX", DEFAULT_CFG)
+    atm     = round(und / step) * step
+    strikes = [atm + i * step for i in range(-6, 7)]
+
+    from core import _resolve_spx_trading_class
+    tag = _resolve_spx_trading_class(sym, nxt2, "") if sym in ("SPX", "SPXW") else ""
+
+    next2_map.clear()
+
+    rid_c, rid_p = NEXT2_C_START, NEXT2_P_START
+    for st in strikes:
+        if rid_c < NEXT2_C_START + NEXT2_SLOTS:
+            next2_map[rid_c] = (nxt2, st, "C")
+            _req_snapshot(ib, rid_c, make_opt_contract(sym, st, "C", nxt2, tag))
+            rid_c += 1
+        if rid_p < NEXT2_P_START + NEXT2_SLOTS:
+            next2_map[rid_p] = (nxt2, st, "P")
+            _req_snapshot(ib, rid_p, make_opt_contract(sym, st, "P", nxt2, tag))
+            rid_p += 1
+
+    log.info("[Snapshot] D+2 요청: %s 만기=%s tag=%s strikes=%d개",
+             sym, nxt2, tag, len(strikes))
+    return nxt2
+
+
 def cancel_map(ib, req_map: Dict[int, Tuple]) -> None:
+    """스트리밍 구독 취소 + map 초기화. snapshot=True 요청엔 불필요."""
     for rid in req_map:
         try: ib.cancelMktData(rid)
         except: pass
@@ -108,31 +153,32 @@ def cancel_map(ib, req_map: Dict[int, Tuple]) -> None:
 
 # ── 내부 헬퍼 ────────────────────────────────────────────────
 def _req_stream(ib, rid: int, contract) -> None:
-    """
-    스트림 모드 reqMktData.
-    - snapshot=False : 지속 수신 (True 이면 1회 후 자동취소 → 그릭스 드롭)
-    - genericTickList="106" : IV 명시 요청.
-      그릭스(delta/gamma/vega/theta)는 OPT 기본 틱에 자동 포함되므로
-      107은 별도 지정 불필요 (지정 시 ERR 321).
-    cancel 은 cancel_map() / scheduler._cancel_next() 에서 명시 처리.
-    """
+    """스트리밍 모드 (snapshot=False). 당일 OTM/ITM 전용. ticker 한도 포함."""
     try:
         ib.reqMktData(rid, contract, "106", False, False, [])
     except Exception as e:
-        log.warning("[Snapshot] reqMktData rid=%d: %s", rid, e)
+        log.warning("[Snapshot] stream rid=%d: %s", rid, e)
+
+
+def _req_snapshot(ib, rid: int, contract) -> None:
+    """
+    1회성 스냅샷 (snapshot=True). D+1/D+2 전용.
+    ticker 한도 미포함. 수신 완료 후 IBKR이 자동 해제.
+    """
+    try:
+        ib.reqMktData(rid, contract, "106", True, False, [])
+    except Exception as e:
+        log.warning("[Snapshot] snapshot rid=%d: %s", rid, e)
 
 
 def _today_et() -> date:
     """pytz 없이 미국 동부시간(ET) 기준 오늘 날짜 반환."""
     from datetime import datetime, timezone, timedelta as _td
-    from datetime import date as _date
     now_utc = datetime.now(timezone.utc)
     y = now_utc.year
-    # 3월 둘째 일요일 (DST 시작, 07:00 UTC = 02:00 ET)
     mar1 = datetime(y, 3, 1, tzinfo=timezone.utc)
     dst_start = mar1 + _td(days=(6 - mar1.weekday()) % 7 + 7)
     dst_start = dst_start.replace(hour=7)
-    # 11월 첫째 일요일 (DST 종료, 06:00 UTC = 02:00 ET)
     nov1 = datetime(y, 11, 1, tzinfo=timezone.utc)
     dst_end = nov1 + _td(days=(6 - nov1.weekday()) % 7)
     dst_end = dst_end.replace(hour=6)
@@ -140,8 +186,12 @@ def _today_et() -> date:
     return (now_utc + offset).date()
 
 
-def _next_trading_day() -> Optional[str]:
-    nxt = _today_et() + timedelta(days=1)   # ★ ET 기준 오늘 날짜
-    while nxt.weekday() >= 5:
+def _next_trading_day(days: int = 1) -> Optional[str]:
+    """ET 기준 오늘로부터 days 번째 거래일 반환."""
+    nxt = _today_et()
+    count = 0
+    while count < days:
         nxt += timedelta(days=1)
+        if nxt.weekday() < 5:
+            count += 1
     return nxt.strftime("%Y%m%d")

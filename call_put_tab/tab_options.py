@@ -115,6 +115,7 @@ class CallPutGrid(
 
         self._build()
         self._connect_signals()
+        self._load_watch_rules_from_file()
 
     # ── Splitter style ────────────────────────────────────────
     def _spl_style(self) -> str:
@@ -219,7 +220,9 @@ class CallPutGrid(
 
     # ── Watchlist sidebar ─────────────────────────────────────
     def _build_watchlist_panel(self) -> QWidget:
-        """관심종목(상단) + 기초자산(하단) 수직 QSplitter 컨테이너."""
+        """관심종목(상단) + 기초자산(하단) 수직 QSplitter 컨테이너.
+        ★ v6.5: 단일 리스트 유지 + ▲▼ 순서 이동 버튼 추가
+        """
 
         _gb_ss = (
             "QGroupBox{font-size:11px;color:#5dade2;font-weight:bold;"
@@ -243,14 +246,21 @@ class CallPutGrid(
         # ── 저장된 관심종목 복원 (없으면 기본 목록 사용) ────────
         from core import load_json
         _saved = load_json("watchlist.json", [])
-        _default = ["SPX","NDX","RUT","VIX","SPY","QQQ",
-                    "AAPL","NVDA","TSLA","AMZN","META","MSFT"]
-        for sym in (_saved if _saved else _default):
-            # watchlist.json이 {"symbol": "SPX"} 형태의 딕셔너리일 때 대응
-            if isinstance(sym, dict):
-                self.watchlist.addItem(sym.get("symbol", ""))
+        _default = ["SPX", "NDX", "RUT", "VIX", "SPY", "QQQ",
+                    "AAPL", "NVDA", "TSLA", "AMZN", "META", "MSFT"]
+        _items = []
+        if _saved:
+            if isinstance(_saved, dict):
+                # v6.5 구조 {"futures":[], "stocks":[]} → 합쳐서 표시
+                _items = _saved.get("futures", []) + _saved.get("stocks", [])
             else:
-                self.watchlist.addItem(sym)
+                _items = _saved
+        else:
+            _items = _default
+
+        for sym in _items:
+            sym = sym.get("symbol", "") if isinstance(sym, dict) else sym
+            if sym: self.watchlist.addItem(sym)
 
         # ── 폰트 +3, 굵은 글씨 ──────────────────────────────────
         from PyQt5.QtGui import QFont as _QFont
@@ -258,22 +268,27 @@ class CallPutGrid(
         _wf.setPointSize(_wf.pointSize() + 3)
         _wf.setBold(True)
         self.watchlist.setFont(_wf)
-        self._watch_font_applied = True   # core_fetch._apply_watchlist_font 중복 방지
+        self._watch_font_applied = True
 
         self.watchlist.itemClicked.connect(self._on_watch_single_click)
         self.watchlist.itemDoubleClicked.connect(self._on_watch_dbl)
         v.addWidget(self.watchlist, 1)
 
-        btn_row = QHBoxLayout(); btn_row.setSpacing(3)
+        # ── 버튼 행: ＋ ／ － ／ ▲ ／ ▼ ──────────────────────
+        btn_row = QHBoxLayout(); btn_row.setSpacing(2)
         for lbl, slot, bg, fg in [
-            ("＋ 추가", self._w_add, "#1a3a1a", "#00ff88"),
-            ("－ 삭제", self._w_del, "#3a1a1a", "#ff6666"),
+            ("＋", self._w_add,       "#1a3a1a", "#00ff88"),
+            ("－", self._w_del,       "#3a1a1a", "#ff6666"),
+            ("▲",  self._w_move_up,   "#12122a", "#90caf9"),
+            ("▼",  self._w_move_down, "#12122a", "#90caf9"),
         ]:
-            b = QPushButton(lbl); b.setFixedHeight(24)
+            b = QPushButton(lbl); b.setFixedHeight(24); b.setFixedWidth(30)
             b.setStyleSheet(
-                f"background:{bg};color:{fg};font-size:11px;"
-                "font-weight:bold;border-radius:3px;")
+                f"QPushButton{{background:{bg};color:{fg};font-size:12px;"
+                f"font-weight:bold;border:1px solid #2a2a5a;border-radius:3px;}}"
+                f"QPushButton:hover{{background:#1c1c3a;color:#fff;}}")
             b.clicked.connect(slot); btn_row.addWidget(b)
+        btn_row.addStretch()
         v.addLayout(btn_row)
 
         # ── 하단: 기초자산 패널 ───────────────────────────────
