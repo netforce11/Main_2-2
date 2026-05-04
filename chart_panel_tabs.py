@@ -77,12 +77,20 @@ def _build_intraday_tab(host):
     btn_1d = QPushButton("1일"); btn_1d.setFixedHeight(22); btn_1d.setFixedWidth(30)
     btn_2d = QPushButton("2일"); btn_2d.setFixedHeight(22); btn_2d.setFixedWidth(30)
     btn_3d = QPushButton("3일"); btn_3d.setFixedHeight(22); btn_3d.setFixedWidth(30)
+    # [5일] 5분봉 고정 조회 — 1W duration, tf_override=5
+    btn_5d = QPushButton("5일"); btn_5d.setFixedHeight(22); btn_5d.setFixedWidth(30)
     for b in (btn_1d, btn_2d, btn_3d):
         b.setStyleSheet(_BTN_STYLE)
+    btn_5d.setStyleSheet(
+        "QPushButton{background:#1a2a1a;color:#80ff80;font-size:11px;"
+        "border:1px solid #2a5a2a;border-radius:3px;}"
+        "QPushButton:hover{background:#2a4a2a;}")
     # [수정④] N일 명시 조회 — _fetch_intraday_ndays(N) 사용
     btn_1d.clicked.connect(lambda: (host.spin_intra_bars.setValue(390),  host._fetch_intraday_ndays(1)))
     btn_2d.clicked.connect(lambda: (host.spin_intra_bars.setValue(780),  host._fetch_intraday_ndays(2)))
     btn_3d.clicked.connect(lambda: (host.spin_intra_bars.setValue(1170), host._fetch_intraday_ndays(3)))
+    # 5일: 5분봉 기준 5일 = 390봉, duration="1 W", tf 강제 5분
+    btn_5d.clicked.connect(lambda: (host.spin_intra_bars.setValue(390),  host._fetch_intraday_ndays(5, tf_override=5)))
 
     host.chk_intra_ext = QCheckBox("시간외")
     host.chk_intra_ext.setStyleSheet("color:#90caf9;font-size:11px;")
@@ -167,7 +175,7 @@ def _build_intraday_tab(host):
 
     for w in (_lbl("봉:"), host.combo_intra_tf,
               _lbl("개수:"), host.spin_intra_bars,
-              btn_1d, btn_2d, btn_3d,
+              btn_1d, btn_2d, btn_3d, btn_5d,
               host.chk_intra_ext,
               host.chk_live,
               host.combo_intra_chart_mode, btn_intra,

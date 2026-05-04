@@ -167,6 +167,16 @@ class LeftPanelMixin:
         from combo_ui_left_chain import _make_dist_item, _bulk_fetch_conids
         sym       = cp.edit_sym.text().strip().upper()
         und_price = cp.und_price
+
+        # ★ FIX: 왼쪽 패널 종목 입력 필드를 콜-풋 탭 종목과 동기화
+        #        (XSP 등 종목 변경 시 edit_sym_combo가 갱신되지 않던 버그 수정)
+        if hasattr(self, 'edit_sym_combo'):
+            current_sym = self.edit_sym_combo.text().strip().upper()
+            if current_sym != sym:
+                self.edit_sym_combo.setText(sym)
+                if not silent:
+                    self._log(f"🔄 왼쪽 패널 종목 동기화: {current_sym} → {sym}")
+
         self.lbl_chain_sym.setText(
             f"종목: {sym}  |  현재가: {und_price:,.2f}" if und_price else f"종목: {sym}")
         if und_price:

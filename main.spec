@@ -1,0 +1,55 @@
+# -*- mode: python ; coding: utf-8 -*-
+
+
+a = Analysis(
+    ['main.py'],
+    pathex=[],
+    binaries=[],
+    datas=[
+        ('Account_info', 'Account_info'),
+        ('backup', 'backup'),
+        ('call_put_tab', 'call_put_tab'),
+        ('combo_libs', 'combo_libs'),
+        ('data', 'data'),
+        ('Greeks', 'Greeks'),
+        ('korea_chart_tab', 'korea_chart_tab'),
+        ('Main3_Web_Version', 'Main3_Web_Version'),
+        ('pandas-ta', 'pandas-ta'),
+        ('Scanner', 'Scanner'),
+        ('spread_tele', 'spread_tele'),
+        ('strategy_report', 'strategy_report'),
+        ('tab_chart_libs', 'tab_chart_libs'),
+        ('telegram_bot', 'telegram_bot'),
+        ('trade_log', 'trade_log'),
+        ('watch_dog', 'watch_dog'),
+    ],
+    hiddenimports=['core'],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='main',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)

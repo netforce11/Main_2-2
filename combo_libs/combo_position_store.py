@@ -46,7 +46,8 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-_STORE_FILE  = Path("data/synthetic_positions.json")
+# 실행 디렉토리와 무관하게 항상 이 파일 기준 상위/data 폴더에 저장
+_STORE_FILE  = Path(__file__).resolve().parent / "data" / "synthetic_positions.json"
 _MAX_AGE_DAYS = 7
 
 
@@ -184,6 +185,8 @@ def restore_on_reconnect(self) -> None:
             "entry":    entry,
             "current":  entry,
             "side":     side,
+            "right":    cp,       # 매칭용: 'C' or 'P'
+            "strike":   strike,   # 매칭용: float
             "legs":     [],
             "status":   "체결완료",
         })
@@ -246,23 +249,60 @@ def _merge(ib_buf: list, saved_by_oid: dict, self) -> list:
 
     매칭 방법:
       파일의 legs 배열에 있는 strike/cp 조합이
-      ib_buf con_id/strategy 에 모두 포함되면 같은 전략으로 판단.
+      ib_buf의 strategy/right/strike 에 모두 포함되면 같은 전략으로 판단.
+
+    IB localSymbol 형식 예: "SPXW  260502C05500000"
+      → right='C', strike=5500 으로 파싱.
 
     반환:
       - 매칭된 전략: 파일 전략명/legs + 서버 qty/entry 로 병합한 dict
       - 매칭 안 된 IB 레그: 서버 데이터 그대로
       - 매칭 안 된 파일 전략: 서버 없이 파일만으로 표시
-        (프로그램 꺼진 사이 청산된 포지션일 수 있으므로 표시는 하되 qty=0 표기)
     """
     result       = []
     used_ib_idxs = set()
+
+    def _ib_sig(ib_pos: dict) -> str:
+        """
+        IB 포지션 dict에서 'C5500' 형태의 식별 문자열 추출.
+
+        strategy 문자열 예:
+          "SPX C5500 ×1"        → parts[1] = "C5500"  (정상 케이스)
+          "SPXW  260502C05500000 ×1" → 파싱 실패 가능
+
+        IB reqPositions의 localSymbol 은 contract 객체에서 직접 오므로
+        strategy 문자열 외에 right/strike 필드도 함께 저장된 경우 활용.
+        """
+        # 직접 right/strike 필드가 있으면 우선 사용 (가장 신뢰성 높음)
+        right  = ib_pos.get("right", "")
+        strike = ib_pos.get("strike", 0)
+        if right and strike:
+            return f"{right.upper()}{int(float(strike))}"
+
+        # strategy 문자열에서 파싱 시도
+        strat_str = ib_pos.get("strategy", "")
+        parts = strat_str.split()
+        for part in parts:
+            # "C5500", "P5400" 패턴 직접 탐색
+            if len(part) >= 2 and part[0] in ("C", "P") and part[1:].isdigit():
+                return part
+            # "SPXW  260502C05500000" 형태: 대문자+숫자 중 C/P 위치 탐색
+            for j, ch in enumerate(part):
+                if ch in ("C", "P") and j > 0 and part[j+1:].replace("0","").isdigit():
+                    try:
+                        strike_raw = int(part[j+1:])
+                        # IB는 strike를 1000배로 인코딩 (5500000 → 5500)
+                        strike_val = strike_raw // 1000 if strike_raw > 99999 else strike_raw
+                        return f"{ch}{strike_val}"
+                    except (ValueError, IndexError):
+                        pass
+        return ""
 
     # ── 파일 전략 → IB 레그와 매칭 ──────────────────────────
     for oid, saved in saved_by_oid.items():
         legs = saved.get("legs", [])
 
         if not legs:
-            # legs 없는 파일 항목 → 그냥 표시
             result.append(dict(saved))
             continue
 
@@ -275,18 +315,12 @@ def _merge(ib_buf: list, saved_by_oid: dict, self) -> list:
         # IB 버퍼에서 같은 레그 집합을 가진 항목들 찾기
         matched_idxs = []
         for i, ib_pos in enumerate(ib_buf):
-            ib_sig = ""
-            strat_str = ib_pos.get("strategy", "")
-            # strategy 문자열에서 CP + strike 추출 (예: "SPX C5500 ×1")
-            parts = strat_str.split()
-            if len(parts) >= 2:
-                ib_sig = parts[1].split("×")[0].strip()  # "C5500"
-            if ib_sig in leg_sigs:
+            sig = _ib_sig(ib_pos)
+            if sig and sig in leg_sigs:
                 matched_idxs.append(i)
 
         if len(matched_idxs) == len(legs):
             # 완전 매칭: 파일 전략명/legs + 서버 진입가 병합
-            # 진입가는 매칭된 IB 레그들의 평균 (가중 평균)
             total_entry = sum(ib_buf[i]["entry"] * ib_buf[i]["qty"]
                               for i in matched_idxs)
             total_qty   = sum(ib_buf[i]["qty"] for i in matched_idxs)
@@ -300,7 +334,7 @@ def _merge(ib_buf: list, saved_by_oid: dict, self) -> list:
             for i in matched_idxs:
                 used_ib_idxs.add(i)
         else:
-            # 부분 매칭 or 미매칭 → 파일 데이터만 표시 (청산됐을 수도 있음)
+            # 부분 매칭 or 미매칭 → 파일 데이터만 표시
             pos = dict(saved)
             pos["strategy"] = f"[미확인] {saved.get('strategy','')}"
             result.append(pos)

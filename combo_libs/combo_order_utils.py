@@ -205,38 +205,43 @@ def _calc_required_margin(legs: list) -> float:
         net_prem = buy_prem_total - sell_prem_total   # 양수 = 데빗, 음수 = 크레딧
 
         if buy_qty >= sell_qty:
-            if net_prem > 0:
-                # ★ 데빗 스프레드 / 데빗 백 스프레드
-                #   최대손실 = 낸 프리미엄 합계 (크레딧 수취분 차감)
-                covered_qty = min(buy_qty, sell_qty)
-                # 행사가 차이 상한과 프리미엄 중 작은 값 (보수적 계산)
+            # ── 백 스프레드 판별: BUY qty > SELL qty ──────────────
+            is_back_spread = (buy_qty > sell_qty)
+
+            if is_back_spread:
+                # ★ 백 스프레드 증거금 (v2.9 수정)
+                #   실제 최대손실 = (행사가 차이) × SELL qty × 100 - 수취 크레딧
+                #   초과 BUY는 헤지 역할 → 증거금에 더하지 않음 (기존 과대계산 수정)
+                if buy_legs and sell_legs:
+                    sell_strike  = sell_legs[0]["strike"]
+                    buy_strike   = buy_legs[0]["strike"]
+                    strike_diff  = abs(sell_strike - buy_strike) * sell_qty * 100
+                    # 크레딧 수취분만큼 최대손실 감소
+                    credit_received = sell_prem_total * 100
+                    max_loss_est = max(strike_diff - credit_received, 0.0)
+                    total += max_loss_est
+                else:
+                    total += abs(net_prem) * 100
+
+            elif net_prem > 0:
+                # ★ 일반 데빗 스프레드 (BUY qty == SELL qty, 데빗)
+                #   최대손실 = 낸 프리미엄 (행사가 차이 상한)
+                covered_qty = sell_qty
                 if buy_legs and sell_legs:
                     sell_strike = sell_legs[0]["strike"]
                     buy_strike  = buy_legs[0]["strike"]
                     strike_diff = abs(sell_strike - buy_strike) * covered_qty * 100
                     prem_based  = net_prem * 100
-                    # 데빗 스프레드: 최대손실은 낸 프리미엄 (행사가 차이보다 클 수 없음)
                     total += min(prem_based, strike_diff) if strike_diff > 0 else prem_based
                 else:
                     total += net_prem * 100
 
-                # 초과 BUY (백 스프레드 추가분)
-                excess = buy_qty - sell_qty
-                if excess > 0:
-                    avg_buy_prem = buy_prem_total / buy_qty if buy_qty else 0.0
-                    total += avg_buy_prem * excess * 100
             else:
-                # 크레딧 수취 후 BUY qty >= SELL qty (크레딧 백 스프레드)
+                # 크레딧 수취 동수 스프레드 (BUY qty == SELL qty, 크레딧)
                 sell_strike = sell_legs[0]["strike"]
                 buy_strike  = buy_legs[0]["strike"] if buy_legs else sell_strike
                 spread      = abs(sell_strike - buy_strike)
-                covered_qty = min(sell_qty, buy_qty)
-                total      += spread * covered_qty * 100
-
-                excess = buy_qty - sell_qty
-                if excess > 0:
-                    avg_buy_prem = buy_prem_total / buy_qty if buy_qty else 0.0
-                    total += avg_buy_prem * excess * 100
+                total      += spread * sell_qty * 100
 
         else:
             # ── 크레딧 스프레드 / 레이쇼 / 네이키드 포함 ──────────

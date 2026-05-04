@@ -25,7 +25,8 @@ def log_exec(
     right:      str   = "",
     strike:     float = 0.0,
     commission: float = 0.0,
-    und_ctx:    dict  = None,   # price_buffer.get_context() 결과
+    strategy:   str   = "",   # ★ NEW: 전략명 (콜스프레드 / 풋스프레드 등)
+    und_ctx:    dict  = None,
 ) -> None:
     """체결 1건 → executions INSERT."""
     ts, date = _et_now()
@@ -35,12 +36,12 @@ def log_exec(
         conn.execute("""
             INSERT INTO executions
               (ts, date, oid, source, sym, expiry, right, strike,
-               action, qty, price, commission,
+               action, strategy, qty, price, commission,
                und_price, und_5m, und_10m, chg_5m, chg_10m)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (ts, date, oid, source, sym, expiry, right,
               int(strike) if strike else 0,
-              action, qty, price, commission,
+              action, strategy or None, qty, price, commission,
               ctx.get("und_price"), ctx.get("und_5m"), ctx.get("und_10m"),
               ctx.get("chg_5m"),    ctx.get("chg_10m")))
         conn.commit()
@@ -82,11 +83,14 @@ def log_order(
 
 
 def log_commission(oid: int, commission: float) -> None:
-    """CommissionReport 콜백 → executions 수수료 갱신."""
+    """
+    CommissionReport 콜백 → executions 수수료 갱신.
+    자동 계산값($1×qty) 포함 모든 기존 값을 실제 수수료로 덮어씀.
+    """
     try:
         conn = get_conn()
         conn.execute(
-            "UPDATE executions SET commission=? WHERE oid=? AND commission=0",
+            "UPDATE executions SET commission=? WHERE oid=?",
             (commission, oid))
         conn.commit()
         conn.close()

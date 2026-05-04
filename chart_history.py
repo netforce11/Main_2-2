@@ -268,11 +268,14 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
 
         QTimer.singleShot(300, _do_request)
 
-    def _fetch_intraday_ndays(self, n_days: int):
-        """[수정④] N거래일 분봉 명시 조회 — 1일/2일/3일 버튼에서 호출.
+    def _fetch_intraday_ndays(self, n_days: int, tf_override: int = None):
+        """[수정④] N거래일 분봉 명시 조회 — 1일/2일/3일/5일 버튼에서 호출.
 
         chk_live 강제 해제 후 durationStr을 n_days에 맞게 고정하여 요청.
         장 시작 직후에도 전날 봉이 이어서 출력된다.
+
+        tf_override: 콤보박스 무시하고 강제 타임프레임(분) 지정.
+                     5일 버튼 → tf_override=5 로 호출해 5분봉 강제.
         """
         if not getattr(self, 'mw', None) or not self.mw.connected:
             if hasattr(self, 'lbl_intra_status'):
@@ -288,12 +291,24 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
 
         sym = self._get_chart_sym()
         tf_map   = {"1분": 1, "5분": 5, "15분": 15, "30분": 30, "60분": 60}
-        tf       = tf_map.get(self.combo_intra_tf.currentText(), 1)
+        tf       = tf_override if tf_override is not None else tf_map.get(self.combo_intra_tf.currentText(), 1)
+
+        # 5일 조회 시 콤보박스를 5분봉으로 동기화 (UI 상태 일치)
+        if tf_override is not None and hasattr(self, 'combo_intra_tf'):
+            tf_reverse = {1: "1분", 5: "5분", 15: "15분", 30: "30분", 60: "60분"}
+            label = tf_reverse.get(tf_override)
+            if label:
+                idx = self.combo_intra_tf.findText(label)
+                if idx >= 0:
+                    self.combo_intra_tf.blockSignals(True)
+                    self.combo_intra_tf.setCurrentIndex(idx)
+                    self.combo_intra_tf.blockSignals(False)
+
         max_bars = self.spin_intra_bars.value() if hasattr(self, 'spin_intra_bars') else 399
         bar_size = ("1 min" if tf == 1 else
                     f"{tf} mins" if tf < 60 else "1 hour")
 
-        dur_map = {1: "1 D", 2: "2 D", 3: "3 D"}
+        dur_map = {1: "1 D", 2: "2 D", 3: "3 D", 5: "1 W"}
         dur = dur_map.get(n_days, "2 D")
 
         self._intra_cache_sym     = sym

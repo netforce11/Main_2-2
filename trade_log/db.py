@@ -14,7 +14,17 @@ from pathlib import Path
 _DB_PATH = Path("data/trades.db")
 
 
-def get_conn() -> sqlite3.Connection:
+def _migrate_add_column(conn: sqlite3.Connection,
+                        table: str, column: str, col_type: str) -> None:
+    """기존 DB에 컬럼이 없으면 ALTER TABLE로 추가 (마이그레이션)."""
+    try:
+        cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+        if column not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+            conn.commit()
+            print(f"[trade_log] DB 마이그레이션: {table}.{column} 컬럼 추가됨")
+    except Exception as e:
+        print(f"[trade_log] 마이그레이션 오류: {e}")
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -34,7 +44,8 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         expiry       TEXT,
         right        TEXT,               -- C / P
         strike       REAL,
-        action       TEXT    NOT NULL,   -- BUY / SELL
+        action       TEXT    NOT NULL,   -- BUY / SELL (방향)
+        strategy     TEXT,               -- 전략명 (콜스프레드 / 풋스프레드 등) ★ NEW
         qty          REAL    NOT NULL,
         price        REAL    NOT NULL,
         commission   REAL    DEFAULT 0,
@@ -87,3 +98,5 @@ def _init_tables(conn: sqlite3.Connection) -> None:
     CREATE INDEX IF NOT EXISTS idx_trades_date  ON trades(open_date);
     """)
     conn.commit()
+    # ★ 기존 DB 마이그레이션: strategy 컬럼 없으면 추가
+    _migrate_add_column(conn, "executions", "strategy", "TEXT")

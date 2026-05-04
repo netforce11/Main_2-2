@@ -44,8 +44,18 @@ CHASE_MAX_ATTEMPTS = 3
 CHASE_MIN_TICK     = 0.05
 CHASE_TICK_HIGH    = 0.10
 
+# ★ XSP 등 $0.01 틱 종목 목록
+_PENNY_TICK_SYMBOLS = {"XSP"}
 
-def _get_tick_size(price: float) -> float:
+
+def _get_tick_size(price: float, symbol: str = "") -> float:
+    """
+    종목 우선으로 틱 사이즈 결정.
+      XSP 등 페니 틱 종목 → 무조건 $0.01
+      그 외 → 가격대 기준: $3.00 미만=$0.05 / $3.00 이상=$0.10
+    """
+    if symbol.upper() in _PENNY_TICK_SYMBOLS:
+        return 0.01
     return CHASE_TICK_HIGH if price >= 3.0 else CHASE_MIN_TICK
 
 
@@ -302,7 +312,10 @@ def _do_chase(self, reason: str = "") -> None:
 
 def _do_chase_with_price(self, mid: Optional[float], reason: str) -> None:
     """Mid price(또는 None)를 받아 실제 정정 주문 수행."""
-    tick = _get_tick_size(self._chaser_price)
+    # ★ FIX: _chaser_bag_contract.symbol에서 종목 읽기 (XSP=$0.01 / SPX=$0.05 분기)
+    _bag = getattr(self, '_chaser_bag_contract', None)
+    _sym = _bag.symbol if _bag is not None else ""
+    tick = _get_tick_size(self._chaser_price, _sym)
     if mid is not None and mid > 0:
         new_price = round(mid + tick, 2)
         self._log(f"   ↳ Mid=${mid:.2f} + 1틱(${tick}) = ${new_price:.2f}")

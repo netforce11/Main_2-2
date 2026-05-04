@@ -129,6 +129,10 @@ def _on_order_status(self, oid: int, status: str,
         _deactivate_chaser_safe(self, reason="체결 완료")
         # Fix #5: 완전 체결 후 current_oid 해제 → 뒤늦은 콜백 차단
         self._chaser_current_oid = None
+        # ★ known_oids 정리 (메모리 누수 방지, 체결 완료 후 30초 유예)
+        from PyQt5.QtCore import QTimer as _QT
+        _QT.singleShot(30_000, lambda: getattr(
+            self, '_exec_known_oids', set()).discard(oid))
 
     # ── 취소 확인 ────────────────────────────────────────────
     elif status in _STATUS_CANCELLED:
@@ -143,6 +147,8 @@ def _on_order_status(self, oid: int, status: str,
         self._bag_session = None
         # Fix #5: 취소 확인 후 current_oid 해제 → 뒤늦은 콜백 차단
         self._chaser_current_oid = None
+        # ★ known_oids 정리
+        getattr(self, '_exec_known_oids', set()).discard(oid)
         # [BUG-A 연동] _do_cancel_order의 중복 전송 방지 플래그 해제
         if getattr(self, '_cancel_sent_oid', None) == oid:
             self._cancel_sent_oid = None
@@ -171,17 +177,60 @@ def _on_exec_details(self, oid: int, sym: str,
     """
     TWS → execDetails 콜백.
     실제 체결가를 self._exec_avg_price 에 캐시.
+
+    ★ FIX 1: OID 필터를 _chaser_current_oid 외에 _exec_known_oids(집합)로 확장.
+      - BAG 주문은 레그별로 execDetails 콜백이 각각 옴.
+      - 두 번째 레그 콜백이 올 때 _chaser_current_oid가 이미 None이면
+        기존 코드는 필터링해서 저장 안 됨 → 수수료 누락.
+      - placeOrder 시점에 OID를 _exec_known_oids에 추가해두고 여기서 확인.
+
+    ★ FIX 2: 전략명(_pending_position['strategy'])을 log_exec에 전달.
+
+    ★ FIX 3: 수수료 = $1.00 × qty (레그별 각각 $1 → 2레그면 총 $2 자동).
     """
     my_oid = getattr(self, '_chaser_current_oid', None)
-    if my_oid is None or oid != my_oid:
+    known  = getattr(self, '_exec_known_oids', set())
+
+    # ★ FIX 1: current_oid 또는 known_oids 둘 중 하나라도 일치하면 처리
+    if oid != my_oid and oid not in known:
         return
 
-    self._log(f"💰 체결내역: OID={oid}  {side}  qty={qty:.0f}  price=${price:.2f}")
+    # 수수료: 레그별 $1.00 × qty (2레그면 이 함수가 2번 호출 → 합계 $2)
+    commission = round(float(qty) * 1.0, 2)
 
-    # avg price 캐시 (orderStatus Filled 콜백보다 먼저 올 수도 있음)
+    self._log(
+        f"💰 체결내역: OID={oid}  {side}  qty={qty:.0f}"
+        f"  price=${price:.2f}  수수료=${commission:.2f}")
+
+    # avg price 캐시
     cache = getattr(self, '_exec_avg_cache', {})
     cache[oid] = price
     self._exec_avg_cache = cache
+
+    # ★ FIX 2: 전략명 읽기 (_pending_position에서)
+    pending  = getattr(self, '_pending_position', None)
+    strategy = ""
+    if pending and pending.get('oid') == oid:
+        strategy = pending.get('strategy', "")
+
+    # DB 저장
+    try:
+        from trade_log import log_exec
+        from trade_log.price_buffer import get_context as _get_ctx
+        und_ctx = _get_ctx()
+    except Exception:
+        und_ctx = None
+    try:
+        from trade_log import log_exec
+        log_exec(
+            oid=oid, source='combo', sym=sym,
+            action=side, qty=qty, price=price,
+            commission=commission,
+            strategy=strategy,   # ★ FIX 2
+            und_ctx=und_ctx,
+        )
+    except Exception as _e:
+        pass
 
     # panel 진입가 즉시 갱신
     panel = getattr(self, 'synthetic_panel', None)

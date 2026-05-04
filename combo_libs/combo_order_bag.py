@@ -27,7 +27,7 @@ from combo_order_callbacks import connect_order_callbacks
 
 # ── conId 캐시 ─────────────────────────────────────────────────
 _CONID_CACHE: dict = {}
-_CACHE_FILE = Path("data/conid_cache.json")
+_CACHE_FILE = Path(__file__).resolve().parent / "data" / "conid_cache.json"
 
 
 def _load_conid_cache() -> None:
@@ -384,6 +384,13 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         # placeOrder 성공 후 두 변수를 모두 동일 OID로 세팅.
         self._chaser_current_oid = oid   # combo_order_callbacks 가 참조
         self._chaser_oid         = oid   # combo_order_chaser 가 참조
+
+        # ★ FIX: execDetails 레그별 콜백 수신을 위해 OID를 known 집합에 등록
+        #   BAG 2레그 주문 → execDetails 2번 콜백 → 두 번째 콜백 시
+        #   _chaser_current_oid가 이미 None이어도 저장되도록 보장
+        if not hasattr(self, '_exec_known_oids'):
+            self._exec_known_oids = set()
+        self._exec_known_oids.add(oid)
 
         # 체결 후 합성 잔고에 추가하기 위해 주문 정보 캐시
         self._pending_position = {

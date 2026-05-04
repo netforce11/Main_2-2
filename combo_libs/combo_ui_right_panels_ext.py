@@ -47,6 +47,11 @@ def _detect_strategy_type(legs: list, strat_name: str = "") -> str:
         if cp_set == {"P"}:
             return "put_butterfly"
         return "butterfly"
+    # ★ 백 스프레드 분류 추가
+    if "콜 백 스프레드" in strat_name or "call back" in name:
+        return "call_back_spread"
+    if "풋 백 스프레드" in strat_name or "put back" in name:
+        return "put_back_spread"
     return "generic"
 
 
@@ -110,16 +115,75 @@ def _build_spread_chart_panel(self) -> QGroupBox:
     gb = QGroupBox("📉 손익 곡선")
     v  = QVBoxLayout(gb); v.setContentsMargins(4, 6, 4, 4)
     self._spread_labels = getattr(self, "_spread_labels", {})
+
     if PG:
+        # ── 차트 옵션 행: 색상 + 굵기 ──────────────────────────
+        from PyQt5.QtWidgets import QComboBox, QHBoxLayout as _HBox, QLabel as _Lbl
+        opt_row = _HBox(); opt_row.setSpacing(8)
+
+        lbl_color = _Lbl("선 색상:")
+        lbl_color.setStyleSheet("color:#aaa;font-size:11px;border:none;")
+        self._chart_color_combo = QComboBox()
+        self._chart_color_combo.setFixedHeight(22)
+        self._chart_color_combo.setFixedWidth(100)
+        # 색상 항목: (표시명, hex코드)
+        _CHART_COLORS = [
+            ("빨간색",  "#ff4444"),
+            ("검은색",  "#888888"),
+            ("연두색",  "#00ff88"),
+        ]
+        for name, _ in _CHART_COLORS:
+            self._chart_color_combo.addItem(name)
+        self._chart_color_combo.setCurrentIndex(0)   # 기본값: 빨간색
+        self._chart_color_combo.setStyleSheet(
+            "QComboBox{background:#1a1a2e;color:#ffd700;border:1px solid #3a3a6a;"
+            "border-radius:3px;font-size:11px;padding:1px 4px;}"
+            "QComboBox::drop-down{border:none;}"
+            "QComboBox QAbstractItemView{background:#0a0a1e;color:#ccc;}")
+
+        lbl_width = _Lbl("굵기:")
+        lbl_width.setStyleSheet("color:#aaa;font-size:11px;border:none;")
+        self._chart_width_combo = QComboBox()
+        self._chart_width_combo.setFixedHeight(22)
+        self._chart_width_combo.setFixedWidth(70)
+        for w in ["얇게(1)", "보통(2)", "굵게(3)", "매우굵게(4)"]:
+            self._chart_width_combo.addItem(w)
+        self._chart_width_combo.setCurrentIndex(2)   # 기본값: 굵게(3)
+        self._chart_width_combo.setStyleSheet(
+            "QComboBox{background:#1a1a2e;color:#ffd700;border:1px solid #3a3a6a;"
+            "border-radius:3px;font-size:11px;padding:1px 4px;}"
+            "QComboBox::drop-down{border:none;}"
+            "QComboBox QAbstractItemView{background:#0a0a1e;color:#ccc;}")
+
+        # 변경 시 즉시 반영
+        self._chart_color_combo.currentIndexChanged.connect(
+            lambda _: _apply_chart_style(self, _CHART_COLORS))
+        self._chart_width_combo.currentIndexChanged.connect(
+            lambda _: _apply_chart_style(self, _CHART_COLORS))
+
+        # 색상 목록을 위젯에 저장 (apply 함수에서 참조)
+        self._chart_color_list = _CHART_COLORS
+
+        opt_row.addWidget(lbl_color)
+        opt_row.addWidget(self._chart_color_combo)
+        opt_row.addWidget(lbl_width)
+        opt_row.addWidget(self._chart_width_combo)
+        opt_row.addStretch()
+        v.addLayout(opt_row)
+
+        # ── 차트 위젯 ──────────────────────────────────────────
         self._pw_pnl = pg.PlotWidget()
         self._pw_pnl.showGrid(x=True, y=True, alpha=0.2)
         self._pw_pnl.setLabel('left', 'PnL ($)')
         self._pw_pnl.setLabel('bottom', '기초자산 가격')
         self._pw_pnl.addLine(y=0, pen=pg.mkPen('#444', width=1))
+        # 기본값: 빨간색 굵게(3)
         self._curve_pnl = self._pw_pnl.plot(
-            pen=pg.mkPen('#00ff88', width=2), name="PnL")
+            pen=pg.mkPen('#ff4444', width=3), name="PnL")
         self._curve_be  = self._pw_pnl.plot(
             pen=pg.mkPen('#ffd700', width=1, style=Qt.DashLine))
+        # BEP 텍스트 라벨 리스트 (동적 추가/제거)
+        self._bep_labels = []
         # v3.0: 버터플라이 최대이익 지점 표시용 수직선
         self._line_body = self._pw_pnl.addLine(
             x=0, pen=pg.mkPen('#ff88ff', width=1, style=Qt.DotLine))
@@ -129,6 +193,19 @@ def _build_spread_chart_panel(self) -> QGroupBox:
         v.addWidget(QLabel("pip install pyqtgraph"))
     gb.setMinimumHeight(80)
     return gb
+
+
+def _apply_chart_style(self, color_list=None):
+    """차트 색상/굵기 콤보 변경 시 curve_pnl 스타일 즉시 갱신."""
+    if not PG or not hasattr(self, '_curve_pnl'):
+        return
+    cl = color_list or getattr(self, '_chart_color_list',
+                                [("빨간색","#ff4444"),("검은색","#888888"),("연두색","#00ff88")])
+    ci = self._chart_color_combo.currentIndex()
+    _, hex_color = cl[ci] if ci < len(cl) else ("빨간색", "#ff4444")
+    wi = self._chart_width_combo.currentIndex()
+    width = wi + 1   # 0→1, 1→2, 2→3, 3→4
+    self._curve_pnl.setPen(pg.mkPen(hex_color, width=width))
 
 
 # ── N-레그 손익 계산 (v3.0 강화) ────────────────────────────────
@@ -230,6 +307,27 @@ def _calc_pnl(self):
             self._line_body.setValue(body_k)
             self._line_body.setVisible(True)
 
+    elif strat_type in ("call_back_spread", "put_back_spread"):
+        # ★ 백 스프레드 — 방향 강조 (크레딧 수취지만 방향성 전략)
+        direction_txt = "강한 상승 ▲" if strat_type == "call_back_spread" else "강한 하락 ▼"
+        direction_col = "#00ff88"      if strat_type == "call_back_spread" else "#ff4444"
+        credit_amt    = abs(net_cost_100)
+        kw['cost'].setText(f"크레딧 ${credit_amt:,.0f}")
+        sl['max_gain'   ].setText(f"${max_profit*100:,.0f}  {direction_txt}")
+        sl['max_gain'   ].setStyleSheet(
+            f"color:{direction_col};font-size:14px;font-weight:bold;border:none;")
+        sl['call_spread'].setText(
+            f"{call_strikes[0]:.0f}~{call_strikes[-1]:.0f}" if len(call_strikes) >= 2
+            else (f"{call_strikes[0]:.0f}" if call_strikes else "―"))
+        sl['put_spread' ].setText(
+            f"{put_strikes[-1]:.0f}~{put_strikes[0]:.0f}" if len(put_strikes) >= 2
+            else (f"{put_strikes[0]:.0f}" if put_strikes else "―"))
+        sl['buy_cost'   ].setText("―")
+        sl['credit'     ].setText(f"${credit_amt:,.0f}")
+        sl['margin'     ].setText(f"${margin:,.0f}")
+        if PG and hasattr(self, '_line_body'):
+            self._line_body.setVisible(False)
+
     else:
         # 기본(generic) 전략
         kw['cost'].setText(
@@ -256,10 +354,30 @@ def _calc_pnl(self):
     if PG and hasattr(self, '_curve_pnl'):
         pnl_100 = [p * 100 for p in total_pnl]
         self._curve_pnl.setData(price_range, pnl_100)
+
+        # BEP 수직선
         if hasattr(self, '_curve_be') and breakevens:
             be_x = [v for bep in breakevens for v in (bep, bep)]
             be_y = [min(pnl_100), max(pnl_100)] * len(breakevens)
             self._curve_be.setData(be_x, be_y)
+
+        # ★ BEP 텍스트 라벨 (기존 제거 후 재생성)
+        for lbl in getattr(self, '_bep_labels', []):
+            try:
+                self._pw_pnl.removeItem(lbl)
+            except Exception:
+                pass
+        self._bep_labels = []
+        for bep in breakevens:
+            txt = pg.TextItem(
+                text=f"BEP\n{bep:.1f}",
+                color="#ffd700",
+                anchor=(0.5, 1.0),   # 텍스트 중앙 하단 정렬
+            )
+            txt.setFont(_QFont("Consolas", 9, _QFont.Bold))
+            self._pw_pnl.addItem(txt)
+            txt.setPos(bep, 0)       # y=0 선(손익분기) 위에 표시
+            self._bep_labels.append(txt)
 
     self._log(
         f"📊 [{strat_type}] 손익 계산 완료: {len(legs)}레그  "
