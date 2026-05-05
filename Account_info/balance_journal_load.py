@@ -1,6 +1,5 @@
 """
-balance_journal_load.py — 매매일지 DB 조회 로직  (BalanceGrid._jnl_load)
-tab_balance.py 에서 mixin 방식으로 import.
+balance_journal_load.py — 매매일지 DB 조회 로직  v2.3
 """
 
 from __future__ import annotations
@@ -8,10 +7,18 @@ from PyQt5.QtGui     import QColor, QBrush, QFont
 from PyQt5.QtCore    import Qt, QTimer
 from PyQt5.QtWidgets import QTableWidgetItem
 
-# 요약 행 배경색
-_COLOR_SUMMARY_BOT = QColor("#e8f5e9")   # 연초록 — 데빗(매수)
-_COLOR_SUMMARY_SLD = QColor("#fce4ec")   # 연분홍 — 크레딧(매도)
-_COLOR_LEG         = QColor("#f8fafc")   # 레그 행 배경
+
+def _item(text: str, bold: bool = False,
+          fg: str = None, bg: QColor = None) -> QTableWidgetItem:
+    item = QTableWidgetItem(text)
+    item.setTextAlignment(Qt.AlignCenter)
+    if bold:
+        f = QFont(); f.setBold(True); item.setFont(f)
+    if fg:
+        item.setForeground(QBrush(QColor(fg)))
+    if bg:
+        item.setBackground(QBrush(bg))
+    return item
 
 
 # ══════════════════════════════════════════════════════════════
@@ -30,77 +37,103 @@ def jnl_load(self):
         self._jnl_summary_lbl.setText("⚠ trade_log 모듈 없음")
         return
 
-    # ── 탭1: 체결내역 (그룹별 표시) ──────────────────────
+    # ── 탭1: 체결내역 ────────────────────────────────────
     groups = get_grouped_executions_by_date(date_str)
     self.tbl_jnl_exec.setRowCount(0)
 
+    total_pnl  = 0.0
+    trade_cnt  = 0
+
     for grp in groups:
-        summary   = grp['summary']
         legs      = grp['legs']
         is_spread = grp['is_spread']
+        s         = grp['summary']
 
-        # ── 요약 행 ──────────────────────────────────────
+        action    = s['action']
+        net_price = s['net_price']
+        pnl       = s.get('pnl')       # None or float
+        ts        = s['ts'][11:19] if s.get('ts') else ''
+
+        # 만기 / 행사가 / 콜풋
+        if is_spread:
+            expiry  = legs[0].get('expiry', '')
+            strikes = sorted(set(int(l['strike']) for l in legs if l.get('strike')))
+            stk_str = "/".join(str(k) for k in strikes)
+            rights  = set(l.get('right', '') for l in legs)
+            cp_str  = ("콜 스프레드" if 'C' in rights else
+                       "풋 스프레드" if 'P' in rights else "스프레드")
+        else:
+            leg     = legs[0]
+            expiry  = leg.get('expiry', '')
+            stk_str = str(int(leg['strike'])) if leg.get('strike') else ''
+            r_val   = leg.get('right', '')
+            cp_str  = "콜" if r_val == 'C' else "풋" if r_val == 'P' else r_val
+
+        # 매수/매도 체결가
+        buy_price  = f"${net_price:.2f}" if action == 'BOT' else ""
+        sell_price = f"${net_price:.2f}" if action == 'SLD' else ""
+
+        # 손익 표시
+        if pnl is not None:
+            sign     = "+" if pnl >= 0 else ""
+            pnl_str  = f"{sign}${pnl:.0f}"
+            pnl_col  = "#16a34a" if pnl >= 0 else "#dc2626"
+            total_pnl += pnl
+            trade_cnt += 1
+        else:
+            pnl_str = ""
+            pnl_col = None
+
+        # und 컨텍스트
+        ref      = legs[0]
+        idx_str  = f"{ref['und_price']:.2f}"  if ref.get('und_price') else "―"
+        idx5_str = f"{ref['und_5m']:.2f}"     if ref.get('und_5m')    else "―"
+        idx10_str= f"{ref['und_10m']:.2f}"    if ref.get('und_10m')   else "―"
+
+        # 배경색
+        bg = QColor("#e3f2fd") if action == 'BOT' else QColor("#fce4ec")
+
+        # 행 삽입
         r = self.tbl_jnl_exec.rowCount()
         self.tbl_jnl_exec.insertRow(r)
 
-        action    = summary['action']
-        act_col   = "#1565c0" if action == 'BOT' else "#b71c1c"
-        bg_color  = _COLOR_SUMMARY_BOT if action == 'BOT' else _COLOR_SUMMARY_SLD
-        label     = "▶ 스프레드" if is_spread else "▶ 단일"
-
-        summary_vals = [
-            summary['ts'][11:19],          # 시각
-            action,                        # 방향
-            summary['sym'],                # 종목
-            "",                            # 만기 (합산행은 비움)
-            "",                            # CP
-            label,                         # 행사가 자리에 라벨
-            f"{summary['qty']:.0f}",       # 수량
-            f"${summary['net_price']:.2f}",# net price
-            "", "", "", "", "",            # und 컨텍스트 비움
+        row_data = [
+            ts, action, s['sym'], expiry, stk_str, cp_str,
+            f"{int(s['qty'])}",
+            buy_price, sell_price, pnl_str,
+            idx_str, idx5_str, idx10_str,
         ]
-        for c, v in enumerate(summary_vals):
-            item = QTableWidgetItem(v)
-            item.setTextAlignment(Qt.AlignCenter)
-            item.setBackground(QBrush(bg_color))
-            font = QFont(); font.setBold(True)
-            item.setFont(font)
-            if c == 1:
-                item.setForeground(QBrush(QColor(act_col)))
+        for c, v in enumerate(row_data):
+            item = _item(v, bold=True, bg=bg)
+            if c == 1:   # 방향
+                item.setForeground(QBrush(QColor(
+                    "#1565c0" if action == 'BOT' else "#b71c1c")))
+            elif c == 7 and buy_price:   # 매수체결가
+                item.setForeground(QBrush(QColor("#1565c0")))
+            elif c == 8 and sell_price:  # 매도체결가
+                item.setForeground(QBrush(QColor("#b71c1c")))
+            elif c == 9 and pnl_col:     # 손익
+                item.setForeground(QBrush(QColor(pnl_col)))
             self.tbl_jnl_exec.setItem(r, c, item)
 
-        # 스프레드가 아닌 단일 체결이면 레그 행 생략
-        if not is_spread:
-            continue
-
-        # ── 레그 행 (들여쓰기 효과) ──────────────────────
-        for leg in legs:
-            r = self.tbl_jnl_exec.rowCount()
-            self.tbl_jnl_exec.insertRow(r)
-            leg_action = leg['action']
-            leg_col    = "#2e7d32" if leg_action == 'BOT' else "#c62828"
-            vals = [
-                "  " + leg['ts'][11:19],
-                leg_action,
-                leg['sym'],
-                leg.get('expiry', ''),
-                leg.get('right', ''),
-                str(int(leg['strike'])) if leg.get('strike') else "",
-                f"{leg['qty']:.0f}",
-                f"${leg['price']:.2f}",
-                f"{leg['und_price']:.2f}"  if leg.get('und_price') else "―",
-                f"{leg['und_5m']:.2f}"     if leg.get('und_5m')    else "―",
-                f"{leg['und_10m']:.2f}"    if leg.get('und_10m')   else "―",
-                f"{leg['chg_5m']:+.2f}"    if leg.get('chg_5m')  is not None else "―",
-                f"{leg['chg_10m']:+.2f}"   if leg.get('chg_10m') is not None else "―",
-            ]
-            for c, v in enumerate(vals):
-                item = QTableWidgetItem(v)
-                item.setTextAlignment(Qt.AlignCenter)
-                item.setBackground(QBrush(_COLOR_LEG))
-                if c == 1:
-                    item.setForeground(QBrush(QColor(leg_col)))
-                self.tbl_jnl_exec.setItem(r, c, item)
+    # ── 요약바 — executions 기반 ─────────────────────────
+    if groups:
+        sign = "+" if total_pnl >= 0 else ""
+        col  = "#16a34a" if total_pnl >= 0 else "#dc2626"
+        pnl_part = (f"  실현손익: {sign}${total_pnl:.0f}"
+                    if trade_cnt > 0 else "  (미청산 포지션)")
+        self._jnl_summary_lbl.setText(
+            f"  {date_str}  |  {len(groups)}건{pnl_part}")
+        self._jnl_summary_lbl.setStyleSheet(
+            f"color:{col};font-size:11px;font-weight:600;"
+            "background:#f8fafc;border-bottom:1px solid #f0f2f6;"
+            "padding:6px 16px;")
+    else:
+        self._jnl_summary_lbl.setText(f"  {date_str} — 체결 없음")
+        self._jnl_summary_lbl.setStyleSheet(
+            "color:#94a3b8;font-size:11px;"
+            "background:#f8fafc;border-bottom:1px solid #f0f2f6;"
+            "padding:6px 16px;")
 
     # ── 탭2: 주문 로그 ───────────────────────────────────
     orders = get_order_log_by_date(date_str)
@@ -117,12 +150,14 @@ def jnl_load(self):
             o["ts"][11:], o["status"], str(o["oid"]),
             o.get("sym",""), o.get("right",""),
             str(int(o["strike"])) if o.get("strike") else "",
-            o.get("action",""), str(int(o["qty"])) if o.get("qty") else "",
+            o.get("action",""),
+            str(int(o["qty"])) if o.get("qty") else "",
             f"{o['price']:.2f}" if o.get("price") else "",
             f"{o['und_price']:.2f}" if o.get("und_price") else "―",
         ]
         for c, v in enumerate(vals):
-            item = QTableWidgetItem(v)
+            from PyQt5.QtWidgets import QTableWidgetItem as _TWI
+            item = _TWI(v)
             item.setTextAlignment(Qt.AlignCenter)
             if c == 1:
                 item.setForeground(QBrush(QColor(scol)))
@@ -139,38 +174,17 @@ def jnl_load(self):
             str(int(o["strike"])) if o.get("strike") else "",
             str(int(o["qty"])), f"{o['entry_price']:.2f}", "―"
         ]):
-            item = QTableWidgetItem(v)
+            from PyQt5.QtWidgets import QTableWidgetItem as _TWI
+            item = _TWI(v)
             item.setTextAlignment(Qt.AlignCenter)
             self.tbl_jnl_open.setItem(r, c, item)
 
-    # ── 일일 요약 ─────────────────────────────────────────
-    s = get_daily_summary(date_str)
-    if s["trades"]:
-        col = "#16a34a" if s["net_pnl"] >= 0 else "#dc2626"
-        sign = "+" if s["net_pnl"] >= 0 else ""
-        self._jnl_summary_lbl.setText(
-            f"  {date_str}  |  {s['trades']}건  "
-            f"실현손익: {sign}${s['realized_pnl']:,.2f}  "
-            f"수수료: ${s['commission']:.2f}  "
-            f"순손익: {sign}${s['net_pnl']:,.2f}")
-        self._jnl_summary_lbl.setStyleSheet(
-            f"color:{col};font-size:11px;font-weight:600;"
-            "background:#f8fafc;border-bottom:1px solid #f0f2f6;"
-            "padding:6px 16px;")
-    else:
-        self._jnl_summary_lbl.setText(f"  {date_str} — 체결 없음")
-        self._jnl_summary_lbl.setStyleSheet(
-            "color:#94a3b8;font-size:11px;"
-            "background:#f8fafc;border-bottom:1px solid #f0f2f6;"
-            "padding:6px 16px;")
-
 
 # ══════════════════════════════════════════════════════════════
-# ★ IB reqExecutions → DB 저장 후 화면 갱신
+# IB reqExecutions → DB 저장 후 화면 갱신
 # ══════════════════════════════════════════════════════════════
 
 def jnl_fetch_ib(self):
-    """IB reqExecutions() 호출 → 체결 수신 → DB 저장 → 화면 갱신."""
     lbl = getattr(self, '_ib_fetch_lbl', None)
 
     if getattr(self, '_ib_fetch_running', False):
@@ -193,8 +207,7 @@ def jnl_fetch_ib(self):
     if lbl: lbl.setText("⏳ IB 체결내역 요청 중…")
 
     buf = []
-
-    _orig_exec_details    = getattr(ib, 'execDetails',    lambda *a: None)
+    _orig_exec_details     = getattr(ib, 'execDetails',    lambda *a: None)
     _orig_exec_details_end = getattr(ib, 'execDetailsEnd', lambda *a: None)
 
     def _tmp_exec_details(reqId, contract, execution):
@@ -206,7 +219,7 @@ def jnl_fetch_ib(self):
             'side':   execution.side,
             'qty':    execution.shares,
             'price':  execution.price,
-            'time':   execution.time,          # ★ IB 실제 체결 시각
+            'time':   execution.time,
             'expiry': contract.lastTradeDateOrContractMonth,
             'right':  contract.right,
             'strike': contract.strike,
@@ -245,7 +258,6 @@ def jnl_fetch_ib(self):
 
 
 def _save_buf_to_db(self, buf: list, lbl):
-    """수신된 체결 버퍼 → DB 저장 (중복 제외) → 화면 갱신."""
     if not getattr(self, '_ib_fetch_running', False):
         return
     self._ib_fetch_running = False
@@ -254,13 +266,11 @@ def _save_buf_to_db(self, buf: list, lbl):
         if lbl: lbl.setText("ℹ IB 체결내역 없음")
         return
 
-    saved   = 0
-    skipped = 0
+    saved = skipped = 0
 
     try:
         from trade_log.db import get_conn
         from datetime import datetime, timezone, timedelta
-
         _ET = timezone(timedelta(hours=-5))
 
         conn = get_conn()
@@ -276,16 +286,14 @@ def _save_buf_to_db(self, buf: list, lbl):
                 skipped += 1
                 continue
 
-            # ★ IB 실제 체결 시각 파싱 (형식: "20260504 21:59:57 ET" 또는 "20260504 21:59:57")
             raw_time = ex.get('time', '')
             try:
-                # IB time 형식: "20260504  21:59:57 ET" (공백 2개인 경우도 있음)
-                clean = raw_time.replace(' ET', '').replace('  ', ' ').strip()
-                dt = datetime.strptime(clean, "%Y%m%d %H:%M:%S")
+                clean    = raw_time.replace(' ET','').replace('  ',' ').strip()
+                dt       = datetime.strptime(clean, "%Y%m%d %H:%M:%S")
                 ts_str   = dt.strftime("%Y-%m-%d %H:%M:%S")
                 date_str = dt.strftime("%Y-%m-%d")
             except Exception:
-                now = datetime.now(_ET)
+                now      = datetime.now(_ET)
                 ts_str   = now.strftime("%Y-%m-%d %H:%M:%S")
                 date_str = now.strftime("%Y-%m-%d")
 

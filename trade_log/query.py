@@ -1,5 +1,5 @@
 """
-trade_log/query.py — 체결/주문/매매 조회  v1.3
+trade_log/query.py — 체결/주문/매매 조회  v1.5
 """
 
 from __future__ import annotations
@@ -19,8 +19,7 @@ def get_executions_by_date(date: str) -> list[dict]:
 def get_grouped_executions_by_date(date: str) -> list[dict]:
     """
     날짜별 체결 내역을 주문별로 묶어서 반환.
-    - oid > 0 : oid 기준 그룹핑
-    - oid = 0 : ts(초단위) 기준 그룹핑 (IB가 orderId=0으로 보내는 청산 BAG)
+    손익: 행사가 조합별 FIFO 매칭 (같은 행사가 여러 번, 다른 행사가 혼용 모두 대응)
     """
     conn = get_conn()
     rows = conn.execute(
@@ -30,37 +29,63 @@ def get_grouped_executions_by_date(date: str) -> list[dict]:
     conn.close()
 
     from collections import defaultdict
+    from collections import deque
 
-    # oid>0 그룹, oid=0 그룹 분리
-    named   = defaultdict(list)   # oid -> [legs]
-    unnamed = defaultdict(list)   # ts초 -> [legs]
+    # ── 그룹핑 ───────────────────────────────────────────
+    named   = defaultdict(list)   # oid>0  → oid 기준
+    unnamed = defaultdict(list)   # oid=0  → ts초 기준
 
     for r in rows:
         d = dict(r)
         if d['oid'] and d['oid'] > 0:
             named[d['oid']].append(d)
         else:
-            # ts 초단위 (HH:MM:SS) 로 묶기
             ts_key = d['ts'][11:19] if d.get('ts') else 'unknown'
             unnamed[ts_key].append(d)
 
-    # 두 그룹 합치기 (시각 순 정렬)
     all_groups = []
     for oid, legs in named.items():
-        all_groups.append(('oid', oid, legs))
-    for ts_key, legs in unnamed.items():
-        all_groups.append(('ts', ts_key, legs))
+        all_groups.append(legs)
+    for legs in unnamed.values():
+        all_groups.append(legs)
 
-    # 첫 번째 레그의 ts 기준 정렬
-    all_groups.sort(key=lambda x: x[2][0]['ts'])
+    # 시각 순 정렬
+    all_groups.sort(key=lambda legs: legs[0]['ts'])
 
+    # ── 요약 생성 ─────────────────────────────────────────
+    summaries = [_make_summary(legs) for legs in all_groups]
+
+    # ── FIFO 손익 매칭 ───────────────────────────────────
+    # key: frozenset of strikes → deque of (net_price, qty, summary_idx)
+    bot_queues: dict = defaultdict(deque)
+
+    for idx, s in enumerate(summaries):
+        strikes_key = frozenset(
+            int(l['strike']) for l in all_groups[idx] if l.get('strike'))
+        action    = s['action']
+        net_price = s['net_price']
+        qty       = s['qty']
+
+        if action == 'BOT':
+            bot_queues[strikes_key].append({
+                'price': net_price,
+                'qty':   qty,
+                'idx':   idx,
+            })
+        elif action == 'SLD':
+            queue = bot_queues.get(strikes_key)
+            if queue:
+                entry = queue.popleft()   # FIFO: 가장 먼저 산 것과 매칭
+                pnl = round((net_price - entry['price']) * qty * 100, 2)
+                summaries[idx]['pnl'] = pnl
+            # else: 매칭되는 BOT 없음 (공매도 등) → pnl=None 유지
+
+    # ── 결과 조립 ─────────────────────────────────────────
     result = []
-    for _, key, legs in all_groups:
-        is_spread = len(legs) >= 2
-        summary   = _make_summary(legs, is_spread)
+    for idx, (legs, summary) in enumerate(zip(all_groups, summaries)):
         result.append({
-            'oid':       key,
-            'is_spread': is_spread,
+            'oid':       legs[0].get('oid', 0),
+            'is_spread': len(legs) >= 2,
             'summary':   summary,
             'legs':      legs,
         })
@@ -68,15 +93,15 @@ def get_grouped_executions_by_date(date: str) -> list[dict]:
     return result
 
 
-def _make_summary(legs: list, is_spread: bool) -> dict:
+def _make_summary(legs: list) -> dict:
     """레그 목록에서 요약 딕셔너리 생성."""
     bot_sum = sum(l['price'] * l['qty'] for l in legs if l['action'] == 'BOT')
     sld_sum = sum(l['price'] * l['qty'] for l in legs if l['action'] == 'SLD')
     net     = round(bot_sum - sld_sum, 4)
     total_commission = round(sum(l.get('commission', 0) or 0 for l in legs), 2)
-    qty  = legs[0]['qty']
-    ts   = legs[0]['ts']
-    sym  = legs[0]['sym']
+    qty = legs[0]['qty']
+    ts  = legs[0]['ts']
+    sym = legs[0]['sym']
 
     if net > 0:
         action    = 'BOT'
@@ -95,7 +120,7 @@ def _make_summary(legs: list, is_spread: bool) -> dict:
         'net_price':  net_price,
         'qty':        qty,
         'commission': total_commission,
-        'is_spread':  is_spread,
+        'pnl':        None,   # FIFO 매칭 후 채워짐
     }
 
 
@@ -109,7 +134,6 @@ def get_executions_range(start: str, end: str) -> list[dict]:
 
 
 def get_order_log_by_date(date: str) -> list[dict]:
-    """날짜별 주문 접수/미체결 로그 (초단위 시각 포함)."""
     conn = get_conn()
     rows = conn.execute(
         "SELECT * FROM order_log WHERE date=? ORDER BY id", (date,)
@@ -119,7 +143,6 @@ def get_order_log_by_date(date: str) -> list[dict]:
 
 
 def get_order_log_by_oid(oid: int) -> list[dict]:
-    """특정 주문 ID의 전체 상태 변화 이력."""
     conn = get_conn()
     rows = conn.execute(
         "SELECT * FROM order_log WHERE oid=? ORDER BY id", (oid,)
@@ -147,24 +170,22 @@ def get_open_trades() -> list[dict]:
 
 
 def get_daily_summary(date: str) -> dict:
-    """하루 요약: 거래 수 / 실현손익 / 수수료 / 순손익."""
+    """executions 기반 일일 요약."""
     conn = get_conn()
-    row = conn.execute("""
-        SELECT COUNT(*) AS trades,
-               SUM(realized_pnl) AS realized_pnl,
-               SUM(commission)   AS commission
-        FROM trades
-        WHERE close_date=? AND status='closed'
-    """, (date,)).fetchone()
+    rows = conn.execute(
+        "SELECT action, qty, price, commission FROM executions "
+        "WHERE date=? AND strike > 0", (date,)
+    ).fetchall()
     conn.close()
-    if not row or row["trades"] == 0:
+
+    if not rows:
         return {"trades": 0, "realized_pnl": 0.0,
                 "commission": 0.0, "net_pnl": 0.0}
-    pnl  = row["realized_pnl"] or 0.0
-    comm = row["commission"]    or 0.0
+
+    total_comm = round(sum(r['commission'] or 0 for r in rows), 2)
     return {
-        "trades":       row["trades"],
-        "realized_pnl": round(pnl, 2),
-        "commission":   round(comm, 2),
-        "net_pnl":      round(pnl - comm, 2),
+        "trades":       len(rows),
+        "realized_pnl": 0.0,
+        "commission":   total_comm,
+        "net_pnl":      0.0,
     }
