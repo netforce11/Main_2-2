@@ -182,7 +182,7 @@ class SignalBridge(QObject):
     # 체결 (execDetails)
     exec_sig       = pyqtSignal(int, str, str, float, float)  # oid,sym,side,qty,price
     # 주문 상태
-    order_status_sig = pyqtSignal(int, str, float, float)     # oid,status,filled,remaining
+    order_status_sig = pyqtSignal(int, str, float, float, float)  # oid,status,filled,remaining,avgFillPrice
     # whatIf 증거금 조회 결과
     whatif_sig = pyqtSignal(int, float, float, float, float, str)  # oid,initBefore,initAfter,maintBefore,maintAfter,commission
     # contractDetails — BAG conId 조회용

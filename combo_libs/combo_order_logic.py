@@ -1,21 +1,10 @@
 """
 combo_order_logic.py — 합성 주문 버튼 핸들러
 ──────────────────────────────────────────────
-포함:
-  _on_synthetic_order    — ⚡ 합성 주문 버튼
-  _on_check_margin       — 💰 증거금 조회 버튼 (로컬/서버 모드)
-  _on_cancel_bag_order   — ✕ 주문 취소 버튼
-  _on_close_position_order — 잔고 탭 청산
-  _init_synthetic_panel_callbacks — 패널 콜백 연결
-  _load_ib_positions     — 재연결 후 IB 포지션 로드
-  _calc_margin_local     — 로컬 증거금 계산 (장외 할증 포함)
-
-v2.8 변경:
-  - ★ bridge.acct_value 연결을 _init_synthetic_panel_callbacks 에서
-    즉시 수행 → 로컬 모드에서도 실계좌 잔고 자동 반영
-  - ★ _whatif_acct_cache / _cached_available_funds 두 변수를
-    _calc_margin_local 에서 통합 조회 → 어느 모드든 같은 잔고 사용
-  - ★ _acct_fetched_once 플래그로 기본값($1,000,000) 경고 정확히 제어
+[BUG-FIX] 청산 시 실시간 손익 구독 해제 추가
+  _on_close_position_order() 안에서
+  stop_position_price_stream(self, oid) 호출 추가.
+  청산 후에도 reqMktData 가 계속 살아있으면 불필요한 네트워크/CPU 낭비.
 ──────────────────────────────────────────────
 """
 
@@ -34,7 +23,6 @@ from combo_order_chaser import (                                                
     on_chase_click, cancel_bag_order,
 )
 
-# ── 장외 시간 판별 (ET 기준 09:30~16:00) ──────────────────────
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
@@ -47,10 +35,9 @@ except ImportError:
 
 _MARKET_OPEN  = dt_time(9, 30)
 _MARKET_CLOSE = dt_time(16, 0)
-_AFTER_HOURS_SURCHARGE = 0.25   # 25% 할증
+_AFTER_HOURS_SURCHARGE = 0.25
 
 def _is_after_hours() -> bool:
-    """현재 ET 기준 장외 시간 여부."""
     try:
         now_et = datetime.now(ZoneInfo("America/New_York")).time()
         return not (_MARKET_OPEN <= now_et <= _MARKET_CLOSE)
@@ -59,21 +46,12 @@ def _is_after_hours() -> bool:
 
 
 def _calc_margin_local(self, legs: list) -> tuple:
-    """
-    로컬 증거금 계산.
-    반환: (available, required, margin_ok, after_hours)
-
-    ★ v2.8: _whatif_acct_cache(서버 수신값) 우선 조회 후
-             _cached_available_funds 폴백 → 두 캐시 통합.
-    """
-    # ── 가용 증거금: whatif 캐시 우선 (bridge 수신값) ─────────
     cache     = getattr(self, '_whatif_acct_cache', {})
     cache_val = cache.get("af") or cache.get("bp")
 
     if cache_val:
-        # bridge에서 실계좌 잔고를 수신한 경우
         available = cache_val
-        self._cached_available_funds = cache_val   # 두 변수 동기화
+        self._cached_available_funds = cache_val
         self._acct_fetched_once      = True
     else:
         cached = getattr(self, '_cached_available_funds', None)
@@ -95,10 +73,7 @@ def _calc_margin_local(self, legs: list) -> tuple:
     return available, required, margin_ok, after_hours
 
 
-# ── 공개 핸들러 ────────────────────────────────────────────────
-
 def _on_synthetic_order(self):
-    """⚡ 합성 주문 버튼 핸들러."""
     panel = getattr(self, 'synthetic_panel', None)
     if not panel:
         return self._log("⚠ synthetic_panel 없음")
@@ -112,11 +87,9 @@ def _on_synthetic_order(self):
             "행사가/만기가 입력되지 않았습니다.\n"
             "체인 클릭 또는 수동 입력 후 다시 시도하세요.")
 
-    # ── 증거금 모드 판별 ───────────────────────────────────────
     use_server = getattr(self, '_margin_mode_server', False)
 
     if use_server:
-        # 서버 모드: whatIf → 콜백 후 주문
         cost_str = (self._kpi_widgets.get('cost',
                     type('', (), {'text': lambda s: '―'})()).text()
                     if hasattr(self, '_kpi_widgets') else "―")
@@ -131,7 +104,6 @@ def _on_synthetic_order(self):
         _send_whatif_order(self, legs, strat, cost_str, on_done=_on_margin_checked)
 
     else:
-        # 로컬 모드: 즉시 계산 → 바로 확인창
         available, required, margin_ok, after_hours = _calc_margin_local(self, legs)
 
         if not margin_ok:
@@ -151,7 +123,6 @@ def _on_synthetic_order(self):
             if ret != QMessageBox.Yes:
                 return
 
-        # 패널 증거금 탭 갱신
         if panel:
             panel.update_margin(available, required, strat)
 
@@ -159,7 +130,6 @@ def _on_synthetic_order(self):
 
 
 def _on_check_margin(self):
-    """💰 증거금 조회 버튼 핸들러 — 로컬/서버 모드."""
     if not getattr(getattr(self, 'mw', None), 'connected', False):
         return QMessageBox.warning(self, "미연결", "TWS에 먼저 연결하세요.")
 
@@ -195,20 +165,32 @@ def _on_check_margin(self):
 
 
 def _on_cancel_bag_order(self):
-    """✕ 주문 취소 버튼 핸들러."""
     cancel_bag_order(self)
 
 
 def _on_close_position_order(self, pos: dict):
-    """잔고 탭 청산 버튼 핸들러."""
-    # ── 영속화: 청산 시 파일에서 제거 ───────────────────────
+    """
+    잔고 탭 청산 버튼 핸들러.
+    [BUG-FIX] 청산 시 실시간 손익 구독 해제 추가.
+    """
     oid = pos.get("oid")
+
+    # ── [BUG-FIX] 실시간 손익 구독 해제 ─────────────────────
+    if oid:
+        try:
+            from combo_order_callbacks import stop_position_price_stream
+            stop_position_price_stream(self, oid)
+        except Exception:
+            pass
+
+    # ── 영속화: 청산 시 파일에서 제거 ───────────────────────
     if oid:
         try:
             from combo_position_store import remove_position
             remove_position(oid)
         except Exception:
             pass
+
     legs = pos.get("legs", [])
     if not legs:
         _close_ib_position(self, pos)
@@ -269,13 +251,6 @@ def _close_ib_position(self, pos: dict):
 
 
 def _init_synthetic_panel_callbacks(self):
-    """
-    synthetic_panel 콜백 연결 + 증거금 모드 초기화.
-
-    ★ v2.8: bridge.acct_value 를 여기서 즉시 연결.
-      → 로컬/서버 모드 모두 TWS 연결 시 실계좌 잔고 자동 수신.
-      → _send_whatif_order 호출 없이도 캐시 갱신됨.
-    """
     panel = getattr(self, 'synthetic_panel', None)
     if not panel:
         return
@@ -288,13 +263,11 @@ def _init_synthetic_panel_callbacks(self):
     panel.set_margin_mode_callback(
         lambda server: setattr(self, '_margin_mode_server', server))
 
-    # 기본값 초기화
     self._margin_mode_server     = False
     self._cached_available_funds = 1_000_000.0
     self._whatif_acct_cache      = {}
     self._acct_fetched_once      = False
 
-    # ★ bridge 슬롯 연결 (최초 1회) — 로컬 모드에서도 실잔고 수신
     if not getattr(self, '_whatif_slots_connected', False):
         try:
             from core import bridge
@@ -303,12 +276,10 @@ def _init_synthetic_panel_callbacks(self):
             bridge.whatif_sig.connect(self._on_whatif_result,     Qt.QueuedConnection)
             self._whatif_slots_connected = True
         except Exception as e:
-            # bridge 미준비 상태면 _send_whatif_order 호출 시 재연결됨
             self._whatif_slots_connected = False
 
 
 def _on_manual_modify(self, oid: int, new_price: float):
-    """수동 정정."""
     ib    = getattr(getattr(self, 'mw', None), 'ib', None)
     bag   = getattr(self, '_chaser_bag_contract', None)
     ibord = getattr(self, '_chaser_bag_order', None)
@@ -326,7 +297,6 @@ def _on_manual_modify(self, oid: int, new_price: float):
 
 
 def _on_chaser_mode_changed(self, mode: str):
-    """Chaser 자동/수동 모드 전환."""
     self._log(f"🎯 Chaser 모드: {mode}")
     try:
         if mode == "manual":
@@ -336,10 +306,6 @@ def _on_chaser_mode_changed(self, mode: str):
 
 
 def _on_pos_reconnect_hook(self):
-    """
-    재연결 후 합성 잔고 복원.
-    IB reqPositions() + 파일 데이터를 병합해 패널에 표시.
-    """
     try:
         from combo_position_store import restore_on_reconnect
         restore_on_reconnect(self)
@@ -348,7 +314,6 @@ def _on_pos_reconnect_hook(self):
 
 
 def _load_ib_positions(self):
-    """IB reqPositions → 합성 잔고 탭."""
     ib    = getattr(getattr(self, 'mw', None), 'ib', None)
     panel = getattr(self, 'synthetic_panel', None)
     if not ib or not panel:

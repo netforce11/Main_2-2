@@ -213,19 +213,13 @@ def _on_exec_details(self, oid: int, sym: str,
     try:
         from trade_log import log_exec
         try:
-            from trade_log.und_saver import get_context as _get_ctx
+            from trade_log.price_buffer import get_context as _get_ctx
             und_ctx = _get_ctx()
         except Exception:
             und_ctx = None
-        # pending 에서 레그 정보 추출
-        legs = pending.get('legs', []) if pending and pending.get('oid') == oid else []
-        leg  = next((l for l in legs if l.get('sym') == sym), legs[0] if legs else {})
         log_exec(
             oid=oid, source='combo', sym=sym,
             action=side, qty=qty, price=price,
-            expiry=leg.get('expiry', ''),
-            right=leg.get('cp', ''),
-            strike=float(leg.get('strike', 0)),
             commission=commission,
             strategy=strategy,
             und_ctx=und_ctx,

@@ -10,6 +10,11 @@ core.py 300줄 초과로 분리.
 [S10] 변경사항:
   - 순환 import 제거: "from core import ..." 대신 필요한 것만 직접 정의/참조
     core.py → core_contract.py → core.py 순환 구조 해소
+
+[BUG-FIX] avgFillPrice 수정:
+  - orderStatus 콜백에서 avgFillPrice 를 bridge 시그널에 포함하도록 수정
+  - 기존: emit(oid, status, filled, remaining)         ← avgFillPrice 버림
+  - 수정: emit(oid, status, filled, remaining, avgFillPrice)  ← 전달
 """
 try:
     from ibapi.client import EClient
@@ -48,10 +53,6 @@ if IBAPI_AVAILABLE:
         def nextValidId(self, orderId):
             self._next_id = orderId
             _bridge().connected.emit()
-            # ── 연결 즉시 계좌 잔고 영구 구독 ─────────────────────
-            # reqId=9901 고정, IB가 변경될 때마다 자동 push
-            # → _on_whatif_acct_value 에서 _whatif_acct_cache 갱신
-            # → whatIf 조회 시 reqAccountSummary 별도 호출 불필요
             try:
                 self.reqAccountSummary(9901, "All", "AvailableFunds,BuyingPower")
             except Exception as e:
@@ -98,7 +99,7 @@ if IBAPI_AVAILABLE:
                 def _f(v):
                     try:
                         f = float(v)
-                        return f if f < 1e300 else 0.0  # IB 미정의값(1.79e308) 제거
+                        return f if f < 1e300 else 0.0
                     except (ValueError, TypeError):
                         return 0.0
                 _bridge().whatif_sig.emit(
@@ -110,11 +111,20 @@ if IBAPI_AVAILABLE:
                     str(getattr(orderState, 'commissionAndFees', '―')),
                 )
 
+        # ── [BUG-FIX] avgFillPrice 추가 ────────────────────────────
+        # 기존: emit(oid, status, filled, remaining)  → avgFillPrice 버림
+        # 수정: emit(oid, status, filled, remaining, avgFillPrice) → 전달
+        # core.py의 order_status_sig 시그니처도 float 1개 추가 필요:
+        #   order_status_sig = pyqtSignal(int, str, float, float, float)
         def orderStatus(self, orderId, status, filled, remaining,
                         avgFillPrice, permId, parentId, lastFillPrice,
                         clientId, whyHeld, mktCapPrice):
+            # avgFillPrice: IB가 주는 BAG 전체 net 체결가 (0.39 등)
+            # 미체결/접수 상태에서는 0.0 으로 옴 → 그대로 전달
             _bridge().order_status_sig.emit(
-                int(orderId), str(status), float(filled), float(remaining))
+                int(orderId), str(status),
+                float(filled), float(remaining),
+                float(avgFillPrice))   # ★ 추가
 
         def execDetails(self, reqId, contract, execution):
             _bridge().exec_sig.emit(
@@ -125,7 +135,6 @@ if IBAPI_AVAILABLE:
                 float(execution.price))
             # ── 체결 마커용 시그널 (chart_exec_marker.py 수신) ──
             import time as _time
-            # IBKR side: 'BOT'=매수, 'SLD'=매도
             _action = "BUY" if str(execution.side).upper() == "BOT" else "SELL"
             _bridge().exec_filled.emit(
                 int(_time.time() * 1000),
@@ -154,7 +163,6 @@ if IBAPI_AVAILABLE:
             _bridge().contract_details_end_sig.emit(reqId)
 
         def historicalData(self, reqId, bar):
-            """과거 바 배치 수신 — dict 직렬화 후 emit (cross-thread 안전)."""
             try:
                 bar_dict = {
                     "date":   bar.date,
@@ -170,11 +178,6 @@ if IBAPI_AVAILABLE:
             _bridge().hist_bar.emit(reqId, bar_dict)
 
         def historicalDataUpdate(self, reqId, bar):
-            """
-            [S9] 실시간 분봉 업데이트 콜백 — keepUpToDate=True 일 때 호출.
-            현재 진행 중인 분봉이 매초/매틱 갱신될 때마다 수신.
-            hist_bar_update 시그널로 emit → chart_ibkr._on_bar_update() 처리.
-            """
             try:
                 bar_dict = {
                     "date":   bar.date,
@@ -193,7 +196,6 @@ if IBAPI_AVAILABLE:
             _bridge().hist_end.emit(reqId)
 
         def historicalTicks(self, reqId, ticks, done):
-            """TRADES 틱 콜백 — STK/ETF용."""
             tick_list = []
             for t in ticks:
                 try:
@@ -207,7 +209,6 @@ if IBAPI_AVAILABLE:
             _bridge().hist_ticks.emit(reqId, tick_list, bool(done))
 
         def historicalTicksBidAsk(self, reqId, ticks, done):
-            """BID_ASK 틱 콜백 — IND(지수)용. mid price로 변환."""
             tick_list = []
             for t in ticks:
                 try:
@@ -243,7 +244,7 @@ else:
         def cancelPositions(self): pass
         def reqAllOpenOrders(self): pass
         def reqHistoricalData(self, *a): pass
-        def cancelHistoricalData(self, *a): pass   # [S9] 추가
+        def cancelHistoricalData(self, *a): pass
         def placeOrder(self, *a): pass
         def cancelOrder(self, *a): pass
         def get_next_id(self): return None
@@ -261,15 +262,6 @@ _TRADING_CLASS = {
 }
 
 def _resolve_spx_trading_class(symbol: str, expiry: str, tag: str = "") -> str:
-    """
-    SPX 옵션 tradingClass 결정 규칙:
-      - SPXW 심볼 입력 → 항상 SPXW
-      - tag="W" (주간)  → SPXW
-      - tag="M" (월간)  → SPX
-      - tag="0DTE" or 태그 없음 → 만기 요일로 판단:
-          * 금요일(4) 중 해당 월 3번째 금요일 → SPX (월간 AM결제)
-          * 그 외 모든 요일(월/화/수/목 + 나머지 금) → SPXW
-    """
     sym_up = symbol.upper()
     if sym_up == "SPXW":
         return "SPXW"
@@ -277,25 +269,18 @@ def _resolve_spx_trading_class(symbol: str, expiry: str, tag: str = "") -> str:
         return "SPXW"
     if tag == "M":
         return "SPX"
-
-    # 날짜 기반 판단 (0DTE 포함 tag 없는 경우 모두)
     try:
         dt = datetime.strptime(expiry, "%Y%m%d")
-        wd = dt.weekday()  # 0=월 ... 4=금 ... 6=일
-
-        # 금요일이 아니면 무조건 SPXW
+        wd = dt.weekday()
         if wd != 4:
             return "SPXW"
-
-        # 금요일인 경우: 해당 월의 3번째 금요일인지 확인
-        # 3번째 금요일 = 해당 월 1일부터 첫 금요일 + 14일
         from datetime import date as _date
         first_day = _date(dt.year, dt.month, 1)
-        days_to_fri = (4 - first_day.weekday()) % 7  # 첫 금요일까지 남은 일수
+        days_to_fri = (4 - first_day.weekday()) % 7
         third_friday = first_day.day + days_to_fri + 14
         if dt.day == third_friday:
-            return "SPX"   # 3번째 금요일 → 월간 SPX
-        return "SPXW"      # 나머지 금요일 → 주간 SPXW
+            return "SPX"
+        return "SPXW"
     except Exception:
         return "SPXW"
 
@@ -307,7 +292,6 @@ def make_opt_contract(symbol: str, strike: float, right: str,
     SYMBOL_CFG  = _core.SYMBOL_CFG
     DEFAULT_CFG = _core.DEFAULT_CFG
 
-    # ── CL (원유 선물 옵션 FOP) ──────────────────────────────────
     if sym_up == "CL":
         c = Contract()
         c.symbol       = "CL"
@@ -318,11 +302,9 @@ def make_opt_contract(symbol: str, strike: float, right: str,
         c.right        = "C" if right.upper() in ("C", "CALL") else "P"
         c.multiplier   = "1000"
         c.lastTradeDateOrContractMonth = expiry
-        c.tradingClass = "LO"   # IBKR CL옵션 tradingClass (TWS에서 확인 권장)
+        c.tradingClass = "LO"
         return c
 
-    # ── NANOS 전용 분기 (최우선) ─────────────────────────────
-    # IBKR NANOS 옵션: symbol="SPX", tradingClass="NANOS", exchange="CBOE", multiplier="1"
     if sym_up == "NANOS":
         _, _, mult, _ = SYMBOL_CFG.get("NANOS", ("OPT", "CBOE", "1", ""))
         c = Contract()
@@ -371,19 +353,16 @@ def make_opt_contract(symbol: str, strike: float, right: str,
         c.lastTradeDateOrContractMonth = expiry
         return c
 
-    # ── VIX 옵션: exchange 반드시 CBOE 명시 ─────────────────────
-    # SMART 라우팅으로는 IBKR이 VIX 옵션을 찾지 못해 ERR 200 발생.
-    # VIX 옵션은 CBOE 단독 상장이므로 exchange="CBOE" 를 직접 지정.
     if sym_up == "VIX":
         sec, _, mult, _ = SYMBOL_CFG.get("VIX", DEFAULT_CFG)
         c = Contract()
         c.symbol       = "VIX"
-        c.secType      = sec          # "OPT"
-        c.exchange     = "CBOE"       # ← SMART 아닌 CBOE 명시
+        c.secType      = sec
+        c.exchange     = "CBOE"
         c.currency     = "USD"
         c.strike       = float(strike)
         c.right        = "C" if right.upper() in ("C", "CALL") else "P"
-        c.multiplier   = mult         # "100"
+        c.multiplier   = mult
         c.tradingClass = "VIX"
         c.lastTradeDateOrContractMonth = expiry
         return c
@@ -409,7 +388,6 @@ def make_und_contract(symbol: str) -> "Contract":
     c.currency = "USD"
     _core = _get_core()
 
-    # ── 선물 기초자산 (CL 등) ────────────────────────────────────
     FUT_SYM   = _core.FUT_SYM
     INDEX_SYM = _core.INDEX_SYM
     if sym in FUT_SYM:
