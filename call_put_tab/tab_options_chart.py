@@ -188,18 +188,45 @@ class ChartMixin(HistoryMixin):
                     if prev is not None:
                         self.feed_opt_to_watch(self.call_strikes[row], "C", price, prev)
                     self.call_data[rid]["_prev_last"] = price
+                # ✅ SharedChainStore 에 가격 기록
+                try:
+                    cs = getattr(getattr(self, 'mw', None), 'chain_store', None)
+                    if cs is not None:
+                        expiry, _ = self._get_expiry(silent=True)
+                        if expiry:
+                            cs.update_price(expiry, self.call_strikes[row], "C", last=price)
+                except Exception:
+                    pass
             elif tt in (1, 66):
                 self.call_data[rid]["bid"] = price
                 self._buf_update_price(rid, "C", row, bid=price)
                 if self._chart_strike == self.call_strikes[row] and self._chart_side == "C":
                     if hasattr(self, '_pp_opt_bid'): self._pp_opt_bid = price
                     self._refresh_opt_panel("C", self.call_strikes[row])
+                # ✅ SharedChainStore 에 가격 기록
+                try:
+                    cs = getattr(getattr(self, 'mw', None), 'chain_store', None)
+                    if cs is not None:
+                        expiry, _ = self._get_expiry(silent=True)
+                        if expiry:
+                            cs.update_price(expiry, self.call_strikes[row], "C", bid=price)
+                except Exception:
+                    pass
             elif tt in (2, 67):
                 self.call_data[rid]["ask"] = price
                 self._buf_update_price(rid, "C", row, ask=price)
                 if self._chart_strike == self.call_strikes[row] and self._chart_side == "C":
                     if hasattr(self, '_pp_opt_ask'): self._pp_opt_ask = price
                     self._refresh_opt_panel("C", self.call_strikes[row])
+                # ✅ SharedChainStore 에 가격 기록
+                try:
+                    cs = getattr(getattr(self, 'mw', None), 'chain_store', None)
+                    if cs is not None:
+                        expiry, _ = self._get_expiry(silent=True)
+                        if expiry:
+                            cs.update_price(expiry, self.call_strikes[row], "C", ask=price)
+                except Exception:
+                    pass
             elif tt in (9, 75):
                 tbl_set(self.tbl_call, row, 2, f"{price:.2f}", "#aaa")
 
@@ -221,18 +248,45 @@ class ChartMixin(HistoryMixin):
                     if prev is not None:
                         self.feed_opt_to_watch(self.put_strikes[row], "P", price, prev)
                     self.put_data[rid]["_prev_last"] = price
+                # ✅ SharedChainStore 에 가격 기록
+                try:
+                    cs = getattr(getattr(self, 'mw', None), 'chain_store', None)
+                    if cs is not None:
+                        expiry, _ = self._get_expiry(silent=True)
+                        if expiry:
+                            cs.update_price(expiry, self.put_strikes[row], "P", last=price)
+                except Exception:
+                    pass
             elif tt in (1, 66):
                 self.put_data[rid]["bid"] = price
                 self._buf_update_price(rid, "P", row, bid=price)
                 if self._chart_strike == self.put_strikes[row] and self._chart_side == "P":
                     if hasattr(self, '_pp_opt_bid'): self._pp_opt_bid = price
                     self._refresh_opt_panel("P", self.put_strikes[row])
+                # ✅ SharedChainStore 에 가격 기록
+                try:
+                    cs = getattr(getattr(self, 'mw', None), 'chain_store', None)
+                    if cs is not None:
+                        expiry, _ = self._get_expiry(silent=True)
+                        if expiry:
+                            cs.update_price(expiry, self.put_strikes[row], "P", bid=price)
+                except Exception:
+                    pass
             elif tt in (2, 67):
                 self.put_data[rid]["ask"] = price
                 self._buf_update_price(rid, "P", row, ask=price)
                 if self._chart_strike == self.put_strikes[row] and self._chart_side == "P":
                     if hasattr(self, '_pp_opt_ask'): self._pp_opt_ask = price
                     self._refresh_opt_panel("P", self.put_strikes[row])
+                # ✅ SharedChainStore 에 가격 기록
+                try:
+                    cs = getattr(getattr(self, 'mw', None), 'chain_store', None)
+                    if cs is not None:
+                        expiry, _ = self._get_expiry(silent=True)
+                        if expiry:
+                            cs.update_price(expiry, self.put_strikes[row], "P", ask=price)
+                except Exception:
+                    pass
             elif tt in (9, 75):
                 tbl_set(self.tbl_put, row, 2, f"{price:.2f}", "#aaa")
 
@@ -303,6 +357,20 @@ class ChartMixin(HistoryMixin):
             self._update_watch_prev("C", self.call_strikes[row], delta, theta, gamma)
             self._buf_update_greeks(rid, "C", row, iv, delta, gamma, vega, theta)
 
+            # ✅ SharedChainStore 에 Greeks 기록
+            try:
+                cs = getattr(getattr(self, 'mw', None), 'chain_store', None)
+                if cs is not None:
+                    expiry, _ = self._get_expiry(silent=True)
+                    if expiry:
+                        cs.update_greeks(
+                            expiry, self.call_strikes[row], "C",
+                            iv=iv, delta=delta, gamma=gamma,
+                            vega=vega, theta=theta,
+                            und_price=self.und_price)
+            except Exception:
+                pass
+
         elif REQ_PUT <= rid < REQ_PUT + self._MAX_STRIKES:
             row = rid - REQ_PUT
             if row >= len(self.put_strikes): return
@@ -318,6 +386,20 @@ class ChartMixin(HistoryMixin):
                 self._push_greeks(delta)
             self._update_watch_prev("P", self.put_strikes[row], delta, theta, gamma)
             self._buf_update_greeks(rid, "P", row, iv, delta, gamma, vega, theta)
+
+            # ✅ SharedChainStore 에 Greeks 기록
+            try:
+                cs = getattr(getattr(self, 'mw', None), 'chain_store', None)
+                if cs is not None:
+                    expiry, _ = self._get_expiry(silent=True)
+                    if expiry:
+                        cs.update_greeks(
+                            expiry, self.put_strikes[row], "P",
+                            iv=iv, delta=delta, gamma=gamma,
+                            vega=vega, theta=theta,
+                            und_price=self.und_price)
+            except Exception:
+                pass
 
     def _buf_update_greeks(self, rid, side, row, iv, delta, gamma, vega, theta):
         """ChainBuffer 에 Greeks 업데이트."""
@@ -413,6 +495,15 @@ class ChartMixin(HistoryMixin):
                 und_push(price)
             except Exception:
                 pass
+
+            # ✅ PriceHistoryBuffer 에 push (1분 1회 자동 제한)
+            try:
+                ph = getattr(getattr(self, 'mw', None), 'price_history', None)
+                if ph is not None:
+                    ph.push(price)
+            except Exception:
+                pass
+
         if hasattr(self, '_update_price_panel'):
             self._update_price_panel()
 

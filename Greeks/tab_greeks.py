@@ -103,6 +103,15 @@ class GreeksGrid(QWidget):
         self._chain_buf     = None
         self._use_chain_buf = False
 
+        # ── SharedChainStore 연동 ─────────────────────────────────────────────
+        self._chain_store     = None
+        self._use_chain_store = False
+        # 2초 폴링 타이머 (attach_chain_store() 호출 시 start)
+        self._chain_store_timer = QTimer(self)
+        self._chain_store_timer.setInterval(2000)
+        self._chain_store_timer.timeout.connect(
+            lambda: _fe._poll_chain_store(self))
+
         # ── SnapshotManager (+1DTE / +2DTE 전담) ─────────────────────────────
         self._snap_mgr: Optional[SnapshotManager] = None
         if _SNAP_MGR_AVAILABLE:
@@ -204,6 +213,7 @@ class GreeksGrid(QWidget):
     # S12-patch1: _fetch_next_expiry / _cancel_next_expiry 위임 제거
     def _auto_fetch_if_market_hours(self):  _fe.auto_fetch_if_market_hours(self)
     def attach_chain_buffer(self, buf):     _fe.attach_chain_buffer(self, buf)
+    def attach_chain_store(self, store):    _fe.attach_chain_store(self, store)
     def _on_chain_buf_update(self, *a):     _fe.on_chain_buf_update(self, *a)
     @pyqtSlot(str)
     def _apply_chain_buf_update(self, p):   _fe.apply_chain_buf_update(self, p)

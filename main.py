@@ -109,6 +109,10 @@ from core import (
     GridTab, TabWrapper, SAVE_DIR
 )
 
+# ── 공유 데이터 저장소 ─────────────────────────────────────────
+from shared_chain_store   import SharedChainStore
+from price_history_buffer import PriceHistoryBuffer
+
 # ── Greeks 폴더 경로 등록 (Main2/Greeks/) ────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "Greeks"))
 
@@ -199,6 +203,10 @@ class TradingDashboard(QMainWindow):
         self.tab_telegram = None   # 텔레그램 설정 탭
         self.tab_kr_chart = None   # Korea_1분 차트 탭
 
+        # ── 공유 데이터 저장소 ──────────────────────────────────
+        self.chain_store   = SharedChainStore()    # 탭 간 옵션 체인 공유
+        self.price_history = PriceHistoryBuffer()  # 기초자산 N분 전 가격 추적
+
         # 텔레그램 차트 grab 용 시그널 브릿지 (백그라운드→메인스레드)
         self._chart_grab_bridge = _ChartGrabBridge()
 
@@ -233,6 +241,9 @@ class TradingDashboard(QMainWindow):
         _buf = getattr(self, 'chain_buf', None)
         if _buf and hasattr(self.tab_greeks, 'attach_chain_buffer'):
             self.tab_greeks.attach_chain_buffer(_buf)
+        # ✅ 2단계: SharedChainStore → Greeks탭 연동 (reqMktData 400개 제거)
+        if hasattr(self.tab_greeks, 'attach_chain_store'):
+            self.tab_greeks.attach_chain_store(self.chain_store)
         add(ChartGrid,                             "7. 1분봉 차트",   self)
         add(OITrackerGrid,                         "8. OI 추적",      self)
         self.tab_kr_chart = add(KoreaChartGrid,    "Korea_1분",  self)
@@ -471,8 +482,24 @@ class TradingDashboard(QMainWindow):
         # 앱 시작 2초 후 자동 연결 (1회성)
         QTimer.singleShot(2000, self._auto_connect)
 
+        # 앱 시작 3초 후 price_history 복원 (greeks_db → 과거 60분치)
+        QTimer.singleShot(3000, self._restore_price_history)
+
         # 텔레그램 polling 시작 (백그라운드 스레드, daemon)
         TelegramClient.get().start_polling()
+
+    def _restore_price_history(self):
+        """앱 시작 3초 후 greeks_db에서 과거 60분치 und_price 복원.
+        장중 재시작 시 AlertEngine이 즉시 N분 전 가격을 쓸 수 있게 함.
+        """
+        try:
+            from greeks_db import load_und_price_history
+            rows = load_und_price_history(minutes=60)
+            if rows:
+                self.price_history.restore_from_db(rows)
+                print(f"[Dashboard] price_history 복원 완료: {self.price_history.size()}분치")
+        except Exception as e:
+            print(f"[Dashboard] price_history 복원 실패 (무시): {e}")
 
     def _auto_connect(self):
         """앱 시작 2초 후 자동으로 TWS 연결 시도 (팝업 없이)."""

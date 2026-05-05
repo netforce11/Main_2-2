@@ -157,10 +157,15 @@ class PanelsMixin(PricePanelMixin):
         g6, h6 = _gb_w("조회")
         h6.addWidget(QLabel("행:", styleSheet="color:#aaa;font-size:11px;border:none;"))
         self.spin_n = QSpinBox()
-        self.spin_n.setRange(1, self._MAX_STRIKES); self.spin_n.setValue(10)
+        # ✅ 콜/풋 각 최대 25개 → 합산 50개 + REQ_UND 1개 = 51개 (한도 100개 이내)
+        self.spin_n.setRange(1, 25); self.spin_n.setValue(10)
         self.spin_n.setFixedWidth(50); self.spin_n.setFixedHeight(24)
         self.spin_n.setStyleSheet(
             "background:#0a0a18;color:#ffd700;border:1px solid #2e3060;font-size:12px;")
+        self.spin_n.setToolTip("콜/풋 각 최대 25개 (합산 51개, IBKR 한도 100개 이내)")
+        # ✅ spin_n 변경 시 한도 초과 경고 + 1분 후 강제 다운그레이드
+        self.spin_n.valueChanged.connect(self._on_spin_n_changed)
+
         self.btn_fetch_10 = QPushButton("10조회"); self.btn_fetch_10.setFixedHeight(26)
         self.btn_fetch_10.setFixedWidth(54)
         self.btn_fetch_10.setStyleSheet(
@@ -293,6 +298,75 @@ class PanelsMixin(PricePanelMixin):
         self._bot_splitter.setSizes([820, 300])
         self._watch_splitter = self._bot_splitter
         return self._bot_splitter
+
+    # ── spin_n 한도 초과 경고 + 1분 후 강제 다운그레이드 ──────────
+    _SPIN_N_MAX   = 25   # 콜/풋 각 최대 (합산 51개, IBKR 한도 이내)
+    _SPIN_N_SAFE  = 10   # 1분 후 자동 복원값
+
+    def _on_spin_n_changed(self, value: int):
+        """
+        spin_n 값 변경 시 호출.
+        - 25 초과: QMessageBox 경고 + 1분 후 강제 10으로 다운그레이드
+        - 25 이하: 기존 타이머 취소 (사용자가 스스로 조절)
+        """
+        # 이미 최대값(25)으로 하드 제한되어 있으므로
+        # 이 메서드는 값이 정확히 25일 때 경고를 띄우는 용도로 사용
+        if value >= self._SPIN_N_MAX:
+            from PyQt5.QtWidgets import QMessageBox
+            msg = QMessageBox(self)
+            msg.setWindowTitle("⚠ 구독 한도 주의")
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText(
+                f"콜/풋 각 {value}개 조회 시\n"
+                f"총 구독 수: {value * 2 + 1}개\n\n"
+                f"IBKR 기본 한도(100개)에 근접합니다.\n"
+                f"1분 내에 줄이지 않으면 자동으로 {self._SPIN_N_SAFE}개로 조정됩니다."
+            )
+            msg.setStyleSheet(
+                "QMessageBox{background:#0a0a18;color:#ffd700;}"
+                "QLabel{color:#ffd700;font-size:12px;}"
+                "QPushButton{background:#1c1c3a;color:#dde0f0;"
+                "border:1px solid #3a3a7a;border-radius:3px;padding:4px 12px;}"
+            )
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.exec_()
+
+            # 1분 후 강제 다운그레이드 타이머 시작 (기존 것 있으면 재시작)
+            if not hasattr(self, '_spin_n_guard_timer'):
+                from PyQt5.QtCore import QTimer as _QT
+                self._spin_n_guard_timer = _QT(self)
+                self._spin_n_guard_timer.setSingleShot(True)
+                self._spin_n_guard_timer.timeout.connect(
+                    self._force_downgrade_spin_n)
+            self._spin_n_guard_timer.start(60_000)   # 1분
+        else:
+            # 사용자가 직접 내렸으면 타이머 취소
+            t = getattr(self, '_spin_n_guard_timer', None)
+            if t and t.isActive():
+                t.stop()
+
+    def _force_downgrade_spin_n(self):
+        """1분 후에도 조정 없으면 강제로 spin_n을 SAFE 값으로 내림."""
+        if self.spin_n.value() >= self._SPIN_N_MAX:
+            from PyQt5.QtWidgets import QMessageBox
+            self.spin_n.setValue(self._SPIN_N_SAFE)
+            msg = QMessageBox(self)
+            msg.setWindowTitle("⚠ 조회 수 자동 조정")
+            msg.setIcon(QMessageBox.Information)
+            msg.setText(
+                f"1분간 조정이 없어 조회 수를 "
+                f"{self._SPIN_N_SAFE}개로 자동 조정했습니다."
+            )
+            msg.setStyleSheet(
+                "QMessageBox{background:#0a0a18;color:#ffd700;}"
+                "QLabel{color:#ffd700;font-size:12px;}"
+                "QPushButton{background:#1c1c3a;color:#dde0f0;"
+                "border:1px solid #3a3a7a;border-radius:3px;padding:4px 12px;}"
+            )
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.exec_()
+            self._log("⚠ 구독 한도 초과 방지: spin_n 자동 조정 → "
+                      f"{self._SPIN_N_SAFE}개")
 
     def _on_watch_blink(self):
         """깜빡임 타이머 콜백 — ● 표시 토글."""

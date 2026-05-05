@@ -53,6 +53,15 @@ def fetch(self):
                f"ATM={atm_check} ±{ATM_WING} | {len(strikes)*2}개")
         self._banner.setText(msg); return
 
+    # ── SharedChainStore 연동 시 reqMktData 생략 ─────────────────────────────
+    if getattr(self, '_use_chain_store', False):
+        self._cell_data.clear(); self._prev_data.clear()
+        msg = (f"🔗 chain_store 대기 중 | {self._sym} {self._expiry} "
+               f"ATM={atm_check} ±{ATM_WING} | {len(strikes)*2}개")
+        self._banner.setText(msg)
+        log.info("[GreeksGrid] chain_store 모드 — reqMktData 생략 (%d개)", len(strikes)*2)
+        return
+
     # ── BUG-1 수정(S12): clear 전에 기존 구독 취소 ─────────────────────────
     for rid in list(self._req_map.keys()):
         try: self._main.ib.cancelMktData(rid)
@@ -168,3 +177,81 @@ def apply_chain_buf_update(self, payload: str):
         pct = int(n / total * 100) if total else 0
         self._banner.setText(f"🔗 버퍼 수신 {n}/{total} ({pct}%) | {side}{int(strike)}")
     if not self._flush_t.isActive(): self._flush_t.start(300)
+
+
+# ── SharedChainStore 연동 (2단계: Greeks 자체 구독 대체) ─────────────────────
+
+def attach_chain_store(self, store):
+    """
+    콜-풋탭의 SharedChainStore 를 Greeks탭에 연결.
+    이후 fetch() 에서 reqMktData 를 보내지 않고 store 폴링으로 대체.
+
+    main.py 에서 호출:
+        if hasattr(self.tab_greeks, 'attach_chain_store'):
+            self.tab_greeks.attach_chain_store(self.chain_store)
+    """
+    self._chain_store     = store
+    self._use_chain_store = True
+    self._chain_store_timer.start()
+    log.info("[GreeksGrid] SharedChainStore 연동 완료 ✅ (reqMktData 구독 생략)")
+
+
+def _poll_chain_store(self):
+    """
+    2초 타이머 콜백 — SharedChainStore 에서 현재 만기 데이터를 읽어
+    _cell_data 를 갱신하고 렌더 flush 를 트리거한다.
+
+    조건:
+      - _use_chain_store=True
+      - self._expiry 가 설정된 상태
+      - chain_store 에 해당 만기 데이터가 있음
+    """
+    store = getattr(self, '_chain_store', None)
+    if not store or not self._expiry:
+        return
+
+    from core import SYMBOL_CFG, DEFAULT_CFG
+    cfg     = SYMBOL_CFG.get(self._sym, DEFAULT_CFG)
+    step    = cfg[3] if cfg else 5
+    strikes = self._calc_strikes(self._und_price, ATM_WING, step)
+
+    updated = 0
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    for strike in strikes:
+        for side in ("C", "P"):
+            # 5초 이내 갱신된 데이터만 사용
+            if not store.has_fresh(self._expiry, strike, side, max_age=5.0):
+                continue
+            data = store.get(self._expiry, strike, side)
+            if not data:
+                continue
+            iv    = data.get("iv")
+            if not iv or not (0 < iv < 10):
+                continue
+            delta = data.get("delta", 0.0)
+            gamma = data.get("gamma", 0.0)
+            vega  = data.get("vega",  0.0)
+            theta = data.get("theta", 0.0)
+            vanna = vega * delta if (vega and delta) else 0.0
+            k     = (self._expiry, strike, side)
+            self._prev_data[k] = self._cell_data.get(k, {}).copy()
+            self._cell_data[k] = dict(
+                sym=self._sym, expiry=self._expiry,
+                strike=strike, side=side,
+                delta=delta, gamma=gamma, iv=iv,
+                vanna=vanna, vega=vega, theta=theta,
+                und_price=data.get("und_price") or self._und_price,
+                ts=ts,
+            )
+            updated += 1
+
+    if updated > 0:
+        n     = len(self._cell_data)
+        total = len(strikes) * 2
+        pct   = int(n / total * 100) if total else 0
+        self._banner.setText(
+            f"🔗 chain_store 동기화 {n}/{total} ({pct}%) | "
+            f"{self._sym} {self._expiry}")
+        if not self._flush_t.isActive():
+            self._flush_t.start(300)

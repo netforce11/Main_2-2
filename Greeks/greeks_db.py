@@ -342,3 +342,32 @@ def available_days_merged() -> List[str]:
             if len(day) == 8 and day.isdigit():
                 days.add(day)
     return sorted(days)
+
+
+# ── PriceHistoryBuffer 복원용 ────────────────────────────────────────────────
+
+def load_und_price_history(minutes: int = 60) -> List[Dict]:
+    """
+    오늘 greeks_YYYYMMDD.db 에서 최근 N분치 und_price 조회.
+    앱 재시작 시 PriceHistoryBuffer 복원에 사용.
+
+    반환: [{'ts': 'YYYY-MM-DD HH:MM:SS', 'und_price': float}, ...]
+    """
+    today = date.today().strftime("%Y%m%d")
+    path  = _db_path(today)
+    if not os.path.exists(path):
+        return []
+    cutoff = (datetime.now() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        conn = sqlite3.connect(path)
+        rows = conn.execute(
+            "SELECT ts, und_price FROM greeks "
+            "WHERE ts >= ? AND und_price IS NOT NULL "
+            "ORDER BY ts ASC",
+            (cutoff,)
+        ).fetchall()
+        conn.close()
+        return [{"ts": r[0], "und_price": r[1]} for r in rows]
+    except Exception as e:
+        log.warning("[GreeksDB] load_und_price_history 오류 (무시): %s", e)
+        return []
