@@ -164,9 +164,10 @@ def _req_snapshot(ib, rid: int, contract) -> None:
     """
     1회성 스냅샷 (snapshot=True). D+1/D+2 전용.
     ticker 한도 미포함. 수신 완료 후 IBKR이 자동 해제.
+    genericTickList="" 필수 — snapshot=True 시 generic tick 미지원 (ERR 321)
     """
     try:
-        ib.reqMktData(rid, contract, "106", True, False, [])
+        ib.reqMktData(rid, contract, "", True, False, [])
     except Exception as e:
         log.warning("[Snapshot] snapshot rid=%d: %s", rid, e)
 

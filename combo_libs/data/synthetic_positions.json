@@ -1,0 +1,30 @@
+[
+  {
+    "strategy": "콜 스프레드 (콜매수 + 콜매도)",
+    "qty": 1,
+    "entry": 0.39,
+    "current": 0.39,
+    "side": "BUY",
+    "oid": 11,
+    "legs": [
+      {
+        "dir": "BUY",
+        "cp": "C",
+        "strike": 722.0,
+        "prem": "1.01",
+        "qty": 1,
+        "expiry": "20260504"
+      },
+      {
+        "dir": "SELL",
+        "cp": "C",
+        "strike": 723.0,
+        "prem": "0.62",
+        "qty": 1,
+        "expiry": "20260504"
+      }
+    ],
+    "status": "체결완료",
+    "saved_at": "2026-05-05T00:20:41"
+  }
+]
