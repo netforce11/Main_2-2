@@ -10,7 +10,7 @@ def get_executions_by_date(date: str) -> list[dict]:
     """날짜별 체결 내역 (und 컨텍스트 포함)."""
     conn = get_conn()
     rows = conn.execute(
-        "SELECT * FROM executions WHERE date=? ORDER BY id", (date,)
+        "SELECT * FROM executions WHERE date=? AND strike > 0 ORDER BY id", (date,)
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]

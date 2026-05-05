@@ -84,6 +84,8 @@ class BalanceGrid(GridTab):
         if hasattr(bridge, 'order_status_sig'):
             bridge.order_status_sig.connect(self._on_order_status_log)
         if hasattr(bridge, 'exec_sig'):
+            try: bridge.exec_sig.disconnect(self._on_exec_log)
+            except Exception: pass
             bridge.exec_sig.connect(self._on_exec_log)
 
     def _refresh(self):
@@ -312,6 +314,10 @@ class BalanceGrid(GridTab):
         """매매일지 DB 조회 → 3탭 갱신. 로직은 balance_journal_load.py 참조."""
         from Account_info.balance_journal_load import jnl_load
         jnl_load(self)
+    def _jnl_fetch_ib(self):
+        """IB reqExecutions → DB 저장 후 화면 갱신."""
+        from Account_info.balance_journal_load import jnl_fetch_ib
+        jnl_fetch_ib(self)
 
     def _on_order_status_log(self, oid: int, status: str,
                              filled: float, remaining: float) -> None:
@@ -335,19 +341,23 @@ class BalanceGrid(GridTab):
         """bridge.exec_sig → 모든 체결 DB 저장 + BUY/SELL 매칭."""
         try:
             from trade_log import log_exec, run_match, get_und_context
+            from trade_log.db import get_conn
+            # 중복 체크
+            conn = get_conn()
+            exists = conn.execute(
+                "SELECT 1 FROM executions WHERE oid=? AND sym=? AND action=? AND price=?",
+                (oid, sym, side, price)).fetchone()
+            conn.close()
+            if exists:
+                return  # 이미 있으면 스킵
             log_exec(
-                oid=oid,
-                source='bridge',
-                sym=sym,
-                action=side,
-                qty=qty,
-                price=price,
+                oid=oid, source='bridge', sym=sym,
+                action=side, qty=qty, price=price,
                 und_ctx=get_und_context(),
             )
             run_match('bridge', sym, '', '', 0)
         except Exception as e:
-            print(f"[trade_log] executions 저장 오류: {e}")
-
+          print(f"[trade_log] executions 저장 오류: {e}")
     def _apply_theme(self):
         """TabWrapper 다크/라이트 전환 시 호출 — 테이블 색상 명시 재적용."""
         from core import _apply_table_theme

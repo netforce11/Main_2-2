@@ -1,5 +1,5 @@
 """
-balance_panel_journal.py — 매매일지 패널  v2.0
+balance_panel_journal.py — 매매일지 패널  v2.1
 [3,0-11] 체결내역 / 주문로그 / 미청산 탭 + 날짜 컨트롤 + 일일 요약 바
 
 설정하는 self 속성:
@@ -60,6 +60,8 @@ def build_journal(self) -> QWidget:
 
     for page in _build_pages(self):
         root.addWidget(page)
+
+    root.addWidget(_build_footer(self))   # ★ 하단 버튼 바 추가
 
     return outer
 
@@ -157,3 +159,40 @@ def _build_pages(self) -> list:
     self._jnl_page_open.setVisible(False)
 
     return [self._jnl_page_exec, self._jnl_page_order, self._jnl_page_open]
+
+
+def _build_footer(self) -> QWidget:
+    """★ 하단 우측 — IB 체결내역 불러오기 버튼."""
+    footer = QWidget()
+    footer.setStyleSheet(
+        "background:#f8fafc;"
+        "border-top:1px solid #e2e8f0;"
+        "border-bottom-left-radius:12px;"
+        "border-bottom-right-radius:12px;")
+    hl = QHBoxLayout(footer)
+    hl.setContentsMargins(14, 6, 14, 6)
+    hl.setSpacing(6)
+
+    hl.addStretch()
+
+    # 상태 라벨 (불러오기 진행 상황 표시)
+    self._ib_fetch_lbl = QLabel("")
+    self._ib_fetch_lbl.setStyleSheet(
+        "color:#64748b;font-size:11px;border:none;")
+    hl.addWidget(self._ib_fetch_lbl)
+
+    # IB 체결내역 불러오기 버튼
+    btn_fetch = QPushButton("📥 IB 체결내역 불러오기")
+    btn_fetch.setFixedHeight(30)
+    btn_fetch.setStyleSheet(
+        "background:#fef9c3;"
+        "color:#854d0e;"
+        "border:1px solid #fde047;"
+        "border-radius:6px;"
+        "font-size:11px;"
+        "font-weight:700;"
+        "padding:4px 14px;")
+    btn_fetch.clicked.connect(self._jnl_fetch_ib)
+    hl.addWidget(btn_fetch)
+
+    return footer
