@@ -1,16 +1,21 @@
 """
-tab_greeks_fetch.py — 조회·자동조회·chain_buf  S12-patch1
+tab_greeks_fetch.py — 조회·자동조회·chain_buf  S12-fix1
 ══════════════════════════════════════════════════════════
 S12  BUG-1: _fetch() 에서 clear 전에 cancelMktData 호출
 S12  BUG-5: _status_req_count 누적 덧셈 제거 → 이번 조회 건수만 표시
 S12  BUG-6: _fetch_next_expiry 실패 카운터 추가
-S12-patch1 수정 사항:
-  [논리결함2] fetch_next_expiry() (레거시 next_map +1DTE) 와
-              snap_mgr._snap_1dte() 가 동일 만기를 이중 저장하는 문제.
-              → fetch_next_expiry() / cancel_next_expiry() 제거.
-              → +1DTE 는 snap_mgr 단독 담당으로 역할 통일.
-  [심각2]     auto_fetch_if_market_hours() 에서 snap_mgr.start() 시
-              0DTE expiry 전달 명시 (slot 매핑 정확성 보장).
+S12-patch1:
+  [논리결함2] fetch_next_expiry() 제거, snap_mgr 단독 +1DTE 담당
+  [심각2]     auto_fetch_if_market_hours() snap_mgr.start() 에 expiry_0dte 명시
+
+S12-fix1 수정 사항:
+  [BUG-A] chain_store 모드에서 fetch() 조기 return 후 snap_mgr.start()가
+          한 번도 호출되지 않는 문제.
+          → fetch() 내 chain_store 분기에서도 snap_mgr.start() 호출.
+  [BUG-B] auto_fetch_if_market_hours() 에서 self._expiry가 빈 문자열이면
+          snap_mgr.start() 를 건너뛰는 문제.
+          → expiry 재갱신 후 재시도 로직 추가.
+  [BUG-C] _chain_store_timer 중복 start() 방지 (MD 문서 R-3 대응).
 """
 from __future__ import annotations
 import json
@@ -31,8 +36,30 @@ SNAPSHOT_MODE = True
 log = logging.getLogger(__name__)
 
 
+def _start_snap_mgr(self, label: str = ""):
+    """
+    snap_mgr.start() 공통 헬퍼.
+    expiry / und_price 조건을 통합 체크하고 start() 호출.
+    label: 로그에 출력할 호출 맥락 설명.
+    """
+    if not self._snap_mgr:
+        return
+    if not self._expiry:
+        log.warning("[GreeksGrid] snap_mgr.start() 건너뜀 — expiry 미설정 (%s)", label)
+        return
+    if self._und_price <= 0:
+        log.warning("[GreeksGrid] snap_mgr.start() 건너뜀 — und_price 미수신 (%s)", label)
+        return
+    self._snap_mgr.start(
+        sym=self._sym,
+        und_price=self._und_price,
+        expiry_0dte=self._expiry,
+    )
+    log.info("[GreeksGrid] SnapshotManager 시작 (0DTE=%s, 경로=%s)", self._expiry, label)
+
+
 def fetch(self):
-    """당일 만기 Greeks 조회 (IBKR 직접 or chain_buf 대기)."""
+    """당일 만기 Greeks 조회 (IBKR 직접 or chain_buf/chain_store 대기)."""
     self._sym, (self._expiry, self._tag) = (
         self._sym_cb.currentText(), self._current_expiry())
 
@@ -51,7 +78,10 @@ def fetch(self):
         self._cell_data.clear(); self._prev_data.clear()
         msg = (f"🔗 chain_buf 대기 중 | {self._sym} {self._expiry} "
                f"ATM={atm_check} ±{ATM_WING} | {len(strikes)*2}개")
-        self._banner.setText(msg); return
+        self._banner.setText(msg)
+        # BUG-A fix: chain_buf 모드에서도 +1DTE/+2DTE snap_mgr 시작
+        _start_snap_mgr(self, "chain_buf 모드")
+        return
 
     # ── SharedChainStore 연동 시 reqMktData 생략 ─────────────────────────────
     if getattr(self, '_use_chain_store', False):
@@ -60,6 +90,8 @@ def fetch(self):
                f"ATM={atm_check} ±{ATM_WING} | {len(strikes)*2}개")
         self._banner.setText(msg)
         log.info("[GreeksGrid] chain_store 모드 — reqMktData 생략 (%d개)", len(strikes)*2)
+        # BUG-A fix: chain_store 모드에서도 +1DTE/+2DTE snap_mgr 시작
+        _start_snap_mgr(self, "chain_store 모드")
         return
 
     # ── BUG-1 수정(S12): clear 전에 기존 구독 취소 ─────────────────────────
@@ -98,30 +130,49 @@ def fetch(self):
     self._status_saving(0, 0, f"당일 만기 조회 중… ({ok}건 요청)")
     self._status_req_count(ok)
 
+    # 직접 구독 경로에서도 +1DTE/+2DTE snap_mgr 시작
+    _start_snap_mgr(self, "직접구독 모드")
+
 
 def auto_fetch_if_market_hours(self):
     """
     앱 시작 1분 후 자동 실행 — 장 중이면 조회·SnapshotManager 시작.
-    심각2 수정: snap_mgr.start() 에 expiry_0dte 명시 전달
-               → _slot_for_expiry() 가 0DTE 슬롯을 정확히 매핑하도록 보장.
+
+    S12-patch1: snap_mgr.start() 에 expiry_0dte 명시 전달
+    S12-fix1 [BUG-B]: self._expiry 비어있으면 _refresh_expiry() 후 재시도.
+                       기존 코드는 expiry 없을 때 snap_mgr.start()를 그냥 건너뜀.
     """
     if not _is_market_hours():
         log.info("[GreeksGrid] 장외 시간 — 자동 조회 생략")
         self._status_offhour(True)
         for s in range(3): self._status_idle(s, "장외시간")
         return
+
     self._status_offhour(False)
+
     if self._und_price <= 0:
         log.info("[GreeksGrid] 기초자산 미수신 — 30초 후 재시도")
         QTimer.singleShot(30_000, self._auto_fetch_if_market_hours); return
+
+    # BUG-B fix: expiry가 비어있으면 갱신 후 재시도
+    if not self._expiry:
+        log.info("[GreeksGrid] expiry 미설정 — _refresh_expiry() 후 10초 재시도")
+        try:
+            self._refresh_expiry()
+            # _refresh_expiry 후에도 expiry가 없으면 setCurrentIndex(0) 로 세팅됨
+            # 콤보박스 변경 이벤트가 동기적으로 발생하지 않을 수 있으므로 직접 갱신
+            self._expiry, self._tag = self._current_expiry()
+        except Exception as e:
+            log.error("[GreeksGrid] _refresh_expiry 오류: %s", e)
+        if not self._expiry:
+            QTimer.singleShot(10_000, self._auto_fetch_if_market_hours)
+            return
+
     log.info("[GreeksGrid] 장 중 자동 조회 시작")
     self._banner.setText("🕐 장 중 자동 조회 시작...")
     self._fetch()
-    if self._snap_mgr and self._expiry:
-        # 심각2 수정: expiry_0dte 명시 — 0DTE slot 매핑 정확성 보장
-        self._snap_mgr.start(sym=self._sym, und_price=self._und_price,
-                             expiry_0dte=self._expiry)
-        log.info("[GreeksGrid] SnapshotManager 자동 시작 (0DTE=%s)", self._expiry)
+    # fetch() 내부에서 _start_snap_mgr() 호출하므로 여기서는 중복 호출 불필요.
+    # (단, chain_store/chain_buf 모드가 아닌 경우 fetch()가 직접 snap_mgr 시작함)
 
 
 # ── chain_saver 버퍼 연동 ────────────────────────────────────────────────────
@@ -179,19 +230,19 @@ def apply_chain_buf_update(self, payload: str):
     if not self._flush_t.isActive(): self._flush_t.start(300)
 
 
-# ── SharedChainStore 연동 (2단계: Greeks 자체 구독 대체) ─────────────────────
+# ── SharedChainStore 연동 ─────────────────────────────────────────────────────
 
 def attach_chain_store(self, store):
     """
     콜-풋탭의 SharedChainStore 를 Greeks탭에 연결.
-    이후 fetch() 에서 reqMktData 를 보내지 않고 store 폴링으로 대체.
-
-    main.py 에서 호출:
-        if hasattr(self.tab_greeks, 'attach_chain_store'):
-            self.tab_greeks.attach_chain_store(self.chain_store)
+    S12-fix1 [BUG-C]: 중복 start() 방지 — isActive() 체크 후 start.
     """
     self._chain_store     = store
     self._use_chain_store = True
+    # BUG-C fix: 이미 타이머가 실행 중이면 stop 후 재시작 (중복 방지)
+    if self._chain_store_timer.isActive():
+        self._chain_store_timer.stop()
+        log.debug("[GreeksGrid] chain_store_timer 재시작 (중복 방지)")
     self._chain_store_timer.start()
     log.info("[GreeksGrid] SharedChainStore 연동 완료 ✅ (reqMktData 구독 생략)")
 
@@ -200,11 +251,6 @@ def _poll_chain_store(self):
     """
     2초 타이머 콜백 — SharedChainStore 에서 현재 만기 데이터를 읽어
     _cell_data 를 갱신하고 렌더 flush 를 트리거한다.
-
-    조건:
-      - _use_chain_store=True
-      - self._expiry 가 설정된 상태
-      - chain_store 에 해당 만기 데이터가 있음
     """
     store = getattr(self, '_chain_store', None)
     if not store or not self._expiry:

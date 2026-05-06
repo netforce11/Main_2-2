@@ -1,0 +1,1168 @@
+2026-05-06 13:12:29 [ChainSaver] 버퍼 엔트리=31 | price_ticks=136 greeks_ticks=122 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:12:29 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:12:59 [ChainSaver] 버퍼 엔트리=40 | price_ticks=532 greeks_ticks=969 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:12:59 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:13:29 [ChainSaver] 버퍼 엔트리=40 | price_ticks=768 greeks_ticks=1664 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:13:29 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:13:59 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1012 greeks_ticks=2471 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:13:59 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:14:29 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1283 greeks_ticks=3007 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:14:29 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:14:59 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1491 greeks_ticks=3623 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:14:59 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:15:29 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1826 greeks_ticks=4350 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:15:29 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:15:59 [ChainSaver] 버퍼 엔트리=40 | price_ticks=2072 greeks_ticks=4879 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:15:59 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:16:29 [ChainSaver] 버퍼 엔트리=40 | price_ticks=2222 greeks_ticks=5068 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:16:29 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:16:59 [ChainSaver] 버퍼 엔트리=40 | price_ticks=2222 greeks_ticks=5068 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:16:59 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:17:29 [ChainSaver] 버퍼 엔트리=40 | price_ticks=2222 greeks_ticks=5068 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:17:29 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:19:01 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:19:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:19:31 [ChainSaver] 버퍼 엔트리=40 | price_ticks=318 greeks_ticks=513 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:19:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:20:01 [ChainSaver] 버퍼 엔트리=40 | price_ticks=488 greeks_ticks=1061 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:20:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:20:31 [ChainSaver] 버퍼 엔트리=40 | price_ticks=763 greeks_ticks=1624 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:20:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:21:01 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1002 greeks_ticks=2311 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:21:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:21:31 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1259 greeks_ticks=3128 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:21:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:22:01 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1309 greeks_ticks=3316 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:22:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:22:31 [ChainSaver] 버퍼 엔트리=42 | price_ticks=1367 greeks_ticks=3422 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:22:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:23:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=1612 greeks_ticks=4070 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:23:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:23:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=1736 greeks_ticks=4621 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:23:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:24:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=1920 greeks_ticks=5331 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:24:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:24:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=2133 greeks_ticks=5785 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:24:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:25:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=2332 greeks_ticks=6650 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:25:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:25:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=2668 greeks_ticks=7410 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:25:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:26:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=2958 greeks_ticks=8488 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:26:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:26:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=3109 greeks_ticks=9040 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:26:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:27:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=3277 greeks_ticks=9268 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:27:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:27:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=4034 greeks_ticks=10519 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:27:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:28:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=4826 greeks_ticks=11970 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:28:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:28:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=5429 greeks_ticks=13453 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:28:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:29:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=6122 greeks_ticks=14952 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:29:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:29:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=6606 greeks_ticks=16208 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:29:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:30:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=7124 greeks_ticks=17182 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:30:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:30:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=7644 greeks_ticks=18139 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:30:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:31:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=8169 greeks_ticks=18715 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:31:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:31:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=8439 greeks_ticks=19385 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:31:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:32:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=8783 greeks_ticks=20379 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:32:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:32:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=9019 greeks_ticks=20934 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:32:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:33:01 [ChainSaver] 버퍼 엔트리=44 | price_ticks=9408 greeks_ticks=21922 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:33:01 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 13:33:31 [ChainSaver] 버퍼 엔트리=44 | price_ticks=9665 greeks_ticks=23051 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 13:33:31 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:00:18 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:00:19 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:00:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=311 greeks_ticks=629 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:00:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:01:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=771 greeks_ticks=1686 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:01:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:01:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1246 greeks_ticks=2713 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:01:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:02:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1715 greeks_ticks=3508 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:02:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:02:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=2180 greeks_ticks=4539 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:02:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:03:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=2551 greeks_ticks=5975 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:03:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:03:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=2851 greeks_ticks=6698 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:03:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:04:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=3142 greeks_ticks=7149 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:04:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:04:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=3495 greeks_ticks=8364 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:04:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:05:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=3859 greeks_ticks=9519 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:05:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:05:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=4502 greeks_ticks=10593 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:05:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:06:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=4971 greeks_ticks=11757 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:06:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:06:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=5514 greeks_ticks=12819 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:06:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:07:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=5798 greeks_ticks=13547 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:07:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:07:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=6077 greeks_ticks=14477 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:07:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:08:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=6316 greeks_ticks=14924 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:08:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:08:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=6641 greeks_ticks=15577 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:08:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:09:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=7142 greeks_ticks=16874 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:09:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:09:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=7460 greeks_ticks=17393 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:09:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:10:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=7808 greeks_ticks=18118 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:10:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:10:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=8072 greeks_ticks=18909 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:10:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:11:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=8361 greeks_ticks=19506 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:11:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:11:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=8535 greeks_ticks=19965 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:11:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:12:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=8704 greeks_ticks=20547 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:12:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:12:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=8965 greeks_ticks=21677 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:12:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:13:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=9410 greeks_ticks=22529 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:13:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:13:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=9594 greeks_ticks=22865 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:13:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:14:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=9800 greeks_ticks=23463 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:14:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:14:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=10068 greeks_ticks=24291 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:14:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:15:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=10582 greeks_ticks=25365 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:15:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:15:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=11347 greeks_ticks=26670 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:15:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:16:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=12366 greeks_ticks=27971 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:16:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:16:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=12965 greeks_ticks=29133 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:16:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:17:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=13314 greeks_ticks=29848 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:17:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:17:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=13682 greeks_ticks=30392 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:17:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:18:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=14158 greeks_ticks=31479 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:18:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:18:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=14669 greeks_ticks=32407 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:18:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:19:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=15137 greeks_ticks=33173 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:19:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:19:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=15601 greeks_ticks=33824 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:19:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:20:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=15892 greeks_ticks=34985 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:20:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:20:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=16223 greeks_ticks=36139 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:20:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:21:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=16578 greeks_ticks=37083 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:21:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:21:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=16873 greeks_ticks=37660 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:21:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:22:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=17232 greeks_ticks=38508 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:22:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:22:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=17637 greeks_ticks=39359 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:22:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:23:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=18081 greeks_ticks=40301 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:23:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:23:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=18488 greeks_ticks=41175 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:23:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:24:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=18880 greeks_ticks=42358 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:24:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:24:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=19183 greeks_ticks=43127 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:24:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:25:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=19529 greeks_ticks=43855 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:25:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:25:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=20006 greeks_ticks=44443 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:25:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:26:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=20355 greeks_ticks=45157 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:26:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:26:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=20702 greeks_ticks=46086 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:26:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:27:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=20999 greeks_ticks=46902 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:27:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:27:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=21269 greeks_ticks=47696 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:27:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:28:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=21746 greeks_ticks=48342 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:28:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:28:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=22021 greeks_ticks=49100 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:28:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:29:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=22297 greeks_ticks=49696 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:29:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:29:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=22696 greeks_ticks=50261 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:29:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:30:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=23139 greeks_ticks=50969 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:30:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:30:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=23762 greeks_ticks=52355 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:30:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:31:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=24169 greeks_ticks=53200 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:31:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:31:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=24682 greeks_ticks=54333 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:31:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:32:18 [ChainSaver] 버퍼 엔트리=40 | price_ticks=25311 greeks_ticks=55289 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:32:18 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 14:32:48 [ChainSaver] 버퍼 엔트리=40 | price_ticks=25756 greeks_ticks=55944 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 14:32:48 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:08:46 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:08:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:09:16 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:09:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:09:46 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:09:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:10:16 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:10:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:10:46 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:10:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:11:16 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:11:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:11:46 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:11:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:12:16 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:12:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:12:46 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:12:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:13:17 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:13:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:13:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=603 greeks_ticks=1105 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:13:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:14:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1143 greeks_ticks=2275 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:14:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:14:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=1588 greeks_ticks=3530 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:14:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:15:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=2104 greeks_ticks=4468 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:15:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:15:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=2514 greeks_ticks=5609 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:15:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:16:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=3091 greeks_ticks=7018 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:16:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:16:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=3562 greeks_ticks=7855 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:16:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:17:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=4032 greeks_ticks=8929 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:17:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:17:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=4452 greeks_ticks=9847 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:17:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:18:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=4825 greeks_ticks=11137 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:18:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:18:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=5201 greeks_ticks=12152 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:18:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:19:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=5650 greeks_ticks=13280 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:19:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:19:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=6101 greeks_ticks=14460 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:19:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:20:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=6703 greeks_ticks=15569 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:20:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:20:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=7200 greeks_ticks=16475 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:20:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:21:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=7741 greeks_ticks=17595 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:21:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:21:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=8161 greeks_ticks=18574 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:21:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:22:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=8653 greeks_ticks=19466 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:22:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:22:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=9046 greeks_ticks=20420 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:22:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:23:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=9658 greeks_ticks=21288 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:23:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:23:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=10083 greeks_ticks=21764 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:23:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:24:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=10515 greeks_ticks=22469 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:24:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:24:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=10989 greeks_ticks=23209 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:24:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:25:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=11472 greeks_ticks=24022 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:25:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:25:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=11902 greeks_ticks=24865 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:25:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:26:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=12401 greeks_ticks=25762 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:26:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:26:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=12925 greeks_ticks=26560 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:26:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:27:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=13354 greeks_ticks=27390 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:27:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:27:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=13824 greeks_ticks=28220 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:27:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:28:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=14222 greeks_ticks=29113 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:28:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:28:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=14660 greeks_ticks=30116 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:28:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:29:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=15175 greeks_ticks=31154 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:29:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:29:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=15937 greeks_ticks=32134 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:29:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:30:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=16556 greeks_ticks=32955 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:30:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:30:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=17298 greeks_ticks=34080 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:30:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:31:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=17794 greeks_ticks=35023 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:31:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:31:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=18403 greeks_ticks=36090 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:31:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:32:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=19022 greeks_ticks=37400 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:32:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:32:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=19736 greeks_ticks=38710 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:32:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:33:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=20401 greeks_ticks=39966 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:33:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:33:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=21103 greeks_ticks=41374 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:33:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:34:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=21560 greeks_ticks=42049 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:34:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:34:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=22211 greeks_ticks=43129 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:34:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:35:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=22765 greeks_ticks=44077 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:35:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:35:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=23285 greeks_ticks=44776 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:35:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:36:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=23855 greeks_ticks=46029 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:36:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:36:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=24323 greeks_ticks=46868 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:36:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:37:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=24785 greeks_ticks=47566 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:37:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:37:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=25270 greeks_ticks=48303 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:37:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:38:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=25686 greeks_ticks=48880 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:38:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:38:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=26003 greeks_ticks=49495 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:38:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:39:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=26456 greeks_ticks=50179 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:39:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:39:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=26850 greeks_ticks=51259 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:39:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:40:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=27366 greeks_ticks=52100 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:40:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:40:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=27841 greeks_ticks=53049 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:40:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:41:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=28260 greeks_ticks=54050 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:41:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:41:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=28869 greeks_ticks=55049 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:41:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:42:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=31356 greeks_ticks=56689 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:42:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:42:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=33534 greeks_ticks=58731 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:42:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:43:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=34549 greeks_ticks=60434 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:43:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:43:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=35364 greeks_ticks=61540 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:43:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:44:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=36240 greeks_ticks=62731 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:44:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:44:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=36882 greeks_ticks=64177 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:44:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:45:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=37518 greeks_ticks=65234 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:45:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:45:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=38138 greeks_ticks=66786 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:45:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:46:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=38718 greeks_ticks=67635 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:46:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:46:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=39376 greeks_ticks=69137 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:46:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:47:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=39784 greeks_ticks=70067 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:47:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:47:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=40357 greeks_ticks=71619 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:47:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:48:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=40665 greeks_ticks=72303 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:48:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:48:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=41098 greeks_ticks=73414 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:48:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:49:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=41476 greeks_ticks=74206 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:49:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:49:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=41861 greeks_ticks=75373 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:49:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:50:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=42519 greeks_ticks=76749 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:50:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:50:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=43254 greeks_ticks=78051 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:50:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:51:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=43789 greeks_ticks=79094 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:51:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:51:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=44512 greeks_ticks=80419 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:51:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:52:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=45308 greeks_ticks=82030 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:52:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:52:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=45770 greeks_ticks=82911 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:52:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:53:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=46252 greeks_ticks=83858 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:53:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:53:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=46664 greeks_ticks=84955 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:53:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:54:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=47178 greeks_ticks=85871 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:54:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:54:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=47623 greeks_ticks=87089 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:54:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:55:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=48225 greeks_ticks=87775 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:55:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:55:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=48748 greeks_ticks=88834 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:55:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:56:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=49227 greeks_ticks=89625 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:56:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:56:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=49606 greeks_ticks=90507 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:56:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:57:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=50128 greeks_ticks=91429 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:57:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:57:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=50724 greeks_ticks=92792 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:57:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:58:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=51032 greeks_ticks=93577 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:58:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:58:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=51742 greeks_ticks=94944 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:58:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:59:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=52357 greeks_ticks=95963 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:59:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 15:59:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=52896 greeks_ticks=97167 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 15:59:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:00:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=54324 greeks_ticks=98758 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:00:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:00:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=55833 greeks_ticks=100403 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:00:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:01:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=57137 greeks_ticks=102003 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:01:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:01:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=58098 greeks_ticks=103243 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:01:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:02:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=59013 greeks_ticks=104432 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:02:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:02:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=60154 greeks_ticks=106129 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:02:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:03:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=61164 greeks_ticks=107839 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:03:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:03:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=61937 greeks_ticks=109399 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:03:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:04:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=62919 greeks_ticks=110874 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:04:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:04:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=63901 greeks_ticks=112342 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:04:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:05:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=64816 greeks_ticks=113864 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:05:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:05:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=65878 greeks_ticks=115667 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:05:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:06:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=66936 greeks_ticks=117275 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:06:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:06:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=67711 greeks_ticks=118774 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:06:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:07:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=68512 greeks_ticks=119844 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:07:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:07:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=69480 greeks_ticks=121092 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:07:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:08:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=70594 greeks_ticks=122245 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:08:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:08:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=71403 greeks_ticks=123474 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:08:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:09:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=72503 greeks_ticks=124885 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:09:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:09:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=73280 greeks_ticks=126007 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:09:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:10:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=74215 greeks_ticks=127498 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:10:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:10:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=75226 greeks_ticks=128961 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:10:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:11:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=76274 greeks_ticks=130145 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:11:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:11:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=77114 greeks_ticks=131717 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:11:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:12:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=77899 greeks_ticks=132457 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:12:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:12:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=78724 greeks_ticks=134011 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:12:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:13:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=79687 greeks_ticks=135385 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:13:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:13:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=80533 greeks_ticks=136548 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:13:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:14:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=81824 greeks_ticks=138157 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:14:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:14:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=82616 greeks_ticks=139747 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:14:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:15:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=83699 greeks_ticks=141238 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:15:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:15:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=84528 greeks_ticks=142834 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:15:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:16:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=85611 greeks_ticks=144330 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:16:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:16:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=86463 greeks_ticks=145688 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:16:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:17:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=87164 greeks_ticks=146836 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:17:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:17:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=88069 greeks_ticks=147983 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:17:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:18:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=89352 greeks_ticks=149689 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:18:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:18:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=90141 greeks_ticks=151321 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:18:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:19:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=90858 greeks_ticks=152381 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:19:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:19:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=91704 greeks_ticks=153842 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:19:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:20:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=92311 greeks_ticks=155015 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:20:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:20:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=93117 greeks_ticks=156314 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:20:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:21:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=93899 greeks_ticks=157612 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:21:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:21:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=94903 greeks_ticks=158874 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:21:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:22:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=95569 greeks_ticks=160125 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:22:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:22:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=96426 greeks_ticks=160980 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:22:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:23:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=97037 greeks_ticks=161928 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:23:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:23:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=97579 greeks_ticks=163118 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:23:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:24:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=98229 greeks_ticks=164368 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:24:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:24:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=98799 greeks_ticks=165475 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:24:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:25:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=99620 greeks_ticks=166992 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:25:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:25:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=100121 greeks_ticks=168028 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:25:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:26:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=100763 greeks_ticks=169375 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:26:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:26:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=101382 greeks_ticks=170266 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:26:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:27:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=101793 greeks_ticks=171652 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:27:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:27:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=102313 greeks_ticks=172738 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:27:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:28:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=102817 greeks_ticks=173465 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:28:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:28:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=103484 greeks_ticks=174889 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:28:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:29:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=104290 greeks_ticks=176416 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:29:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:29:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=104876 greeks_ticks=177820 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:29:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:30:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=105609 greeks_ticks=179183 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:30:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:30:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=106226 greeks_ticks=180194 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:30:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:31:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=106852 greeks_ticks=181455 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:31:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:31:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=107481 greeks_ticks=182460 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:31:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:32:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=108237 greeks_ticks=183577 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:32:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:32:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=108731 greeks_ticks=184038 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:32:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:33:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=109301 greeks_ticks=184264 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:33:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:33:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=109765 greeks_ticks=184496 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:33:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:34:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=110675 greeks_ticks=184758 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:34:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:34:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=111446 greeks_ticks=185144 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:34:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:35:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=112145 greeks_ticks=185311 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:35:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:35:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=112650 greeks_ticks=185618 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:35:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:36:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=113095 greeks_ticks=185774 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:36:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:36:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=113537 greeks_ticks=186075 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:36:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:37:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=114186 greeks_ticks=186292 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:37:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:37:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=114542 greeks_ticks=186542 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:37:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:38:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=114975 greeks_ticks=186665 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:38:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:38:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=115513 greeks_ticks=186983 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:38:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:39:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=116138 greeks_ticks=187277 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:39:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:39:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=116554 greeks_ticks=187523 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:39:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:40:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=117214 greeks_ticks=187766 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:40:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:40:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=117636 greeks_ticks=188025 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:40:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:41:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=118177 greeks_ticks=188222 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:41:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:41:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=118811 greeks_ticks=188579 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:41:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:42:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=119449 greeks_ticks=188806 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:42:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:42:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=119906 greeks_ticks=189081 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:42:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:43:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=120494 greeks_ticks=189269 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:43:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:43:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=120972 greeks_ticks=189626 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:43:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:44:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=121591 greeks_ticks=189990 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:44:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:44:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=122163 greeks_ticks=191004 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:44:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 16:45:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=122209 greeks_ticks=191091 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 16:45:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:23:15 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:23:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:23:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=978 greeks_ticks=1332 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:23:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:24:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=2363 greeks_ticks=3204 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:24:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:24:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=3463 greeks_ticks=4711 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:24:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:25:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=4747 greeks_ticks=6279 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:25:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:25:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=5665 greeks_ticks=7903 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:25:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:26:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=7089 greeks_ticks=9776 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:26:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:26:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=8235 greeks_ticks=11123 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:26:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:27:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=9313 greeks_ticks=12389 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:27:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:27:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=10201 greeks_ticks=13890 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:27:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:28:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=11482 greeks_ticks=15762 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:28:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:28:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=12544 greeks_ticks=17296 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:28:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:29:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=13510 greeks_ticks=19050 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:29:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:29:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=14309 greeks_ticks=20342 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:29:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:30:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=15225 greeks_ticks=21761 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:30:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:30:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=16498 greeks_ticks=23202 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:30:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:31:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=17399 greeks_ticks=24746 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:31:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:31:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=18427 greeks_ticks=26515 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:31:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:32:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=20364 greeks_ticks=27743 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:32:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:32:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=23504 greeks_ticks=29551 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:32:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:33:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=25589 greeks_ticks=31347 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:33:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:33:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=27306 greeks_ticks=33130 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:33:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:34:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=28760 greeks_ticks=34884 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:34:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:34:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=30118 greeks_ticks=36512 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:34:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:35:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=31889 greeks_ticks=38285 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:35:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:35:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=33550 greeks_ticks=40066 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:35:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:36:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=35268 greeks_ticks=41721 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:36:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:36:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=36730 greeks_ticks=43375 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:36:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:37:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=38021 greeks_ticks=44909 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:37:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:37:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=39542 greeks_ticks=46634 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:37:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:38:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=40967 greeks_ticks=48489 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:38:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:38:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=42422 greeks_ticks=50361 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:38:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:39:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=43714 greeks_ticks=51548 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:39:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:39:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=44935 greeks_ticks=53429 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:39:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:40:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=46315 greeks_ticks=54965 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:40:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:40:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=47867 greeks_ticks=56730 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:40:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:41:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=48736 greeks_ticks=58132 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:41:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:41:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=49865 greeks_ticks=59674 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:41:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:42:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=50869 greeks_ticks=61201 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:42:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:42:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=51943 greeks_ticks=62094 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:42:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:43:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=53209 greeks_ticks=63727 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:43:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:43:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=54349 greeks_ticks=65500 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:43:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:44:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=55347 greeks_ticks=66793 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:44:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:44:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=56493 greeks_ticks=68229 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:44:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:45:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=57890 greeks_ticks=69987 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:45:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:45:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=59201 greeks_ticks=71756 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:45:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:46:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=60110 greeks_ticks=73159 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:46:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:46:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=61511 greeks_ticks=74932 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:46:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:47:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=62736 greeks_ticks=76513 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:47:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:47:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=63539 greeks_ticks=77664 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:47:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:48:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=64463 greeks_ticks=79093 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:48:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:48:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=65449 greeks_ticks=80739 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:48:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:49:17 [ChainSaver] 버퍼 엔트리=40 | price_ticks=66506 greeks_ticks=82214 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:49:17 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:49:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=67573 greeks_ticks=83900 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:49:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:50:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=69228 greeks_ticks=85654 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:50:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:50:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=70402 greeks_ticks=87232 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:50:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:51:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=71919 greeks_ticks=88766 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:51:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:51:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=73167 greeks_ticks=90643 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:51:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:52:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=74139 greeks_ticks=92130 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:52:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:52:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=75113 greeks_ticks=94050 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:52:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:53:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=76087 greeks_ticks=95138 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:53:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:53:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=76925 greeks_ticks=96819 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:53:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:54:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=77984 greeks_ticks=98296 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:54:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:54:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=78876 greeks_ticks=99943 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:54:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:55:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=80019 greeks_ticks=101318 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:55:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:55:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=80814 greeks_ticks=102793 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:55:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:56:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=81663 greeks_ticks=104079 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:56:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:56:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=82730 greeks_ticks=105672 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:56:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:57:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=83884 greeks_ticks=107257 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:57:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:57:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=84886 greeks_ticks=108684 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:57:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:58:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=85531 greeks_ticks=109524 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:58:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:58:47 [ChainSaver] 버퍼 엔트리=40 | price_ticks=86512 greeks_ticks=111330 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:58:47 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:59:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=87586 greeks_ticks=112576 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:59:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 18:59:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=88526 greeks_ticks=114043 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 18:59:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:00:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=89802 greeks_ticks=115526 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:00:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:00:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=92523 greeks_ticks=117240 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:00:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:01:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=94529 greeks_ticks=118746 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:01:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:01:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=95752 greeks_ticks=120645 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:01:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:02:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=97895 greeks_ticks=122394 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:02:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:02:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=99681 greeks_ticks=124295 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:02:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:03:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=101482 greeks_ticks=126055 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:03:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:03:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=102980 greeks_ticks=127525 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:03:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:04:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=104464 greeks_ticks=129306 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:04:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:04:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=106057 greeks_ticks=130958 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:04:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:05:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=107686 greeks_ticks=132832 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:05:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:05:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=108795 greeks_ticks=134563 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:05:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:06:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=110078 greeks_ticks=136324 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:06:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:06:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=111073 greeks_ticks=138164 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:06:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:07:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=112490 greeks_ticks=139719 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:07:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:07:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=113545 greeks_ticks=141224 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:07:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:08:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=114792 greeks_ticks=142785 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:08:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:08:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=116218 greeks_ticks=143899 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:08:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:09:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=117611 greeks_ticks=145571 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:09:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:09:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=118742 greeks_ticks=147340 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:09:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:10:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=119912 greeks_ticks=148852 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:10:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:10:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=121525 greeks_ticks=150498 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:10:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:11:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=122767 greeks_ticks=151911 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:11:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:11:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=123901 greeks_ticks=153247 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:11:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:12:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=125375 greeks_ticks=155014 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:12:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:12:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=126517 greeks_ticks=156747 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:12:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:13:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=127823 greeks_ticks=158413 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:13:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:13:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=128780 greeks_ticks=159300 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:13:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:14:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=129507 greeks_ticks=160732 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:14:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:14:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=130614 greeks_ticks=162460 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:14:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:15:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=131907 greeks_ticks=164112 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:15:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:15:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=133098 greeks_ticks=165849 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:15:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:16:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=134168 greeks_ticks=167624 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:16:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:16:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=135237 greeks_ticks=169059 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:16:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:17:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=136368 greeks_ticks=170730 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:17:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:17:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=137351 greeks_ticks=171904 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:17:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:18:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=138442 greeks_ticks=173328 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:18:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:18:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=139596 greeks_ticks=175086 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:18:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:19:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=141405 greeks_ticks=176374 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:19:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:19:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=142500 greeks_ticks=178132 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:19:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:20:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=143608 greeks_ticks=179683 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:20:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:20:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=145266 greeks_ticks=181453 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:20:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:21:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=146557 greeks_ticks=183324 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:21:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:21:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=147834 greeks_ticks=184969 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:21:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:22:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=149201 greeks_ticks=186499 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:22:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:22:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=150232 greeks_ticks=187942 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:22:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:23:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=151271 greeks_ticks=189157 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:23:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:23:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=152287 greeks_ticks=190556 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:23:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:24:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=153409 greeks_ticks=191588 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:24:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:24:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=154490 greeks_ticks=193229 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:24:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:25:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=155555 greeks_ticks=194762 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:25:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:25:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=156600 greeks_ticks=196287 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:25:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:26:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=157505 greeks_ticks=197471 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:26:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:26:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=158316 greeks_ticks=198677 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:26:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:27:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=159065 greeks_ticks=199856 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:27:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:27:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=159853 greeks_ticks=201195 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:27:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:28:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=160937 greeks_ticks=202491 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:28:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:28:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=161876 greeks_ticks=203899 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:28:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:29:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=163191 greeks_ticks=205757 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:29:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:29:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=164503 greeks_ticks=207054 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:29:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:30:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=166149 greeks_ticks=208804 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:30:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:30:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=167587 greeks_ticks=210289 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:30:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:31:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=169104 greeks_ticks=211779 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:31:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:31:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=170562 greeks_ticks=213341 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:31:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:32:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=171697 greeks_ticks=214872 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:32:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:32:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=172800 greeks_ticks=216513 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:32:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:33:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=173915 greeks_ticks=218033 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:33:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:33:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=175369 greeks_ticks=219612 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:33:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:34:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=176963 greeks_ticks=221157 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:34:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:34:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=178364 greeks_ticks=222292 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:34:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:35:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=179643 greeks_ticks=223819 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:35:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:35:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=180644 greeks_ticks=225690 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:35:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:36:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=181853 greeks_ticks=227433 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:36:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:36:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=183663 greeks_ticks=229318 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:36:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:37:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=184817 greeks_ticks=230623 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:37:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:37:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=186182 greeks_ticks=232398 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:37:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:38:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=187019 greeks_ticks=234143 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:38:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:38:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=187741 greeks_ticks=235351 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:38:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:39:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=188542 greeks_ticks=236411 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:39:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:39:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=189465 greeks_ticks=237599 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:39:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:40:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=190365 greeks_ticks=238716 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:40:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:40:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=191535 greeks_ticks=240263 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:40:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:41:16 [ChainSaver] 버퍼 엔트리=40 | price_ticks=193143 greeks_ticks=242122 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:41:16 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:41:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=195088 greeks_ticks=243805 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:41:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:42:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=196721 greeks_ticks=245357 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:42:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:42:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=199114 greeks_ticks=247263 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:42:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:43:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=200593 greeks_ticks=249124 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:43:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:43:46 [ChainSaver] 버퍼 엔트리=40 | price_ticks=202498 greeks_ticks=250893 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:43:46 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:44:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=204528 greeks_ticks=252670 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:44:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:44:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=206077 greeks_ticks=254451 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:44:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:45:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=207414 greeks_ticks=255618 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:45:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:45:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=208656 greeks_ticks=257273 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:45:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:46:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=209899 greeks_ticks=258568 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:46:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:46:45 [ChainSaver] 버퍼 엔트리=40 | price_ticks=211009 greeks_ticks=260157 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:46:45 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:47:15 [ChainSaver] 버퍼 엔트리=40 | price_ticks=212874 greeks_ticks=261925 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:47:15 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:48:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:48:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:48:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:48:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:49:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:49:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:49:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:49:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:50:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:50:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:50:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:50:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:51:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:51:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:51:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:51:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:52:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:52:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:52:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:52:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:53:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:53:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:53:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:53:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:54:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:54:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:54:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:54:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:55:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:55:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:55:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:55:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:56:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:56:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:56:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:56:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:57:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:57:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:57:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:57:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:58:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:58:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:58:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:58:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:59:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:59:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 19:59:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 19:59:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:00:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:00:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:00:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:00:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:01:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:01:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:01:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:01:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:02:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:02:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:02:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:02:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:03:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:03:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:03:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:03:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:04:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:04:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:04:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:04:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:05:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:05:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:05:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:05:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:06:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:06:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:06:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:06:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:07:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:07:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:07:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:07:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:08:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:08:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:08:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:08:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:09:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:09:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:09:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:09:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:10:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:10:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:10:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:10:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:11:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:11:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:11:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:11:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:12:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:12:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:12:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:12:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:13:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:13:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:13:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:13:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:14:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:14:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:14:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:14:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:15:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:15:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:15:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:15:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:16:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:16:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:16:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:16:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:17:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:17:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:17:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:17:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:18:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:18:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:18:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:18:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:19:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:19:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:19:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:19:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:20:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:20:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:20:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:20:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:21:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:21:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:21:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:21:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:22:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:22:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:22:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:22:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:23:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:23:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:23:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:23:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:24:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:24:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:24:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:24:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:25:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:25:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:25:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:25:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:26:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:26:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:26:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:26:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:27:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:27:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:27:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:27:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:28:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:28:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:28:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:28:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:29:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:29:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:29:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:29:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:30:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:30:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:30:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:30:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:31:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:31:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:31:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:31:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:32:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:32:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:32:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:32:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:33:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:33:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:33:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:33:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:34:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:34:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:34:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:34:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:35:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:35:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:35:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:35:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:36:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:36:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:36:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:36:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:37:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:37:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:37:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:37:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:38:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:38:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:38:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:38:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:39:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:39:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:39:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:39:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:40:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:40:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:40:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:40:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:41:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:41:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:41:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:41:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:42:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:42:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:42:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:42:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:43:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:43:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:43:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:43:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:44:20 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:44:20 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음
+2026-05-06 20:44:50 [ChainSaver] 버퍼 엔트리=0 | price_ticks=0 greeks_ticks=0 snap_ticks=0 | 이론가 커버리지=N/A
+2026-05-06 20:44:50 [ChainSaver] DB 최근5분 rows=0 | IV커버=N/A    이론가커버=N/A | stream=0 snap=0 | 최근저장=없음

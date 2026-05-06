@@ -242,18 +242,22 @@ class NetPriceDisplay(QWidget):
         returns: {"lmt_price": float, "action": "BUY"|"SELL", "manual": bool}
         """
         if self._manual_mode:
+            if not self._manual_row.is_ready():
+                # 직접입력 모드지만 가격 미입력 → None 반환으로 호출부에서 차단
+                return {"lmt_price": 0.0, "action": "BUY", "manual": True, "invalid": True}
             price  = self._manual_row.get_price()
             is_deb = self._manual_row.is_debit()
             return {
                 "lmt_price": round(max(price, 0.01), 2),
                 "action":    "BUY" if is_deb else "SELL",
                 "manual":    True,
+                "invalid":   False,
             }
         # 자동모드 (기존 동작)
         net = self._net_price
         if net >= 0:
-            return {"lmt_price": round(net, 2), "action": "BUY", "manual": False}
-        return {"lmt_price": round(abs(net), 2), "action": "SELL", "manual": False}
+            return {"lmt_price": round(net, 2), "action": "BUY", "manual": False, "invalid": False}
+        return {"lmt_price": round(abs(net), 2), "action": "SELL", "manual": False, "invalid": False}
 
     def reset(self):
         """전략 변경 / 레그 리셋 시 초기화."""

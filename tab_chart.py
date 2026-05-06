@@ -98,6 +98,8 @@ from chart_exec_marker import (init_exec_markers, add_exec_marker,
                                 redraw_exec_markers, clear_exec_markers,
                                 load_exec_markers_from_db)
 from chart_tick_speed  import stop_tick_speed
+# ── v6.7 신규: 날짜별 메모 ───────────────────────────────────
+from chart_memo import toggle_memo_panel, on_memo_date_changed
 
 try:
     from common import (DATA_ROOT, API_KEY_FILE, WATCHLIST_FILE,
@@ -201,6 +203,9 @@ class ChartGrid(QWidget):
     _clear_exec_markers    = clear_exec_markers
     _load_exec_from_db     = load_exec_markers_from_db
     _stop_tick_speed       = stop_tick_speed
+    # ── v6.7 메모 바인딩 ──────────────────────────────────────
+    _toggle_memo_panel     = toggle_memo_panel
+    _on_memo_date_changed  = on_memo_date_changed
 
     # ── API 키 / 관심종목 ─────────────────────────────────────
     def _load_api_key(self):

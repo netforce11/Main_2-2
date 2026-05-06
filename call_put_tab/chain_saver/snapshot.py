@@ -28,15 +28,17 @@ NEXT_P_START  = 4600            # D+1 만기 풋 (snapshot=True, 1분 주기)
 NEXT_SLOTS    = 32              # 콜 32개 + 풋 32개 = 총 64개
 
 NEXT2_C_START = 4800            # D+2 만기 콜 (snapshot=True, 2분 주기)
-NEXT2_P_START = 5000            # D+2 만기 풋 (snapshot=True, 2분 주기)
+NEXT2_P_START = 4840            # D+2 만기 풋 (snapshot=True, 2분 주기)
+                                # S12-fix1: 5000 → 4840
+                                # 구 값 5000은 core.REQ_OI(5000~5498)와 충돌
 NEXT2_SLOTS   = 32              # 콜 32개 + 풋 32개 = 총 64개
 
 # ── reqId 범위 충돌 확인 ─────────────────────────────────────
 # NEXT_C:  4400~4431 (32개)
 # NEXT_P:  4600~4631 (32개)
 # NEXT2_C: 4800~4831 (32개)
-# NEXT2_P: 5000~5031 (32개)
-# 모두 200개 간격으로 분리 → 충돌 없음
+# NEXT2_P: 4840~4871 (32개)  ← S12-fix1: 5000~5031 → 4840~4871
+# REQ_OI:  5000~5498          ← NEXT2_P 와 완전 분리됨
 #
 # snapshot=True → IBKR 100개 티커 한도 미포함 → 수량 제한 없음
 

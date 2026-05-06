@@ -1,5 +1,8 @@
 # greeks_db.py  — SQLite 저장 / 불러오기 / 이벤트 감지
 # Python 3.8 호환  |  S11 patch 기준
+# ── 수정 이력 ──────────────────────────────────────────────────
+# S12-fix1: _is_market_hours() fallback이 UTC를 ET처럼 사용하는 버그 수정
+#           now_et import 실패 시 UTC-4(EDT)/UTC-5(EST) 정확 변환
 from __future__ import annotations
 import os, sqlite3, logging
 from datetime import date, datetime, timedelta
@@ -61,20 +64,63 @@ def open_baseline_db(db_dir: Optional[str] = None) -> sqlite3.Connection:
     conn.commit(); return conn
 
 # ── 정규장 시간 체크 (ET 기준) ──────────────────────────────
+def _et_offset_hours() -> int:
+    """
+    미국 ET 오프셋 반환 (UTC 기준).
+    DST(3월 두 번째 일요일 ~ 11월 첫 번째 일요일): UTC-4 (EDT)
+    그 외: UTC-5 (EST)
+    Python 3.9+ zoneinfo 사용, 실패 시 근사 계산.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        now_utc = datetime.utcnow()
+        # ET 현지시각 가져오기
+        import time as _time
+        # zoneinfo로 오프셋 계산
+        from datetime import timezone
+        utc_dt = now_utc.replace(tzinfo=timezone.utc)
+        et_dt = utc_dt.astimezone(ZoneInfo("America/New_York"))
+        offset_seconds = et_dt.utcoffset().total_seconds()
+        return int(offset_seconds / 3600)  # -4 (EDT) or -5 (EST)
+    except Exception:
+        pass
+
+    # fallback: DST 근사 계산 (미국 기준)
+    # DST: 3월 두 번째 일요일 00:00 ~ 11월 첫 번째 일요일 00:00
+    now = datetime.utcnow()
+    y = now.year
+
+    # 3월 두 번째 일요일
+    mar1 = datetime(y, 3, 1)
+    first_sun_mar = mar1 + timedelta(days=(6 - mar1.weekday()) % 7)
+    dst_start = first_sun_mar + timedelta(weeks=1)  # 두 번째 일요일
+
+    # 11월 첫 번째 일요일
+    nov1 = datetime(y, 11, 1)
+    dst_end = nov1 + timedelta(days=(6 - nov1.weekday()) % 7)
+
+    if dst_start <= now < dst_end:
+        return -4  # EDT
+    return -5      # EST
+
+
 def _is_market_hours() -> bool:
     """
     미국 ET 기준 정규장: 09:30 ~ 16:00
     16:00 이후 저장 차단.
+    S12-fix1: fallback UTC 오류 수정 — UTC를 ET로 정확히 변환
     """
     try:
         from call_put_tab.chain_saver.buffer import now_et
         now = now_et()
     except ImportError:
-        # fallback: KST→ET 변환 (KST - 13 or 14)
-        import math
-        now = datetime.utcnow()  # 간이 대체
+        # S12-fix1: UTC + ET 오프셋으로 정확히 변환 (구버전: datetime.utcnow() 그대로 사용해 버그)
+        offset = _et_offset_hours()  # -4 or -5
+        now = datetime.utcnow() + timedelta(hours=offset)
+        log.debug("[GreeksDB] ET 시간 근사 계산 (UTC%+d): %s", offset, now.strftime("%H:%M"))
+
     h, m = now.hour, now.minute
-    # 09:30 ~ 16:00
+    # 09:30 ~ 16:00 ET
     if h < 9:
         return False
     if h == 9 and m < 30:
@@ -237,11 +283,9 @@ def load_chain_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[D
 def available_expiries_for_day(day: str) -> List[str]:
     """
     기준일(day)의 chain_*.db + greeks_*.db 에서 만기(expiry) 목록 반환.
-    예: ['20260417', '20260418', '20260425', ...]
     """
     expiries: set = set()
 
-    # chain DB
     chain_path = _chain_db_path(day)
     if os.path.exists(chain_path):
         try:
@@ -254,7 +298,6 @@ def available_expiries_for_day(day: str) -> List[str]:
         except Exception:
             pass
 
-    # greeks DB
     greeks_path = _db_path(day)
     if os.path.exists(greeks_path):
         try:
@@ -274,31 +317,24 @@ def load_merged_snapshots(day: str, from_ts: str = "", to_ts: str = "",
                           expiry: str = "") -> List[Dict]:
     """
     greeks_YYYYMMDD.db + chain_YYYYMMDD.db 를 조인해서 반환.
-    - chain DB 기준으로 bid/ask/mid/theo/mispct/vega 추가
-    - greeks DB 기준으로 vanna 추가
-    - 어느 한쪽만 있어도 반환 (outer join 방식)
     """
     greeks_rows = load_snapshots(day, from_ts, to_ts)
     chain_rows  = load_chain_snapshots(day, from_ts, to_ts)
 
-    # ★ 만기 필터
     if expiry:
         greeks_rows = [r for r in greeks_rows if r.get("expiry") == expiry]
         chain_rows  = [r for r in chain_rows  if r.get("expiry") == expiry]
 
-    # chain 데이터를 (ts, strike, side) 키로 인덱싱
     chain_idx: Dict[tuple, dict] = {}
     for r in chain_rows:
         key = (r["ts"], r["strike"], r["side"])
         chain_idx[key] = r
 
-    # greeks 데이터를 (ts, strike, side) 키로 인덱싱
     greeks_idx: Dict[tuple, dict] = {}
     for r in greeks_rows:
         key = (r["ts"], r["strike"], r["side"])
         greeks_idx[key] = r
 
-    # 두 키셋 합집합으로 머지
     all_keys = set(chain_idx.keys()) | set(greeks_idx.keys())
     merged = []
     for key in sorted(all_keys):
@@ -334,11 +370,11 @@ def available_days_merged() -> List[str]:
         if not f.endswith(".db"):
             continue
         if f.startswith("greeks_"):
-            day = f[7:-3]   # greeks_20260416.db -> 20260416
+            day = f[7:-3]
             if len(day) == 8 and day.isdigit():
                 days.add(day)
         elif f.startswith("chain_"):
-            day = f[6:-3]   # chain_20260416.db -> 20260416
+            day = f[6:-3]
             if len(day) == 8 and day.isdigit():
                 days.add(day)
     return sorted(days)

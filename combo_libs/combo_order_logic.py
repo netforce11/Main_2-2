@@ -44,6 +44,43 @@ def _is_after_hours() -> bool:
     except Exception:
         return False
 
+def _get_session_info() -> tuple:
+    """
+    현재 ET 시각 기준으로 장 세션을 판단해
+    IB BAG 주문에 필요한 TIF / outsideRth 값을 반환.
+
+    IB 옵션 Extended Hours 세션 (ET 기준):
+      Pre-Market  : 04:00 ~ 09:30  → GTX + outsideRth=True
+      Regular     : 09:30 ~ 16:00  → DAY + outsideRth=False
+      After-Hours : 16:00 ~ 20:00  → GTX + outsideRth=True
+      Overnight   : 20:00 ~ 04:00  → GTX + outsideRth=True
+                                      (IB는 야간에도 GTX 접수 허용)
+
+    Returns:
+        (after_hours: bool, session_label: str, tif: str, outside_rth: bool)
+    """
+    _PRE_START   = dt_time(4,  0)
+    _AFTER_END   = dt_time(20, 0)
+
+    try:
+        now_et = datetime.now(ZoneInfo("America/New_York")).time()
+    except Exception:
+        # 시간대 조회 실패 → 안전하게 장중으로 처리
+        return False, "알수없음", "DAY", False
+
+    if _MARKET_OPEN <= now_et < _MARKET_CLOSE:
+        # 정규장
+        return False, "정규장(09:30~16:00)", "DAY", False
+    elif _PRE_START <= now_et < _MARKET_OPEN:
+        # 프리마켓
+        return True, "프리마켓(04:00~09:30)", "GTX", True
+    elif _MARKET_CLOSE <= now_et < _AFTER_END:
+        # 애프터마켓
+        return True, "애프터(16:00~20:00)", "GTX", True
+    else:
+        # 심야 (20:00~04:00) — IB는 GTX 접수 허용하나 체결 가능성 매우 낮음
+        return True, "심야(20:00~04:00)", "GTX", True
+
 
 def _calc_margin_local(self, legs: list) -> tuple:
     cache     = getattr(self, '_whatif_acct_cache', {})
@@ -238,14 +275,24 @@ def _close_ib_position(self, pos: dict):
     oid = ib.get_next_id()
     if oid is None:
         return self._log("❌ nextOrderId 없음")
+
+    # ── 장외 시간 자동 판단 ──────────────────────────────────
+    after_hours, session_label, tif, outside_rth = _get_session_info()
+
     ord_ = IbOrder()
-    ord_.action = close_action; ord_.orderType = "MKT"
-    ord_.totalQuantity = qty;   ord_.tif = "DAY"
-    ord_.eTradeOnly = False;    ord_.firmQuoteOnly = False
-    ord_.transmit = True
+    ord_.action        = close_action
+    ord_.orderType     = "MKT"
+    ord_.totalQuantity = qty
+    ord_.tif           = tif           # DAY(장중) / GTX(장외)
+    ord_.outsideRth    = outside_rth   # False(장중) / True(장외)
+    ord_.eTradeOnly    = False
+    ord_.firmQuoteOnly = False
+    ord_.transmit      = True
     try:
         ib.placeOrder(oid, ct, ord_)
-        self._log(f"🔴 청산 주문: OID={oid}  {close_action} {qty}계약  {strategy}")
+        self._log(
+            f"🔴 청산 주문: OID={oid}  {close_action} {qty}계약  {strategy}"
+            f"  TIF:{tif}  장외:{outside_rth}  세션:{session_label}")
     except Exception as e:
         self._log(f"❌ 청산 오류: {e}")
 

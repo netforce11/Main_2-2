@@ -157,6 +157,13 @@ class ManualPriceRow(QWidget):
         """절댓값 가격 반환 (최소 0.01)."""
         return max(self._price, self._MIN)
 
+    def is_ready(self) -> bool:
+        """
+        주문 전 유효성 체크.
+        직접입력 모드 전환 후 가격을 한 번도 입력/조정하지 않은 상태(0.0)면 False.
+        """
+        return self._price > 0.0
+
     def is_debit(self) -> bool:
         """True → DEBIT(BUY), False → CREDIT(SELL)."""
         return self._rb_debit.isChecked()

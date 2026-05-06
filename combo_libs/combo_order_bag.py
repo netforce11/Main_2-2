@@ -286,12 +286,33 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
 
     if display is not None:
         params = display.get_bag_params()
-        lmt_price    = params["lmt_price"]
-        bag_action   = params["action"]
+
+        # ── [BUG #2 수정] 직접입력 모드인데 가격 미입력 시 주문 차단 ──
+        if params.get("invalid", False):
+            self._bag_session = None
+            self._log("❌ 주문 취소: 직접입력 모드에서 가격이 입력되지 않았습니다.")
+            QMessageBox.warning(
+                self, "가격 미입력",
+                "직접입력 모드에서 스프레드 가격을 입력해주세요.\n\n"
+                "가격 입력 후 합성주문 버튼을 다시 누르세요.")
+            return
+
+        lmt_price       = params["lmt_price"]
+        bag_action      = params["action"]
         is_manual_price = params.get("manual", False)
         net = lmt_price if bag_action == "BUY" else -lmt_price
+
+        # ── [BUG #1 수정] 자동모드에서 Mid-price 미수신(0.0)이면 폴백 사용 ──
+        if not is_manual_price and lmt_price == 0.0:
+            try:
+                from combo_ui_leg_panel import _recalc_net_price
+                ui_price  = _recalc_net_price(self)
+                lmt_price = round(abs(float(ui_price)), 2) if ui_price else round(abs(net), 2)
+            except Exception:
+                lmt_price = round(abs(net), 2)
+            bag_action = "BUY" if net >= 0 else "SELL"
     else:
-        # 폴백: legs 데이터 or _recalc_net_price
+        # display 위젯 없음 → 폴백
         try:
             from combo_ui_leg_panel import _recalc_net_price
             ui_price  = _recalc_net_price(self)
@@ -304,8 +325,11 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         lmt_price = 0.01
 
     type_label = "데빗 (지불)" if bag_action == "BUY" else "크레딧 (수취)"
-    # 직접입력 여부 표시
     price_source = " [직접입력]" if is_manual_price else " [자동/Mid]"
+
+    # ── 장외 시간 판단 → TIF / outsideRth 자동 결정 ────────
+    from combo_order_logic import _get_session_info
+    after_hours, session_label, tif, outside_rth = _get_session_info()
 
     # ── 확인 다이얼로그 ─────────────────────────────────────
     leg_lines = "\n".join(
@@ -317,6 +341,12 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
     if len(expiry_str) == 8:
         expiry_str = f"{expiry_str[:4]}/{expiry_str[4:6]}/{expiry_str[6:]}"
 
+    ah_note = (
+        f"\n⚠ 장외 시간({session_label}) — TIF:{tif} / 장외체결 허용"
+        if after_hours else
+        f"\n장중({session_label}) — TIF:{tif}"
+    )
+
     from PyQt5.QtWidgets import QMessageBox as _MB
     dlg = _MB(self)
     dlg.setWindowTitle("⚡ 합성 주문 확인")
@@ -324,7 +354,8 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         f"전략:  {strat}\n만기:  {expiry_str}\n"
         f"─────────────────────────\n{leg_lines}\n"
         f"─────────────────────────\n"
-        f"순비용({type_label}):  ${lmt_price:.2f}{price_source}")
+        f"순비용({type_label}):  ${lmt_price:.2f}{price_source}"
+        f"{ah_note}")
     dlg.setStandardButtons(_MB.Ok | _MB.Cancel)
     dlg.button(_MB.Ok).setText("주문 전송")
     dlg.button(_MB.Cancel).setText("취소")
@@ -339,14 +370,15 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         self._log("❌ nextOrderId 없음")
         return
 
-    # ── 주문 객체 생성 ──────────────────────────────────────
+    # ── 주문 객체 생성 (장외 자동 분기) ────────────────────
     from ibapi.order import Order as IbOrder
     ibord = IbOrder()
     ibord.action        = bag_action
     ibord.orderType     = "LMT"
     ibord.totalQuantity = 1
     ibord.lmtPrice      = lmt_price
-    ibord.tif           = "DAY"
+    ibord.tif           = tif           # DAY(장중) / GTX(장외)
+    ibord.outsideRth    = outside_rth   # False(장중) / True(장외)
     ibord.eTradeOnly    = False
     ibord.firmQuoteOnly = False
     ibord.transmit      = True
@@ -356,9 +388,9 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         ib.placeOrder(oid, bag, ibord)
         self._log(
             f"⚡ BAG 주문: OID={oid}  {type_label} ${lmt_price:.2f}{price_source}"
-            f"  레그{total}개  qty={ibord.totalQuantity}")
+            f"  TIF:{tif}  outsideRth:{outside_rth}  레그{total}개  qty={ibord.totalQuantity}")
         self._log(
-            f"   BUY=${buy_total:.2f}  SELL=${sell_total:.2f}  net=${net:+.2f}")
+            f"   BUY=${buy_total:.2f}  SELL=${sell_total:.2f}  net=${net:+.2f}  세션:{session_label}")
 
         self._chaser_bag_contract = bag
         self._chaser_bag_order    = ibord

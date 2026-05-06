@@ -29,6 +29,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate, pyqtSignal
 from PyQt5.QtGui import QColor
 
+from chart_memo import build_memo_panel, toggle_memo_panel, on_memo_date_changed
+
 
 # ══════════════════════════════════════════════════════════════
 # Foldable GroupBox 헬퍼
@@ -204,6 +206,7 @@ def build_sidebar(self) -> QScrollArea:
     cal_v.setSpacing(2); cal_v.setContentsMargins(4, 4, 4, 4)
     self.calendar = _CustomCalendar()
     self.calendar.clicked.connect(self._on_calendar)
+    self.calendar.clicked.connect(self._on_memo_date_changed)  # v6.7 메모 연동
     cal_v.addWidget(self.calendar); side.addWidget(cal_grp)
 
     # ── 수급 피크 검색 (Foldable) ────────────────────────────
@@ -254,6 +257,39 @@ def build_sidebar(self) -> QScrollArea:
     self._pk_fold = _FoldableGroup("수급 피크 검색", pk_content,
                                    collapsed=True)
     side.addWidget(self._pk_fold)
+
+    # ════════════════════════════════════════════════════
+    # v6.7: 메모 패널 토글 버튼 + 패널
+    # ════════════════════════════════════════════════════
+    side.addWidget(_make_sep())
+
+    self.btn_memo_toggle = QPushButton("📝 메모 열기")
+    self.btn_memo_toggle.setCheckable(True)
+    self.btn_memo_toggle.setChecked(False)
+    self.btn_memo_toggle.setFixedHeight(28)
+    self.btn_memo_toggle.setToolTip(
+        "선택된 날짜의 메모를 열고 닫습니다.\n"
+        "캘린더 날짜 클릭 시 해당일 메모가 자동 로드됩니다.")
+    self.btn_memo_toggle.setStyleSheet(
+        "QPushButton{"
+        "  background:#1a1a2e;color:#9e9e9e;"
+        "  border:1px solid #3a3a5a;border-radius:3px;"
+        "  font-weight:bold;padding:4px 8px;}"
+        "QPushButton:hover{"
+        "  background:#22223a;color:#bdbdbd;"
+        "  border-color:#5a5a8a;}"
+        "QPushButton:checked{"
+        "  background:#162032;color:#5dade2;"
+        "  border:1px solid #5dade2;}"
+        "QPushButton:checked:hover{"
+        "  background:#1a2a3e;}"
+    )
+    self.btn_memo_toggle.clicked.connect(self._toggle_memo_panel)
+    side.addWidget(self.btn_memo_toggle)
+
+    # 메모 패널 (초기 숨김)
+    _memo_widget = build_memo_panel(self)
+    side.addWidget(_memo_widget)
 
     # ════════════════════════════════════════════════════
     # v6.4: 일봉 추가 보기 버튼

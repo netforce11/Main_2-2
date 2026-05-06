@@ -1,25 +1,29 @@
-"""greeks_snapshot_mgr.py — IBKR 스냅샷 요청 관리  S12-patch2 (최종)
+"""greeks_snapshot_mgr.py — IBKR 스냅샷 요청 관리  S12-fix1
 ════════════════════════════════════════════════════════════════════════
 수정 이력:
-  S12     BUG-2: 0DTE 콜/풋 rid 카운터 분리
-  S12     BUG-7: queue_done 마지막 슬롯만 발송
+  S12       BUG-2: 0DTE 콜/풋 rid 카운터 분리
+  S12       BUG-7: queue_done 마지막 슬롯만 발송
   S12-patch1: [논리결함1] 재호출 시 cancelMktData 누락 → _cancel_snapshot() 추가
-  S12-patch2: [CRITICAL-1] REQ_0DTE 블록을 10000번대로 이동 (core.REQ_CHAIN 4000~4399 충돌 해소)
+  S12-patch2: [CRITICAL-1] REQ_0DTE 블록을 10000번대로 이동
               [CRITICAL-2] _request_snapshot() tag="" 하드코딩 제거
-                           SPX/SPXW → _resolve_spx_trading_class() 자동 계산
               [BUG]        _next_bday() 공휴일 처리 누락 → is_trading_day() 사용
-              [THREAD]     record_received() EClient 스레드 → invokeMethod 메인 마샬링
-                           SnapshotManager를 QObject 상속으로 변경
+              [THREAD]     record_received() EClient 스레드 → invokeMethod 마샬링
               [LEAK]       stop()에서 router option 슬롯 unregister 추가
-              [DESIGN]     0DTE 스트리밍 포함 (fetch()와 역할 분리 명확화)
-                           _start_0dte_streaming() : snap_mgr 전담
-                           fetch()                 : 0DTE 직접 구독 (REQ_CHAIN 4000~4399)
-                           위 두 경로는 reqId 범위가 완전히 분리되어 충돌 없음
+  S12-fix1: [DESIGN] 0DTE 스트리밍 → 10초 주기 스냅샷으로 전환
+              - _start_0dte_streaming() → _snap_0dte() 로 변경
+              - snapshot=False(스트리밍) → snapshot=True(1회성 스냅샷)
+              - IBKR 구독 한도 0DTE 42개 절감
+              - _streaming_rids(Set) 제거 → _cancel_snapshot() 통일
+              - _cancel_streaming() 제거
+              - _t0 타이머 추가 (10초 주기, SNAP_0DTE_MS=10_000)
+              - start() 에서 _t0.start() 추가
+              - stop() 단순화: _cancel_snapshot() 3블록으로 통일
+              - 클래스 docstring 업데이트
 """
 from __future__ import annotations
 import logging
 from datetime import date, timedelta
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from PyQt5.QtCore import QTimer, QMetaObject, Qt, Q_ARG, pyqtSlot, QObject
 
@@ -37,6 +41,7 @@ REQ_1DTE_C_BASE = 11000; REQ_1DTE_P_BASE = 11400; REQ_1DTE_RANGE = 400
 REQ_2DTE_C_BASE = 12000; REQ_2DTE_P_BASE = 12400; REQ_2DTE_RANGE = 400
 
 PACING_DELAY_MS = 22        # 초당 45개 (22ms 간격)
+SNAP_0DTE_MS    = 10_000    # 0DTE  갱신 주기: 10초
 SNAP_1DTE_MS    = 60_000    # +1DTE 갱신 주기: 1분
 SNAP_2DTE_MS    = 120_000   # +2DTE 갱신 주기: 2분
 
@@ -45,12 +50,14 @@ StatusFn = Optional[Callable[[int, str, int, str], None]]
 
 class SnapshotManager(QObject):
     """
-    만기별 IBKR 스냅샷/스트리밍 요청 관리.
+    만기별 IBKR 스냅샷 요청 관리.  S12-fix1: 전 슬롯 snapshot=True 통일.
 
     역할 분담:
-      - 0DTE 스트리밍 : _start_0dte_streaming() (10000번대 reqId)
-      - +1DTE 스냅샷  : _snap_1dte() / _t1 타이머 (11000번대)
-      - +2DTE 스냅샷  : _snap_2dte() / _t2 타이머 (12000번대)
+      - 0DTE 스냅샷  : _snap_0dte() / _t0 타이머 10초 (10000번대 reqId)
+      - +1DTE 스냅샷 : _snap_1dte() / _t1 타이머 1분  (11000번대)
+      - +2DTE 스냅샷 : _snap_2dte() / _t2 타이머 2분  (12000번대)
+
+    모두 snapshot=True (1회성) → IBKR 구독 한도 미포함.
 
     tick 처리 흐름:
       IBKR → bridge.tick_option → TickRouter → (10000~12799 등록된 슬롯)
@@ -66,11 +73,13 @@ class SnapshotManager(QObject):
         self._on_status = on_status_fn
 
         self._req_map: Dict[int, Tuple[str, float, str]] = {}
-        self._streaming_rids: Set[int] = set()   # 0DTE 스트리밍 rid 별도 추적
+        # S12-fix1: _streaming_rids 제거 (0DTE 스냅샷 전환으로 불필요)
 
-        # +1DTE / +2DTE 고정 주기 타이머
+        # 0DTE / +1DTE / +2DTE 고정 주기 타이머
+        self._t0 = QTimer(self); self._t0.setInterval(SNAP_0DTE_MS)
         self._t1 = QTimer(self); self._t1.setInterval(SNAP_1DTE_MS)
         self._t2 = QTimer(self); self._t2.setInterval(SNAP_2DTE_MS)
+        self._t0.timeout.connect(self._snap_0dte)
         self._t1.timeout.connect(self._snap_1dte)
         self._t2.timeout.connect(self._snap_2dte)
 
@@ -111,8 +120,8 @@ class SnapshotManager(QObject):
     def start(self, sym: str, und_price: float, expiry_0dte: str,
               expiry_1dte: str = "", expiry_2dte: str = ""):
         """
-        0DTE 스트리밍 + +1DTE/+2DTE 스냅샷 시작.
-        expiry_0dte: 0DTE 만기 (슬롯 매핑 + 스트리밍 요청에 사용)
+        전 슬롯 스냅샷 시작. S12-fix1: 0DTE도 스냅샷(_snap_0dte)으로 통일.
+        expiry_0dte: 0DTE 만기 (슬롯 매핑 + 스냅샷 요청에 사용)
         expiry_1dte/2dte: 생략 시 _next_bday() 자동 계산
         """
         self._sym   = sym
@@ -122,22 +131,24 @@ class SnapshotManager(QObject):
         self._exp_2 = expiry_2dte or self._next_bday(2)
         log.info("[SnapMgr] start %s und=%.1f 0=%s +1=%s +2=%s",
                  sym, und_price, self._exp_0, self._exp_1, self._exp_2)
-        self._start_0dte_streaming()
+        self._snap_0dte()
         self._snap_1dte()
         self._snap_2dte()
+        self._t0.start()
         self._t1.start()
         self._t2.start()
 
     def stop(self):
-        """전체 정지 — 타이머·큐·스트리밍·router 등록 모두 해제."""
-        self._t1.stop(); self._t2.stop()
+        """전체 정지 — 타이머·큐·스냅샷·router 등록 모두 해제.
+        S12-fix1: _cancel_streaming() 제거 → _cancel_snapshot() 3블록으로 통일.
+        """
+        self._t0.stop(); self._t1.stop(); self._t2.stop()
         self._pace_t.stop()
         self._queue.clear()
-        self._cancel_streaming()
-        # 스냅샷 rid 전체 cancel
-        for rid in list(self._req_map.keys()):
-            try: self._ib.cancelMktData(rid)
-            except Exception: pass
+        # 전 슬롯 스냅샷 cancel (snapshot=True는 IBKR이 자동 해제하나 명시 cancel)
+        self._cancel_snapshot(REQ_0DTE_C_BASE, REQ_0DTE_P_BASE, REQ_0DTE_RANGE)
+        self._cancel_snapshot(REQ_1DTE_C_BASE, REQ_1DTE_P_BASE, REQ_1DTE_RANGE)
+        self._cancel_snapshot(REQ_2DTE_C_BASE, REQ_2DTE_P_BASE, REQ_2DTE_RANGE)
         self._req_map.clear()
         # router unregister — 재시작 시 중복 등록 방지
         if self._router_registered:
@@ -210,50 +221,22 @@ class SnapshotManager(QObject):
         if expiry == self._exp_2: return 2
         return -1
 
-    def _start_0dte_streaming(self):
-        """0DTE 스트리밍 요청. 기존 streaming_rids 먼저 cancel 후 재구독."""
-        self._cancel_streaming()
-        cfg  = self._symbol_cfg()
-        step = cfg["step"]; wing = cfg["wing_0dte"]
-
-        # S12-patch2: SPX/SPXW tradingClass 만기 기반 자동 계산
-        tag = self._resolve_tag(self._sym, self._exp_0)
-
-        # BUG-2 수정: 콜/풋 rid 카운터 분리
-        rid_c = REQ_0DTE_C_BASE
-        rid_p = REQ_0DTE_P_BASE
-        count = 0
-        for strike in self._strikes(self._und, wing, step):
-            for side in ("C", "P"):
-                if side == "C":
-                    if rid_c >= REQ_0DTE_C_BASE + REQ_0DTE_RANGE:
-                        log.warning("[SnapMgr] 0DTE 콜 reqId 초과"); continue
-                    rid = rid_c; rid_c += 1
-                else:
-                    if rid_p >= REQ_0DTE_P_BASE + REQ_0DTE_RANGE:
-                        log.warning("[SnapMgr] 0DTE 풋 reqId 초과"); continue
-                    rid = rid_p; rid_p += 1
-
-                con = self._make_con(self._sym, strike, side, self._exp_0, tag)
-                self._enqueue(rid, con, snapshot=False, slot=0)
-                self._req_map[rid] = (self._exp_0, strike, side)
-                self._streaming_rids.add(rid)
-                count += 1
-
+    def _snap_0dte(self):
+        """
+        0DTE 스냅샷 요청. S12-fix1: 스트리밍 → snapshot=True 전환.
+        10초 타이머(_t0)로 주기적 재요청.
+        기존 0DTE rid cancel 후 재요청 → _cancel_snapshot() 재사용.
+        """
+        if not self._exp_0: return
+        self._cancel_snapshot(REQ_0DTE_C_BASE, REQ_0DTE_P_BASE, REQ_0DTE_RANGE)
         self._recv_count[0] = 0
-        self._total_count[0] = count
-        if not self._pace_t.isActive():
-            self._pace_t.start()
-        log.info("[SnapMgr] 0DTE 스트리밍 큐: %d건 (만기=%s, tag=%s)",
-                 count, self._exp_0, tag)
-        self._notify(0, "saving", f"당일 만기 조회 중… ({count}건)")
-
-    def _cancel_streaming(self):
-        """0DTE 스트리밍 rid 전체 cancel + streaming_rids 초기화."""
-        for rid in list(self._streaming_rids):
-            try: self._ib.cancelMktData(rid)
-            except Exception: pass
-        self._streaming_rids.clear()
+        cnt = self._request_snapshot(
+            self._exp_0,
+            REQ_0DTE_C_BASE, REQ_0DTE_P_BASE, REQ_0DTE_RANGE,
+            "wing_0dte", "0DTE", slot=0
+        )
+        self._total_count[0] = cnt
+        self._notify(0, "saving", f"당일 만기 조회 중… ({cnt}건)")
 
     def _cancel_snapshot(self, c_base: int, p_base: int, max_range: int):
         """

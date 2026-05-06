@@ -13,6 +13,12 @@ v6.6 변경:
     ☐ 미체크 → 기존 대량체결 테이블 표시
     ☑ 체크   → 조건부 주문 설정 WebEngine 패널로 전환
   _on_order_panel_toggle(checked) 핸들러 내장
+
+v6.7 변경:
+  데이터 테이블 영역 펼치기/닫기 토글 버튼 추가
+    _toggle_table_panel(self) → 테이블 영역 표시/숨김
+    self._tbl_panel_visible 상태 관리
+    self.btn_tbl_toggle 버튼 (상단 좌측)
 """
 
 import os as _os, sys as _sys
@@ -56,6 +62,45 @@ def build_tables(self) -> QWidget:
     outer_v.setSpacing(0)
 
     # ════════════════════════════════════════════════════
+    # v6.7: 데이터 테이블 토글 버튼 행
+    # ════════════════════════════════════════════════════
+    tgl_row = QHBoxLayout()
+    tgl_row.setContentsMargins(4, 2, 4, 2)
+    tgl_row.setSpacing(4)
+
+    self.btn_tbl_toggle = QPushButton("▲ 데이터 테이블 닫기")
+    self.btn_tbl_toggle.setFixedHeight(22)
+    self.btn_tbl_toggle.setCheckable(True)
+    self.btn_tbl_toggle.setChecked(True)   # 초기: 펼쳐진 상태
+    self.btn_tbl_toggle.setStyleSheet(
+        "QPushButton{"
+        "  background:#141430; color:#5dade2;"
+        "  border:1px solid #2e3060; border-radius:3px;"
+        "  font-size:11px; font-weight:bold;"
+        "  text-align:left; padding:0 8px;}"
+        "QPushButton:hover{ background:#1c1c3a; }"
+        "QPushButton:checked{"
+        "  background:#141430; color:#888;"
+        "  border-color:#333;}"
+    )
+    self.btn_tbl_toggle.setToolTip(
+        "데이터 테이블 영역을 펼치거나 닫습니다.\n"
+        "닫으면 차트가 더 넓게 표시됩니다.")
+    self.btn_tbl_toggle.clicked.connect(
+        lambda checked: _toggle_table_panel(self, checked))
+    tgl_row.addWidget(self.btn_tbl_toggle)
+    tgl_row.addStretch()
+    outer_v.addLayout(tgl_row)
+
+    # 테이블 전체를 감싸는 컨테이너 (토글 대상)
+    self._tbl_inner = QWidget()
+    self._tbl_inner.setMinimumHeight(0)
+    tbl_inner_v = QVBoxLayout(self._tbl_inner)
+    tbl_inner_v.setContentsMargins(0, 0, 0, 0)
+    tbl_inner_v.setSpacing(0)
+    self._tbl_panel_visible = True
+
+    # ════════════════════════════════════════════════════
     # v6.4: 일봉 컨테이너 (초기 hidden)
     # ════════════════════════════════════════════════════
     self.daily_container = QWidget()
@@ -72,7 +117,7 @@ def build_tables(self) -> QWidget:
         "background:#151f15;border-radius:4px;")
     daily_v.addWidget(_ph)
     self.daily_container.hide()
-    outer_v.addWidget(self.daily_container)
+    tbl_inner_v.addWidget(self.daily_container)   # ← outer_v → tbl_inner_v
 
     # ── 분차트 테이블 스플리터 ────────────────────────────
     self._tbl_splitter = QSplitter(Qt.Horizontal)
@@ -190,7 +235,8 @@ def build_tables(self) -> QWidget:
     self._tbl_splitter.addWidget(rw)
     self._tbl_splitter.setSizes([500, 500])
 
-    outer_v.addWidget(self._tbl_splitter)
+    tbl_inner_v.addWidget(self._tbl_splitter)   # ← tbl_inner에 추가
+    outer_v.addWidget(self._tbl_inner)           # ← outer에 inner 추가
     return outer
 
 
@@ -226,6 +272,44 @@ def _on_order_panel_toggle(self, checked: bool):
             "  border:1px solid #3a3a3a; border-radius:3px;"
             "  background:#1a1a1a; }"
         )
+
+
+# ── 데이터 테이블 토글 핸들러 (v6.7) ─────────────────────────
+def _toggle_table_panel(self, checked: bool):
+    """
+    데이터 테이블 영역 펼치기 / 닫기.
+    checked=True  → 펼쳐진 상태 (버튼이 눌린=체크됨)
+    checked=False → 닫힌 상태
+    """
+    inner = getattr(self, "_tbl_inner", None)
+    if inner is None:
+        return
+
+    btn = getattr(self, "btn_tbl_toggle", None)
+
+    if checked:
+        # 펼치기
+        inner.show()
+        self._tbl_panel_visible = True
+        if btn:
+            btn.setText("▲ 데이터 테이블 닫기")
+        # 스플리터 비율 복원 (테이블 280 : 차트 520)
+        try:
+            self._v_splitter.setSizes([280, 520])
+        except Exception:
+            pass
+    else:
+        # 닫기 — 현재 스플리터 크기 저장 후 테이블 0으로
+        inner.hide()
+        self._tbl_panel_visible = False
+        if btn:
+            btn.setText("▼ 데이터 테이블 열기")
+        # 스플리터에서 테이블 영역 높이를 0으로 → 차트가 전체 차지
+        try:
+            total = sum(self._v_splitter.sizes())
+            self._v_splitter.setSizes([0, total])
+        except Exception:
+            pass
 
 
 def build_chart_area(self) -> QWidget:
