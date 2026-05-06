@@ -1,44 +1,57 @@
 """
-combo_ui_net_price_display.py
-─────────────────────────────────────────────────────────────
+combo_ui_net_price_display.py  (파트 1/2 — UI 구조 + 자동모드)
+─────────────────────────────────────────────────────────────────
 전광판형 Net Price 실시간 디스플레이 위젯
 
-위치: 레그 패널 하단 (기존 Net Price 라벨 교체)
-연동:
-  - fill_premium_from_market() 이 호출될 때마다 refresh() 호출
-  - _do_send() 에서 get_net_price() 로 lmtPrice 자동 수신
+변경사항 (v2.0):
+  ★ 가격 입력 모드 추가
+    - [자동] 버튼: Mid-price 기반 Debit/Credit 자동 계산 (기존 동작)
+    - [직접입력] 버튼: 사용자가 스프레드 가격 직접 입력
+      • [-0.01] [가격입력창] [+0.01] 조절 버튼
+      • get_bag_params() 가 직접입력 가격 우선 반환
+  파트 2: combo_ui_net_price_input.py (직접입력 모드 UI + 로직)
 """
 
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+)
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QPalette
+from PyQt5.QtGui import QFont
+
+from combo_ui_net_price_input import ManualPriceRow   # 파트2 임포트
 
 
 class NetPriceDisplay(QWidget):
     """
     실시간 Net Price 전광판 위젯.
 
-    ┌──────────────────────────────────────────────┐
-    │  순 프리미엄 (실시간)            ● LIVE       │
-    │                                              │
-    │        DEBIT  $  2.35                        │
-    │   (지불)  BUY 합계 $3.10 │ SELL 합계 $0.75  │
-    └──────────────────────────────────────────────┘
+    ┌──────────────────────────────────────────────────────┐
+    │  순 프리미엄 (실시간)              ● LIVE            │
+    │                                                      │
+    │       DEBIT  $  2.35                                 │
+    │  (지불) BUY 합계 $3.10 │ SELL 합계 $0.75            │
+    │                                                      │
+    │  [자동(Mid)]  [직접입력]                              │
+    │  ← 직접입력 모드일 때만 표시 →                        │
+    │  [-0.01]  [ 2.35 ]  [+0.01]  ☑ DEBIT / ☐ CREDIT    │
+    └──────────────────────────────────────────────────────┘
 
     시그널:
-        price_updated(float)  : net price 변경 시 방출 → 주문 모듈에서 구독
+        price_updated(float): net price 변경 시 방출 → 주문 모듈 구독용
     """
 
-    price_updated = pyqtSignal(float)   # 외부 주문 모듈 연동용
+    price_updated = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._net_price: float = 0.0          # + = debit, - = credit
+        self._net_price: float = 0.0      # + = debit, - = credit
         self._buy_total: float = 0.0
         self._sell_total: float = 0.0
         self._is_live: bool = False
+        self._manual_mode: bool = False   # False=자동, True=직접입력
 
         self._build_ui()
+
         self._blink_timer = QTimer(self)
         self._blink_timer.setInterval(800)
         self._blink_timer.timeout.connect(self._blink_dot)
@@ -52,7 +65,7 @@ class NetPriceDisplay(QWidget):
         root.setContentsMargins(4, 4, 4, 4)
         root.setSpacing(2)
 
-        # ── 헤더 행 ──
+        # ── 헤더 행 ──────────────────────────────
         hdr = QHBoxLayout()
         lbl_title = QLabel("순 프리미엄 (실시간)")
         lbl_title.setStyleSheet("color:#aaa; font-size:11px;")
@@ -64,7 +77,7 @@ class NetPriceDisplay(QWidget):
         hdr.addWidget(self._lbl_live)
         root.addLayout(hdr)
 
-        # ── 메인 가격 행 ──
+        # ── 메인 가격 행 ─────────────────────────
         price_row = QHBoxLayout()
         price_row.setSpacing(6)
 
@@ -73,8 +86,7 @@ class NetPriceDisplay(QWidget):
         self._lbl_direction.setFixedWidth(56)
         self._lbl_direction.setAlignment(Qt.AlignCenter)
         self._lbl_direction.setStyleSheet(
-            "background:#1a3a1a; color:#4cff4c; border-radius:4px; padding:2px 4px;"
-        )
+            "background:#1a3a1a; color:#4cff4c; border-radius:4px; padding:2px 4px;")
 
         self._lbl_dollar = QLabel("$")
         self._lbl_dollar.setFont(QFont("Consolas", 18, QFont.Bold))
@@ -92,9 +104,9 @@ class NetPriceDisplay(QWidget):
         price_row.addStretch()
         root.addLayout(price_row)
 
-        # ── 상세 행 ──
+        # ── 상세 행 ──────────────────────────────
         detail_row = QHBoxLayout()
-        self._lbl_buy = QLabel("BUY 합계  $—")
+        self._lbl_buy  = QLabel("BUY 합계  $—")
         self._lbl_sell = QLabel("SELL 합계  $—")
         for lbl in (self._lbl_buy, self._lbl_sell):
             lbl.setFont(QFont("Consolas", 10))
@@ -108,7 +120,15 @@ class NetPriceDisplay(QWidget):
         detail_row.addStretch()
         root.addLayout(detail_row)
 
-        # 전체 스타일
+        # ── 모드 토글 행 ─────────────────────────
+        root.addLayout(self._build_mode_toggle_row())
+
+        # ── 직접입력 행 (ManualPriceRow, 파트2) ──
+        self._manual_row = ManualPriceRow()
+        self._manual_row.setVisible(False)
+        root.addWidget(self._manual_row)
+
+        # 전체 위젯 스타일
         self.setStyleSheet("""
             NetPriceDisplay {
                 background: #141d2b;
@@ -118,6 +138,57 @@ class NetPriceDisplay(QWidget):
         """)
         self.setMinimumHeight(80)
 
+    def _build_mode_toggle_row(self) -> QHBoxLayout:
+        """[자동(Mid)] / [직접입력] 토글 버튼 행."""
+        row = QHBoxLayout()
+        row.setSpacing(4)
+
+        self._btn_auto = QPushButton("자동(Mid)")
+        self._btn_manual = QPushButton("✏ 직접입력")
+
+        for btn in (self._btn_auto, self._btn_manual):
+            btn.setFixedHeight(22)
+            btn.setCheckable(True)
+            btn.setFont(QFont("Consolas", 9))
+
+        self._btn_auto.setChecked(True)
+        self._btn_auto.setStyleSheet(self._toggle_style(active=True))
+        self._btn_manual.setChecked(False)
+        self._btn_manual.setStyleSheet(self._toggle_style(active=False))
+
+        self._btn_auto.clicked.connect(lambda: self._set_mode(False))
+        self._btn_manual.clicked.connect(lambda: self._set_mode(True))
+
+        row.addWidget(QLabel("가격 모드:"))
+        row.addWidget(self._btn_auto)
+        row.addWidget(self._btn_manual)
+        row.addStretch()
+        return row
+
+    @staticmethod
+    def _toggle_style(active: bool) -> str:
+        if active:
+            return ("background:#1a3a5a; color:#4ca8ff; "
+                    "border:1px solid #4ca8ff; border-radius:3px; padding:1px 6px;")
+        return ("background:#1a1a2a; color:#556; "
+                "border:1px solid #334; border-radius:3px; padding:1px 6px;")
+
+    # ──────────────────────────────────────────────
+    # 모드 전환
+    # ──────────────────────────────────────────────
+    def _set_mode(self, manual: bool):
+        self._manual_mode = manual
+        self._btn_auto.setChecked(not manual)
+        self._btn_manual.setChecked(manual)
+        self._btn_auto.setStyleSheet(self._toggle_style(not manual))
+        self._btn_manual.setStyleSheet(self._toggle_style(manual))
+        self._manual_row.setVisible(manual)
+
+        # 직접입력 전환 시 현재 자동계산 가격을 초기값으로 설정
+        if manual and self._net_price != 0.0:
+            self._manual_row.set_price(abs(self._net_price))
+            self._manual_row.set_direction(self._net_price >= 0)
+
     # ──────────────────────────────────────────────
     # 외부 호출 API
     # ──────────────────────────────────────────────
@@ -126,66 +197,78 @@ class NetPriceDisplay(QWidget):
         fill_premium_from_market() 완료 후 호출.
         buy_total  : BUY 레그 프리미엄 합계 (양수)
         sell_total : SELL 레그 프리미엄 합계 (양수)
+        자동모드 전광판만 갱신; 직접입력 모드에서는 전광판 표시만 업데이트.
         """
-        self._buy_total = buy_total
+        self._buy_total  = buy_total
         self._sell_total = sell_total
-        net = buy_total - sell_total          # + = debit, - = credit
-        self._net_price = net
-        self._is_live = True
+        net = buy_total - sell_total
+        self._net_price  = net
+        self._is_live    = True
 
-        # 가격 표시
         abs_net = abs(net)
         self._lbl_price.setText(f"{abs_net:.2f}")
         self._lbl_buy.setText(f"BUY 합계  ${buy_total:.2f}")
         self._lbl_sell.setText(f"SELL 합계  ${sell_total:.2f}")
 
-        if net >= 0:          # Debit (지불)
+        if net >= 0:
             self._lbl_direction.setText("DEBIT")
             self._lbl_direction.setStyleSheet(
-                "background:#1a3a1a; color:#4cff4c; border-radius:4px; padding:2px 4px;"
-            )
+                "background:#1a3a1a; color:#4cff4c; border-radius:4px; padding:2px 4px;")
             self._lbl_price.setStyleSheet("color:#4cff4c; letter-spacing:1px;")
             self._lbl_hint.setText("(지불)")
-        else:                  # Credit (수취)
+        else:
             self._lbl_direction.setText("CREDIT")
             self._lbl_direction.setStyleSheet(
-                "background:#1a1a3a; color:#4c9fff; border-radius:4px; padding:2px 4px;"
-            )
+                "background:#1a1a3a; color:#4c9fff; border-radius:4px; padding:2px 4px;")
             self._lbl_price.setStyleSheet("color:#4c9fff; letter-spacing:1px;")
             self._lbl_hint.setText("(수취)")
 
         if not self._blink_timer.isActive():
             self._blink_timer.start()
 
-        # 시그널 방출 → 주문 모듈
         self.price_updated.emit(net)
 
     def get_net_price(self) -> float:
-        """주문 모듈에서 lmtPrice 로 사용"""
+        """주문 모듈에서 lmtPrice 로 사용 (직접입력 우선)."""
+        if self._manual_mode:
+            p = self._manual_row.get_price()
+            return p if self._manual_row.is_debit() else -p
         return self._net_price
 
     def get_bag_params(self) -> dict:
         """
-        _do_send() 에서 직접 사용.
-        returns: {"lmt_price": float, "action": "BUY"|"SELL"}
+        _do_send_body() 에서 직접 사용.
+        직접입력 모드이면 입력 가격 우선 반환.
+        returns: {"lmt_price": float, "action": "BUY"|"SELL", "manual": bool}
         """
-        if self._net_price >= 0:
-            return {"lmt_price": round(self._net_price, 2), "action": "BUY"}
-        else:
-            return {"lmt_price": round(abs(self._net_price), 2), "action": "SELL"}
+        if self._manual_mode:
+            price  = self._manual_row.get_price()
+            is_deb = self._manual_row.is_debit()
+            return {
+                "lmt_price": round(max(price, 0.01), 2),
+                "action":    "BUY" if is_deb else "SELL",
+                "manual":    True,
+            }
+        # 자동모드 (기존 동작)
+        net = self._net_price
+        if net >= 0:
+            return {"lmt_price": round(net, 2), "action": "BUY", "manual": False}
+        return {"lmt_price": round(abs(net), 2), "action": "SELL", "manual": False}
 
     def reset(self):
-        """전략 변경 / 레그 리셋 시 초기화"""
-        self._net_price = 0.0
-        self._buy_total = 0.0
+        """전략 변경 / 레그 리셋 시 초기화."""
+        self._net_price  = 0.0
+        self._buy_total  = 0.0
         self._sell_total = 0.0
-        self._is_live = False
+        self._is_live    = False
         self._lbl_price.setText("—")
         self._lbl_buy.setText("BUY 합계  $—")
         self._lbl_sell.setText("SELL 합계  $—")
         self._lbl_hint.setText("(지불)")
         self._lbl_live.setStyleSheet("color:#555; font-size:11px;")
         self._blink_timer.stop()
+        # 직접입력도 초기화
+        self._manual_row.set_price(0.0)
 
     # ──────────────────────────────────────────────
     # 내부

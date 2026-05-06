@@ -1,17 +1,17 @@
 """
-combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.0
+combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.1
 ──────────────────────────────────────────────────────
-수정 (v3.0):
-  [BUG #1] _do_send_inner 미정의 → NameError 로 주문 전혀 안 되던 문제 수정.
-           _do_send_inner를 제거하고 실제 주문 로직을 _do_send 안으로 통합.
-  [BUG #2] 타임아웃 핸들러(_on_timeout)에서 _do_send()를 직접 호출해
-           lock 키 (_do_send_lock_{session}) 를 우회하던 문제 수정.
-           _on_timeout도 동일하게 _do_send() 경유하도록 변경.
-  [BUG #3] conId 세팅/zero_legs 체크/확인창/placeOrder 코드가
-           try/finally 블록 밖(함수 리턴 이후)에 위치해 절대 실행되지
-           않던 문제 수정. _do_send_body()로 추출해 try 안에서 호출.
-  [BUG #4] _chaser_current_oid(callbacks)와 _chaser_oid(chaser) 변수명
-           불일치 수정. placeOrder 성공 후 두 변수를 모두 동일 OID로 세팅.
+v3.1 변경:
+  ★ 직접입력 가격 우선 반영
+    - NetPriceDisplay.get_bag_params() 가 {"manual": True} 를 반환하면
+      확인창에 "직접입력" 표시 추가.
+    - lmtPrice 계산 로직: 직접입력 > 전광판 자동 > legs 폴백 (기존 순서 유지).
+──────────────────────────────────────────────────────
+v3.0 버그픽스 (이전):
+  [BUG #1] _do_send_inner 미정의 → NameError 수정.
+  [BUG #2] 타임아웃 핸들러 lock 우회 수정.
+  [BUG #3] conId 세팅/zero_legs/확인창/placeOrder 블록 위치 수정.
+  [BUG #4] _chaser_current_oid / _chaser_oid 변수명 불일치 수정.
 ──────────────────────────────────────────────────────
 Python 3.8 호환
 """
@@ -31,7 +31,6 @@ _CACHE_FILE = Path(__file__).resolve().parent / "data" / "conid_cache.json"
 
 
 def _load_conid_cache() -> None:
-    """Load cache from disk, then purge keys with past expiry dates."""
     global _CONID_CACHE
     try:
         if _CACHE_FILE.exists():
@@ -42,10 +41,6 @@ def _load_conid_cache() -> None:
 
 
 def _purge_stale_conid_keys() -> None:
-    """
-    Remove keys whose expiry date (YYYYMMDD, 4th field) is before today.
-    Key format: 'SYMBOL|RIGHT|STRIKE|YYYYMMDD'
-    """
     from datetime import date
     today_str = date.today().strftime("%Y%m%d")
     stale = [k for k in list(_CONID_CACHE)
@@ -80,8 +75,6 @@ _load_conid_cache()
 def _place_combo_legs(self, legs: list, strat: str) -> None:
     """BAG 주문 진입점. 호출마다 세션 무효화 → 이전 타이머 완전 차단."""
     self._bag_session = None
-
-    # orderStatus / execDetails 콜백 연결 (1회만)
     connect_order_callbacks(self)
 
     try:
@@ -207,7 +200,6 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
             self._log(f"❌ reqContractDetails 레그{i+1}: {e}")
             resolved[i] = 0
 
-    # ── [BUG #2 수정] 타임아웃도 _do_send() 경유 → lock 정상 작동 ──
     def _on_timeout():
         if getattr(self, '_bag_session', None) != session:
             return
@@ -220,7 +212,6 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
                     f"  ⚠ 레그{i+1} conId 타임아웃 10초 — "
                     f"{opt_c.right} {int(opt_c.strike)} "
                     f"{opt_c.lastTradeDateOrContractMonth}")
-        # 직접 _do_send_body 호출하지 않고 _do_send 경유 → lock 정상 작동
         _do_send(self, bag, combo_legs, legs, strat, ib, total, resolved, session)
 
     QTimer.singleShot(10000, _on_timeout)
@@ -232,17 +223,7 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
 
 def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
              ib, total: int, resolved: dict, session: int) -> None:
-    """
-    중복 호출 방지 lock → _do_send_body() 호출.
-    세션 불일치 시 즉시 리턴.
-
-    [BUG #1/#3 수정]
-    - 기존: _do_send_inner()를 호출했으나 함수가 존재하지 않아 NameError 발생.
-      실제 주문 코드(conId 세팅, 확인창, placeOrder)는 try/finally 블록 밖에
-      위치해 있어 절대 실행되지 않았음.
-    - 수정: _do_send_inner 제거. 실제 주문 로직을 _do_send_body()로 명명해
-      try 블록 안에서 올바르게 호출.
-    """
+    """중복 호출 방지 lock → _do_send_body() 호출."""
     if getattr(self, '_bag_session', None) != session:
         return
 
@@ -266,10 +247,8 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
     실제 주문 전송 본체.
     conId 세팅 → zero_legs 체크 → lmtPrice 계산 → 확인창 → placeOrder.
 
-    [BUG #3 수정]
-    - 기존: 이 코드 전체가 _do_send()의 try/finally 블록 밖에 위치해
-      함수 리턴 이후에 작성되어 있어 실행이 불가능했음.
-    - 수정: _do_send_body()로 분리해 _do_send() try 블록 안에서 호출.
+    ★ v3.1: 직접입력 가격 우선 반영
+      get_bag_params()["manual"] == True 이면 "직접입력" 표시.
     """
     # ── conId 세팅 ──────────────────────────────────────────
     for i, (cl, _) in enumerate(combo_legs):
@@ -293,7 +272,7 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             f"잠시 기다렸다가 다시 시도하세요.")
         return
 
-    # ── lmtPrice 계산 ───────────────────────────────────────
+    # ── lmtPrice 계산 (★ v3.1: 직접입력 우선) ──────────────
     buy_total  = sum(
         float(lg.get("prem", 0) or 0) * int(float(lg.get("qty", 1)))
         for lg in legs if lg["dir"] == "BUY")
@@ -302,12 +281,14 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         for lg in legs if lg["dir"] == "SELL")
     net = round(buy_total - sell_total, 2)
 
-    # 전광판 위젯에서 실시간 Mid-price 기반 순가격 수신
+    is_manual_price = False
     display = getattr(self, 'net_price_display', None)
-    if display is not None and display.get_net_price() != 0.0:
-        params     = display.get_bag_params()
-        lmt_price  = params["lmt_price"]
-        bag_action = params["action"]
+
+    if display is not None:
+        params = display.get_bag_params()
+        lmt_price    = params["lmt_price"]
+        bag_action   = params["action"]
+        is_manual_price = params.get("manual", False)
         net = lmt_price if bag_action == "BUY" else -lmt_price
     else:
         # 폴백: legs 데이터 or _recalc_net_price
@@ -323,6 +304,8 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         lmt_price = 0.01
 
     type_label = "데빗 (지불)" if bag_action == "BUY" else "크레딧 (수취)"
+    # 직접입력 여부 표시
+    price_source = " [직접입력]" if is_manual_price else " [자동/Mid]"
 
     # ── 확인 다이얼로그 ─────────────────────────────────────
     leg_lines = "\n".join(
@@ -340,7 +323,8 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
     dlg.setText(
         f"전략:  {strat}\n만기:  {expiry_str}\n"
         f"─────────────────────────\n{leg_lines}\n"
-        f"─────────────────────────\n순비용({type_label}):  ${lmt_price:.2f}")
+        f"─────────────────────────\n"
+        f"순비용({type_label}):  ${lmt_price:.2f}{price_source}")
     dlg.setStandardButtons(_MB.Ok | _MB.Cancel)
     dlg.button(_MB.Ok).setText("주문 전송")
     dlg.button(_MB.Cancel).setText("취소")
@@ -371,28 +355,21 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
     try:
         ib.placeOrder(oid, bag, ibord)
         self._log(
-            f"⚡ BAG 주문: OID={oid}  {type_label} ${lmt_price:.2f}"
+            f"⚡ BAG 주문: OID={oid}  {type_label} ${lmt_price:.2f}{price_source}"
             f"  레그{total}개  qty={ibord.totalQuantity}")
         self._log(
             f"   BUY=${buy_total:.2f}  SELL=${sell_total:.2f}  net=${net:+.2f}")
 
         self._chaser_bag_contract = bag
         self._chaser_bag_order    = ibord
+        self._chaser_current_oid  = oid   # combo_order_callbacks 참조
+        self._chaser_oid          = oid   # combo_order_chaser 참조
 
-        # [BUG #4 수정] _chaser_current_oid(callbacks용)와 _chaser_oid(chaser용)
-        # 두 변수가 불일치해 orderStatus 콜백 필터링이 안 되던 문제 수정.
-        # placeOrder 성공 후 두 변수를 모두 동일 OID로 세팅.
-        self._chaser_current_oid = oid   # combo_order_callbacks 가 참조
-        self._chaser_oid         = oid   # combo_order_chaser 가 참조
-
-        # ★ FIX: execDetails 레그별 콜백 수신을 위해 OID를 known 집합에 등록
-        #   BAG 2레그 주문 → execDetails 2번 콜백 → 두 번째 콜백 시
-        #   _chaser_current_oid가 이미 None이어도 저장되도록 보장
         if not hasattr(self, '_exec_known_oids'):
             self._exec_known_oids = set()
         self._exec_known_oids.add(oid)
 
-        # 체결 후 합성 잔고에 추가하기 위해 주문 정보 캐시
+        # 체결 후 합성 잔고 추가용 캐시
         self._pending_position = {
             "strategy": strat,
             "qty":      int(ibord.totalQuantity),
@@ -408,8 +385,7 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             self, oid=oid, price=lmt_price,
             action=bag_action, qty=int(ibord.totalQuantity))
 
-        # ── 주문 접수 확인: 5초 후 미체결 목록에서 OID 확인 ──
-        # Fix #3(원본): Chaser 첫 정정(4초) + on_open_orders 락(2초) 충돌 방지
+        # 5초 후 미체결 목록 접수 확인
         def _verify_order(check_oid=oid):
             from combo_order_open import on_open_orders
 

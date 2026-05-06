@@ -2,23 +2,43 @@
   "cond_a": [
     {
       "minutes": 20,
-      "points": 10.0,
-      "direction": "양방향"
+      "points": 20.0,
+      "direction": "하락"
     },
     {
       "minutes": 30,
-      "points": 10.0,
-      "direction": "양방향"
+      "points": 25.0,
+      "direction": "하락"
     },
     {
       "minutes": 40,
-      "points": 10.0,
-      "direction": "양방향"
+      "points": 28.0,
+      "direction": "하락"
     },
     {
       "minutes": 10,
       "points": 15.0,
-      "direction": "양방향"
+      "direction": "하락"
+    },
+    {
+      "minutes": 10,
+      "points": 10.0,
+      "direction": "상승"
+    },
+    {
+      "minutes": 20,
+      "points": 15.0,
+      "direction": "상승"
+    },
+    {
+      "minutes": 30,
+      "points": 20.0,
+      "direction": "상승"
+    },
+    {
+      "minutes": 40,
+      "points": 25.0,
+      "direction": "상승"
     }
   ],
   "cond_b": []

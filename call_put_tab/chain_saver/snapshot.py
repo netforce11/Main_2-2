@@ -25,15 +25,20 @@ SNAP_SLOTS    = 14
 
 NEXT_C_START  = 4400            # D+1 만기 콜 (snapshot=True, 1분 주기)
 NEXT_P_START  = 4600            # D+1 만기 풋 (snapshot=True, 1분 주기)
-NEXT_SLOTS    = 12
+NEXT_SLOTS    = 32              # 콜 32개 + 풋 32개 = 총 64개
 
 NEXT2_C_START = 4800            # D+2 만기 콜 (snapshot=True, 2분 주기)
 NEXT2_P_START = 5000            # D+2 만기 풋 (snapshot=True, 2분 주기)
-NEXT2_SLOTS   = 12
+NEXT2_SLOTS   = 32              # 콜 32개 + 풋 32개 = 총 64개
 
-# ── ticker 한도 계산 ─────────────────────────────────────────
-# 스트리밍: REQ_UND(1) + 화면콜풋(최대40) + SNAP콜풋(14x2=28) = 69개
-# D+1/D+2 는 snapshot=True -> IBKR 100개 한도 미포함
+# ── reqId 범위 충돌 확인 ─────────────────────────────────────
+# NEXT_C:  4400~4431 (32개)
+# NEXT_P:  4600~4631 (32개)
+# NEXT2_C: 4800~4831 (32개)
+# NEXT2_P: 5000~5031 (32개)
+# 모두 200개 간격으로 분리 → 충돌 없음
+#
+# snapshot=True → IBKR 100개 티커 한도 미포함 → 수량 제한 없음
 
 
 def request_otm(ib, sym: str, expiry: str, tag: str,
@@ -73,6 +78,7 @@ def request_next(ib, sym: str, und: float,
     """
     D+1 만기 1회성 스냅샷 요청 (1분 주기 재호출).
     snapshot=True -> IBKR ticker 한도 미포함.
+    콜 32개 + 풋 32개 = 총 64개.
     반환값: 요청한 만기일 (없으면 None)
     """
     nxt = _next_trading_day(days=1)
@@ -81,8 +87,11 @@ def request_next(ib, sym: str, und: float,
 
     _, _, _, step = SYMBOL_CFG.get(
         sym if sym != "SPXW" else "SPX", DEFAULT_CFG)
-    atm     = round(und / step) * step
-    strikes = [atm + i * step for i in range(-6, 7)]
+    atm = round(und / step) * step
+
+    # 콜: ATM ~ ATM+31*step (32개), 풋: ATM-1*step ~ ATM-32*step (32개)
+    call_strikes = [atm + i * step for i in range(NEXT_SLOTS)]       # ATM 포함 위쪽
+    put_strikes  = [atm - i * step for i in range(1, NEXT_SLOTS + 1)] # ATM 제외 아래쪽
 
     from core import _resolve_spx_trading_class
     tag = _resolve_spx_trading_class(sym, nxt, "") if sym in ("SPX", "SPXW") else ""
@@ -90,19 +99,23 @@ def request_next(ib, sym: str, und: float,
     # snapshot=True 는 수신 완료 후 자동 해제 -> cancel 불필요, map만 초기화
     next_map.clear()
 
-    rid_c, rid_p = NEXT_C_START, NEXT_P_START
-    for st in strikes:
-        if rid_c < NEXT_C_START + NEXT_SLOTS:
-            next_map[rid_c] = (nxt, st, "C")
-            _req_snapshot(ib, rid_c, make_opt_contract(sym, st, "C", nxt, tag))
-            rid_c += 1
-        if rid_p < NEXT_P_START + NEXT_SLOTS:
-            next_map[rid_p] = (nxt, st, "P")
-            _req_snapshot(ib, rid_p, make_opt_contract(sym, st, "P", nxt, tag))
-            rid_p += 1
+    rid_c = NEXT_C_START
+    for st in call_strikes:
+        if rid_c >= NEXT_C_START + NEXT_SLOTS: break
+        next_map[rid_c] = (nxt, st, "C")
+        _req_snapshot(ib, rid_c, make_opt_contract(sym, st, "C", nxt, tag))
+        rid_c += 1
 
-    log.info("[Snapshot] D+1 요청: %s 만기=%s tag=%s strikes=%d개",
-             sym, nxt, tag, len(strikes))
+    rid_p = NEXT_P_START
+    for st in put_strikes:
+        if rid_p >= NEXT_P_START + NEXT_SLOTS: break
+        next_map[rid_p] = (nxt, st, "P")
+        _req_snapshot(ib, rid_p, make_opt_contract(sym, st, "P", nxt, tag))
+        rid_p += 1
+
+    log.info("[Snapshot] D+1 요청: %s 만기=%s tag=%s 콜%d개 풋%d개",
+             sym, nxt, tag,
+             rid_c - NEXT_C_START, rid_p - NEXT_P_START)
     return nxt
 
 
@@ -111,6 +124,7 @@ def request_next2(ib, sym: str, und: float,
     """
     D+2 만기 1회성 스냅샷 요청 (2분 주기 재호출).
     snapshot=True -> IBKR ticker 한도 미포함.
+    콜 32개 + 풋 32개 = 총 64개.
     반환값: 요청한 만기일 (없으면 None)
     """
     nxt2 = _next_trading_day(days=2)
@@ -119,27 +133,34 @@ def request_next2(ib, sym: str, und: float,
 
     _, _, _, step = SYMBOL_CFG.get(
         sym if sym != "SPXW" else "SPX", DEFAULT_CFG)
-    atm     = round(und / step) * step
-    strikes = [atm + i * step for i in range(-6, 7)]
+    atm = round(und / step) * step
+
+    # 콜: ATM ~ ATM+31*step (32개), 풋: ATM-1*step ~ ATM-32*step (32개)
+    call_strikes = [atm + i * step for i in range(NEXT2_SLOTS)]
+    put_strikes  = [atm - i * step for i in range(1, NEXT2_SLOTS + 1)]
 
     from core import _resolve_spx_trading_class
     tag = _resolve_spx_trading_class(sym, nxt2, "") if sym in ("SPX", "SPXW") else ""
 
     next2_map.clear()
 
-    rid_c, rid_p = NEXT2_C_START, NEXT2_P_START
-    for st in strikes:
-        if rid_c < NEXT2_C_START + NEXT2_SLOTS:
-            next2_map[rid_c] = (nxt2, st, "C")
-            _req_snapshot(ib, rid_c, make_opt_contract(sym, st, "C", nxt2, tag))
-            rid_c += 1
-        if rid_p < NEXT2_P_START + NEXT2_SLOTS:
-            next2_map[rid_p] = (nxt2, st, "P")
-            _req_snapshot(ib, rid_p, make_opt_contract(sym, st, "P", nxt2, tag))
-            rid_p += 1
+    rid_c = NEXT2_C_START
+    for st in call_strikes:
+        if rid_c >= NEXT2_C_START + NEXT2_SLOTS: break
+        next2_map[rid_c] = (nxt2, st, "C")
+        _req_snapshot(ib, rid_c, make_opt_contract(sym, st, "C", nxt2, tag))
+        rid_c += 1
 
-    log.info("[Snapshot] D+2 요청: %s 만기=%s tag=%s strikes=%d개",
-             sym, nxt2, tag, len(strikes))
+    rid_p = NEXT2_P_START
+    for st in put_strikes:
+        if rid_p >= NEXT2_P_START + NEXT2_SLOTS: break
+        next2_map[rid_p] = (nxt2, st, "P")
+        _req_snapshot(ib, rid_p, make_opt_contract(sym, st, "P", nxt2, tag))
+        rid_p += 1
+
+    log.info("[Snapshot] D+2 요청: %s 만기=%s tag=%s 콜%d개 풋%d개",
+             sym, nxt2, tag,
+             rid_c - NEXT2_C_START, rid_p - NEXT2_P_START)
     return nxt2
 
 
