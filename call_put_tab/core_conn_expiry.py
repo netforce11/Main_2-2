@@ -309,21 +309,23 @@ class ConnExpiryMixin:
             return None, ""
         self._current_expiry = code          # ← chain_saver 연동용
         return code, tag
-
     def _strikes_for_zone(self, atm, step, n):
+        # B안: 재접속 시 ATM 이동 대비 — 양쪽 12개씩 여유 추가 (±30pt 커버)
+        n = n + 12
+
         if self._zone == "ITM":
             return ([atm - i*step for i in range(n)],
                     [atm + i*step for i in range(n)])
         elif self._zone == "ATM":
             return ([atm + i*step for i in range(n)],
                     [atm - i*step for i in range(n)])
-        else:   # OTM — [v6.5] 비율 기반 동적 skip (atm의 1.5%)
+        else:   # OTM
             dynamic_skip_pt = atm * 0.015
             skip = max(1, round(dynamic_skip_pt / step))
             return ([atm + (skip+i)*step for i in range(n)],
                     [atm - (skip+i)*step for i in range(n)])
-    # ═══════════════════════════════════════════════════════════
-    # [S11] 모의/실제 모드 포트 전환 지원
-    # ═══════════════════════════════════════════════════════════
+        # ═══════════════════════════════════════════════════════════
+        # [S11] 모의/실제 모드 포트 전환 지원
+        # ═══════════════════════════════════════════════════════════
 
-    # 포트 매핑 상수
+        # 포트 매핑 상수

@@ -207,6 +207,12 @@ class SettingsMixin:
         QTimer.singleShot(50,  self._restore_window_geometry)
         QTimer.singleShot(200, self._hook_window_geometry)
 
+        # ── [이슈 #1] 관심종목 복원 ──────────────────────────────
+        # _w_load() 는 CoreFetchMixin 에 정의된 메서드.
+        # 스플리터 복원(100ms) 이후에 실행하여 순서 충돌 방지.
+        if hasattr(self, '_w_load'):
+            QTimer.singleShot(150, self._w_load)
+
     # ─────────────────────────────────────────────────────────
     # 화면설정 프리셋 저장/불러오기/삭제
     # ─────────────────────────────────────────────────────────

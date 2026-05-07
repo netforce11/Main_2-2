@@ -43,6 +43,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional, Tuple
 from PyQt5.QtCore import QTimer
+from PyQt5.QtGui import QBrush, QColor
 
 _MULTIPLIER = 100   # SPX/SPXW 옵션 승수 (평가손익 로컬 계산용)
 
@@ -62,6 +63,40 @@ class CoreFetchPosMixin:
     # ── 내부 상태 ────────────────────────────────────────────────────────────
     # _pnl_req_ids : { key(tuple) → reqId(int) }  — 구독 중인 reqPnLSingle 목록
     # _pos_snapshot: { key(tuple) → {qty, avg} }  — _apply_positions 에서 채워짐
+
+    # ── [이슈 #2] 만기 판단 ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _is_expired(expiry_str: str) -> bool:
+        """만기일(YYYYMMDD 또는 YYYY-MM-DD)이 오늘(ET 기준) 이전이면 True.
+
+        ET 기준 오늘 날짜를 사용하여 미국 옵션 만기 판정.
+        파싱 실패 시 False 반환(기존 동작 유지).
+        """
+        try:
+            import pytz
+            from datetime import datetime as _dt
+            clean = expiry_str.replace("-", "")  # 'YYYY-MM-DD' → 'YYYYMMDD'
+            if len(clean) < 8:
+                return False
+            exp_date = _dt.strptime(clean[:8], "%Y%m%d").date()
+            et_tz    = pytz.timezone("America/New_York")
+            today_et = _dt.now(et_tz).date()
+            return exp_date < today_et
+        except Exception:
+            return False
+
+    @staticmethod
+    def _calc_expiry_pnl(qty: int, avg_cost: float) -> float:
+        """만기 무가치 소멸 확정 손익 계산.
+
+        매도(qty < 0): 프리미엄 전액 이익  → +abs(qty) * avg_cost * 100
+        매수(qty > 0): 프리미엄 전액 손실  → -qty * avg_cost * 100
+        """
+        if qty < 0:
+            return abs(qty) * avg_cost * 100.0
+        else:
+            return -qty * avg_cost * 100.0
 
     # ── _refresh_positions ───────────────────────────────────────────────────
 
@@ -259,7 +294,15 @@ class CoreFetchPosMixin:
                 color  = "#00ff88" if qty > 0 else "#ff6666"
 
                 sym_raw = sym_raw_map.get(key, "")  # "NANOS", "SPXW" 등 IB 원본 심볼
-                self._pos_snapshot[key] = {"qty": qty, "avg": avg, "con_id": con_id, "sym_raw": sym_raw}
+
+                # ── [이슈 #2] 만기 판정 ──────────────────────────────────
+                is_exp     = self._is_expired(p_expiry)
+                expiry_pnl = self._calc_expiry_pnl(qty, avg) if is_exp else None
+
+                self._pos_snapshot[key] = {
+                    "qty": qty, "avg": avg, "con_id": con_id, "sym_raw": sym_raw,
+                    "expired": is_exp, "expiry_pnl": expiry_pnl,
+                }
 
                 # [A] 콜-풋 테이블 col=6 갱신 (화면 sym·expiry 필터)
                 if (screen_sym and p_sym == screen_sym
@@ -290,7 +333,27 @@ class CoreFetchPosMixin:
                         self.tbl_positions.setItem(row, 2, _mk(str(qty),      color))
                         self.tbl_positions.setItem(
                             row, 3, _mk(f"{avg:.2f}" if avg else "―", "#aaaaaa"))
-                        self.tbl_positions.setItem(row, 4, _mk("⏳", "#555555"))
+
+                        # ── [이슈 #2] 만기 확정 포지션 즉시 표시 ────────
+                        if is_exp and expiry_pnl is not None:
+                            if expiry_pnl >= 0:
+                                pnl_text  = f"▲ +${expiry_pnl:,.0f} [만기소멸]"
+                                pnl_color = "#00ff88"
+                                bg_color  = "#1a2e1a"   # 연한 초록 (#E8F5E9 다크 대응)
+                            else:
+                                pnl_text  = f"▼ -${abs(expiry_pnl):,.0f} [만기소멸]"
+                                pnl_color = "#ff4444"
+                                bg_color  = "#2e1a1a"   # 연한 빨강 (#FFEBEE 다크 대응)
+
+                            pnl_item = _mk(pnl_text, pnl_color)
+                            pnl_item.setBackground(QBrush(QColor(bg_color)))
+                            exp_label = p_expiry[:8] if len(p_expiry) >= 8 else p_expiry
+                            direction = "이익" if expiry_pnl >= 0 else "손실"
+                            pnl_item.setToolTip(
+                                f"만기일 {exp_label} 경과 — {direction} 확정")
+                            self.tbl_positions.setItem(row, 4, pnl_item)
+                        else:
+                            self.tbl_positions.setItem(row, 4, _mk("⏳", "#555555"))
 
                         pos_found += 1
                     except Exception as e:
@@ -395,6 +458,11 @@ class CoreFetchPosMixin:
             if not hasattr(self, 'tbl_positions'):
                 return
             if row_idx >= self.tbl_positions.rowCount():
+                return
+
+            # ── [이슈 #2] 만기 확정 포지션은 서버 PnL로 덮어쓰지 않음 ──
+            snap_info = self._pos_snapshot.get(key, {})
+            if snap_info.get("expired"):
                 return
 
             from call_put_tab.tab_options import _mk
