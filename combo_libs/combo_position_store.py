@@ -47,8 +47,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # 실행 디렉토리와 무관하게 항상 이 파일 기준 상위/data 폴더에 저장
-_STORE_FILE  = Path(__file__).resolve().parent / "data" / "synthetic_positions.json"
-_MAX_AGE_DAYS = 7
+_STORE_FILE    = Path(__file__).resolve().parent / "data" / "synthetic_positions.json"
+_HISTORY_FILE  = Path(__file__).resolve().parent / "data" / "trade_history.json"
+_MAX_AGE_DAYS  = 7
 
 
 # ══════════════════════════════════════════════════════════════
@@ -88,6 +89,73 @@ def remove_position(oid: int) -> None:
         updated  = [p for p in existing if p.get("oid") != oid]
         if len(updated) != len(existing):
             _write(updated)
+    except Exception:
+        pass
+
+
+# ══════════════════════════════════════════════════════════════
+# 거래 이력 기록
+# ══════════════════════════════════════════════════════════════
+
+def record_trade_history(pos: dict, exit_price: float, close_type: str) -> None:
+    """
+    청산/만기소멸 시 실현 손익을 trade_history.json 에 기록.
+
+    close_type: "청산주문" | "만기소멸"
+
+    손익 계산:
+      - BUY(데빗) 전략: 청산가 - 진입가 → 양수=이익 / 음수=손실
+      - SELL(크레딧) 전략: 진입가 - 청산가 → 양수=이익 / 음수=손실
+      - 만기소멸: exit_price=0 고정 (전액 손실 or 전액 이익)
+      - 단위: 1계약 = 100배수
+    """
+    try:
+        entry  = float(pos.get("entry",   0))
+        qty    = int(pos.get("qty",       1))
+        side   = pos.get("side", "BUY").upper()
+
+        if side == "BUY":
+            realized = round((exit_price - entry) * qty * 100, 2)
+        else:
+            realized = round((entry - exit_price) * qty * 100, 2)
+
+        record = {
+            "oid":        pos.get("oid"),
+            "strategy":   pos.get("strategy", ""),
+            "side":       side,
+            "qty":        qty,
+            "entry":      entry,
+            "exit":       exit_price,
+            "realized":   realized,
+            "close_type": close_type,
+            "closed_at":  datetime.now().isoformat(timespec="seconds"),
+        }
+        _append_history(record)
+    except Exception:
+        pass
+
+
+def load_trade_history() -> list:
+    """trade_history.json 전체 반환 (없으면 빈 리스트)."""
+    try:
+        if not _HISTORY_FILE.exists():
+            return []
+        data = json.loads(_HISTORY_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _append_history(record: dict) -> None:
+    """trade_history.json 에 1건 추가."""
+    try:
+        _HISTORY_FILE.parent.mkdir(exist_ok=True)
+        data = load_trade_history()
+        data.append(record)
+        _HISTORY_FILE.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
     except Exception:
         pass
 
@@ -152,23 +220,101 @@ def restore_on_reconnect(self) -> None:
 
     panel.clear_positions()
 
-    # 파일에서 전략명/legs 보존 데이터 로드
+    # ── 1단계: 파일 데이터 즉시 표시 ───────────────────────
     saved_by_oid = {p["oid"]: p for p in load_positions() if p.get("oid")}
 
-    # IB 포지션 수집 버퍼
-    ib_buf = []
+    from PyQt5.QtCore import QTimer
+    from datetime import date as _date
 
+    def _is_expired(pos: dict) -> bool:
+        """ET 기준 만기 지난 항목 필터링."""
+        legs = pos.get("legs", [])
+        if not legs:
+            return False
+        try:
+            from datetime import datetime as _dt
+            try:
+                from zoneinfo import ZoneInfo as _ZI
+            except ImportError:
+                try:
+                    from backports.zoneinfo import ZoneInfo as _ZI
+                except ImportError:
+                    import pytz as _pytz
+                    class _ZI:
+                        def __new__(cls, k): return _pytz.timezone(k)
+            # ET 기준 오늘 날짜
+            today_et = _dt.now(_ZI("America/New_York")).date()
+            expiry_str = str(legs[0].get("expiry", ""))
+            if len(expiry_str) == 8:
+                exp_date = _date(int(expiry_str[:4]),
+                                 int(expiry_str[4:6]),
+                                 int(expiry_str[6:]))
+                # 만기일 당일은 유효 (ET 16:00 마감이므로)
+                return exp_date < today_et
+        except Exception:
+            pass
+        return False
+
+    def _enrich_strategy_name(pos: dict) -> str:
+        """legs 에서 행사가 추출해 전략명에 추가."""
+        legs = pos.get("legs", [])
+        if not legs:
+            return pos.get("strategy", "")
+        try:
+            strikes = "/".join(
+                str(int(float(l["strike"])))
+                for l in sorted(legs, key=lambda l: l.get("dir",""), reverse=True)
+                if l.get("strike")
+            )
+            base = pos.get("strategy", "")
+            # 이미 행사가 포함된 경우 중복 방지
+            if strikes and strikes not in base:
+                # 괄호 앞에 행사가 삽입: "풋 스프레드 (풋매수+풋매도)" → "풋 스프레드 7270/7265 (풋매수+풋매도)"
+                if "(" in base:
+                    idx = base.index("(")
+                    return f"{base[:idx].rstrip()} {strikes} {base[idx:]}"
+                return f"{base} {strikes}"
+        except Exception:
+            pass
+        return pos.get("strategy", "")
+
+    def _show_file_positions():
+        shown = 0
+        skipped = 0
+        for pos in saved_by_oid.values():
+            if _is_expired(pos):
+                skipped += 1
+                # 만기 소멸 → 실현손익 기록 (exit=0, 전액 손실/이익)
+                record_trade_history(pos, exit_price=0.0, close_type="만기소멸")
+                continue
+            # 행사가 전략명 보강
+            enriched = dict(pos)
+            enriched["strategy"] = _enrich_strategy_name(pos)
+            panel.add_position(enriched)
+            shown += 1
+
+            # 실시간 스트림은 conId 준비 후 시작
+            # → combo_ui_left_chain._start_restored_position_streams() 에서 처리
+
+        msg = f"📂 합성 잔고 복원: {shown}건 (파일)"
+        if skipped:
+            msg += f"  / 만기만료 {skipped}건 제외"
+        self._log(msg)
+    QTimer.singleShot(0, _show_file_positions)
+
+    # ── 2단계: IB 서버 조회 → 진입가 업데이트 ──────────────
+    # positionEnd 수신 시 파일 항목의 entry/current 를 서버 값으로 갱신
+    ib_buf = []
     _orig_pos     = getattr(ib, 'position',    lambda *a: None)
     _orig_pos_end = getattr(ib, 'positionEnd', lambda: None)
 
     def _on_pos(account, contract, pos_qty, avg_cost):
-        """IB position 콜백 — OPT/FOP 만 수집."""
+        """IB position 콜백 — OPT/FOP/BAG 수집."""
         if abs(pos_qty) < 0.001:
             return
         sec = getattr(contract, 'secType', '')
-        if sec not in ('OPT', 'FOP'):
+        if sec not in ('OPT', 'FOP', 'BAG'):
             return
-
         sym    = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
         right  = getattr(contract, 'right', '')
         strike = getattr(contract, 'strike', 0)
@@ -177,7 +323,6 @@ def restore_on_reconnect(self) -> None:
         side   = 'BUY' if pos_qty > 0 else 'SELL'
         cp     = 'C' if right == 'C' else 'P'
         entry  = round(avg_cost / mult, 2) if mult else round(avg_cost, 2)
-
         ib_buf.append({
             "con_id":   con_id,
             "strategy": f"{sym} {cp}{int(strike)} ×{int(abs(pos_qty))}",
@@ -185,58 +330,75 @@ def restore_on_reconnect(self) -> None:
             "entry":    entry,
             "current":  entry,
             "side":     side,
-            "right":    cp,       # 매칭용: 'C' or 'P'
-            "strike":   strike,   # 매칭용: float
+            "right":    cp,
+            "strike":   strike,
             "legs":     [],
             "status":   "체결완료",
         })
 
     def _on_pos_end():
-        """IB positionEnd 콜백 — 매칭 후 패널 갱신."""
-        # 콜백 원복
+        """IB positionEnd — 파일 포지션 진입가 업데이트."""
         try:
             ib.position    = _orig_pos
             ib.positionEnd = _orig_pos_end
         except Exception:
             pass
 
-        merged = _merge(ib_buf, saved_by_oid, self)
+        if not ib_buf:
+            self._log("ℹ IB 서버 옵션 포지션 없음 (파일 복원 유지)")
+            return
 
-        from PyQt5.QtCore import QTimer
-        def _apply():
-            for pos in merged:
-                panel.add_position(pos)
-            count = len(merged)
-            self._log(
-                f"📂 합성 잔고 복원: {count}건 "
-                f"(IB {len(ib_buf)}레그 / 파일 {len(saved_by_oid)}전략)")
-        QTimer.singleShot(0, _apply)
+        # 파일 포지션 진입가를 IB 서버값으로 업데이트
+        updated = 0
+        for oid, saved in saved_by_oid.items():
+            legs = saved.get("legs", [])
+            leg_sigs = set(
+                f"{l['cp'].upper()}{int(float(l['strike']))}"
+                for l in legs if l.get('strike')
+            )
+            matched = [ib_p for ib_p in ib_buf
+                       if _ib_sig_simple(ib_p) in leg_sigs]
+            if matched:
+                # IB avg_cost 는 레그별 개별 가격이라 BAG net 과 다름
+                # → 파일에 저장된 entry (체결 당시 BAG net price) 우선 사용
+                # IB 서버는 포지션 존재 확인 용도로만 사용
+                avg_e = saved["entry"]  # 파일 저장값 유지
+                if hasattr(panel, '_positions'):
+                    for p in panel._positions:
+                        if p.get('oid') == oid:
+                            # entry 는 파일값 유지, qty 만 서버값으로 보정
+                            ib_qty = matched[0]["qty"] if matched else p.get("qty", 1)
+                            p['qty'] = ib_qty
+                            updated += 1
+        if hasattr(panel, '_refresh_pos_table'):
+            panel._refresh_pos_table()
+        self._log(f"✅ IB 서버 진입가 업데이트: {updated}건")
+
+    def _ib_sig_simple(ib_pos: dict) -> str:
+        right  = ib_pos.get("right", "")
+        strike = ib_pos.get("strike", 0)
+        if right and strike:
+            return f"{right.upper()}{int(float(strike))}"
+        return ""
 
     ib.position    = _on_pos
     ib.positionEnd = _on_pos_end
 
-    # 타임아웃 안전망 (5초)
-    from PyQt5.QtCore import QTimer
+    # 10초 타임아웃 — 응답 없으면 콜백 원복만
     def _timeout():
-        if ib.position is _on_pos:        # 아직 콜백 대기 중
+        if ib.position is _on_pos:
             ib.position    = _orig_pos
             ib.positionEnd = _orig_pos_end
-            self._log("⚠ reqPositions 타임아웃 — 파일 데이터만 복원")
-            # 파일 데이터만이라도 표시
-            for pos in saved_by_oid.values():
-                panel.add_position(pos)
-    QTimer.singleShot(5000, _timeout)
+            self._log("⚠ IB 서버 응답 없음 — 파일 복원 유지")
+    QTimer.singleShot(10000, _timeout)
 
     try:
         ib.reqPositions()
-        self._log("🔄 재연결: IB 포지션 조회 중…")
+        self._log("🔄 재연결: IB 서버 진입가 조회 중…")
     except Exception as e:
         ib.position    = _orig_pos
         ib.positionEnd = _orig_pos_end
-        self._log(f"❌ reqPositions 오류: {e}")
-        # 파일 데이터 폴백
-        for pos in saved_by_oid.values():
-            panel.add_position(pos)
+        self._log(f"⚠ reqPositions 오류: {e} — 파일 복원 유지")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -334,9 +496,15 @@ def _merge(ib_buf: list, saved_by_oid: dict, self) -> list:
             for i in matched_idxs:
                 used_ib_idxs.add(i)
         else:
-            # 부분 매칭 or 미매칭 → 파일 데이터만 표시
+            # 부분 매칭 or 미매칭 → 파일 데이터 그대로 표시
+            # (IB 서버 미매칭이어도 파일에 있으면 표시)
             pos = dict(saved)
-            pos["strategy"] = f"[미확인] {saved.get('strategy','')}"
+            if len(matched_idxs) == 0:
+                # IB 서버에 없음 → 만기됐거나 청산된 포지션
+                pos["strategy"] = f"[IB미확인] {saved.get('strategy','')}"
+            else:
+                # 일부 레그만 매칭
+                pos["strategy"] = f"[부분매칭] {saved.get('strategy','')}"
             result.append(pos)
 
     # ── 매칭 안 된 IB 레그 → 그냥 추가 ─────────────────────

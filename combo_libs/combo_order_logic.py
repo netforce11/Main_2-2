@@ -220,10 +220,13 @@ def _on_close_position_order(self, pos: dict):
         except Exception:
             pass
 
-    # ── 영속화: 청산 시 파일에서 제거 ───────────────────────
+    # ── 영속화: 청산 시 파일에서 제거 + 손익 기록 ──────────
     if oid:
         try:
-            from combo_position_store import remove_position
+            from combo_position_store import remove_position, record_trade_history
+            # 청산가: 실시간 current 값 (없으면 entry 로 폴백)
+            exit_price = float(pos.get("current", pos.get("entry", 0)))
+            record_trade_history(pos, exit_price=exit_price, close_type="청산주문")
             remove_position(oid)
         except Exception:
             pass
@@ -353,11 +356,45 @@ def _on_chaser_mode_changed(self, mode: str):
 
 
 def _on_pos_reconnect_hook(self):
+    """
+    재연결 후 합성 잔고 복원.
+    combo_position_store 를 절대경로로 import해 경로 문제 방지.
+    (combo_libs/ 구조에서 sys.path 미등록 시 일반 import 실패 대응)
+    """
+    import importlib.util, sys
+    from pathlib import Path
+
+    # ── 1) 일반 import 먼저 시도 ────────────────────────────
     try:
         from combo_position_store import restore_on_reconnect
+        self._log("🔄 재연결: 합성 잔고 복원 시작…")
         restore_on_reconnect(self)
+        return
+    except ImportError:
+        pass  # 아래 절대경로로 재시도
     except Exception as e:
-        self._log(f"⚠ 잔고 복원 오류: {e}")
+        self._log(f"⚠ 잔고 복원 오류(일반): {e}")
+        return
+
+    # ── 2) 절대경로 import (combo_libs/ 구조 대응) ──────────
+    try:
+        _this_dir = Path(__file__).resolve().parent
+        _store_path = _this_dir / "combo_position_store.py"
+
+        if not _store_path.exists():
+            self._log(f"⚠ combo_position_store.py 없음: {_store_path}")
+            return
+
+        spec   = importlib.util.spec_from_file_location(
+                    "combo_position_store", str(_store_path))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules.setdefault("combo_position_store", module)
+        spec.loader.exec_module(module)
+
+        self._log("🔄 재연결: 합성 잔고 복원 시작 (절대경로)…")
+        module.restore_on_reconnect(self)
+    except Exception as e:
+        self._log(f"⚠ 잔고 복원 오류(절대경로): {e}")
 
 
 def _load_ib_positions(self):
