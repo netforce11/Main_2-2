@@ -71,7 +71,7 @@ GREEKS_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_FONT_SIZE  = 16
 ALERT_COOLDOWN     = 600           # 추적기 재알림 쿨다운 (초)
-N_STRIKES          = 30            # 콜/풋 테이블 최대 행 수 (SpinBox로 실제 사용 수 조절)
+N_STRIKES          = 24            # 콜/풋 테이블 최대 행 수 (SpinBox로 실제 사용 수 조절)
 GREEKS_MATRIX_N    = 20            # Greeks Matrix ATM 기준 상하 개수
 GREEKS_AUTOSAVE_S  = 15            # Greeks 자동저장 주기 (초)
 

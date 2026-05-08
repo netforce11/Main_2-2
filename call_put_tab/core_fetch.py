@@ -461,6 +461,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
             return
         sym = self.edit_sym.text().strip().upper() or "SPX"
         n   = self.spin_n.value()
+        n = min(n, 26)
         self._n_strikes = n
 
         from core import _resolve_spx_trading_class
@@ -483,7 +484,7 @@ class CoreFetchMixin(CoreFetchPosMixin):
             if self._fetch_gen != gen: return
             if not _alive(self): return
             if idx >= len(cancel_ids):
-                QTimer.singleShot(300, _prepare_and_subscribe)
+                QTimer.singleShot(500, _prepare_and_subscribe)
                 return
             try:
                 self.mw.ib.cancelMktData(cancel_ids[idx])
@@ -585,6 +586,8 @@ class CoreFetchMixin(CoreFetchPosMixin):
                 if idx == 0 and sym in _DELAYED_SYMS:
                     _mdt_for_sym(sym, self.mw.ib)
                     QTimer.singleShot(200, _do_req)
+                elif rid == REQ_PUT: QTimer.singleShot(100, _do_req) 
+                
                 else:
                     _do_req()
 

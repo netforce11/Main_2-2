@@ -1,39 +1,11 @@
 """
 tab_combo_strategy.py — 탭4: 복합 전략  v2.3
 ════════════════════════════════════════════════════════════════
-v2.3 변경:
-  - 관심종목 패널 제거 (combo_ui_left.py)
-  - 추세점수판(TrendScorePanel)을 우측 상단 → 좌측 하단으로 이동
-  - _build_left_with_trend() 추가: 옵션체인(상단) + 추세점수판(하단)
-  - _build_right_with_optimizer() 에서 추세점수판 제거
-
-v2.2 변경:
-  - TrendScorePanel (combo_trend_panel.py) 연결
-  - set_trend_df() 추가 → Tab7(ChartGrid)에서 DF push 가능
-
-v2.1 — Cost Optimizer 패널 추가
-v2.0 — 파일 분리 (200줄 단위 기능별)
-
-모듈 구조:
-  combo_constants.py    — 상수 / 전략 목록 / 전략 설명 / 공통 유틸
-  combo_ui_left.py      — 좌측 패널 (옵션 체인) Mixin
-  combo_ui_right_panel.py — 우측 패널 (전략 설정 + 결과) Mixin
-  combo_logic.py        — 손익 계산 로직 Mixin
-  combo_optimizer.py    — Cost Optimizer 패널 + 탐색 로직 Mixin
-  combo_trend_panel.py  — 추세 점수판 UI 위젯
-  combo_second_logic.py — 추세 점수 연산 모듈
-  tab_combo_strategy.py — 메인 조립 클래스 (이 파일)
-
-레이아웃 (v2.3):
-  수평 스플리터
-  ├── 좌측 (수직 스플리터)
-  │     ├── 옵션 체인 (콜/풋)
-  │     └── 추세 점수판  ← v2.3: 우측에서 이동
-  └── 우측 (수직 스플리터)
-        ├── 전략 설정
-        ├── Cost Optimizer
-        ├── 손익 결과
-        └── 차트
+[FIX-H] bridge.connected 중복 연결 방지
+  - _connect_signals() 가 재호출될 때(탭 재활성화, 위젯 재생성 등)
+    동일 슬롯이 중복 연결되면 Qt 는 연결 수 만큼 다중 호출함.
+  - _signals_connected 플래그로 최초 1회만 연결.
+  - 연결 해제가 필요한 경우 _disconnect_signals() 를 먼저 호출.
 ════════════════════════════════════════════════════════════════
 """
 
@@ -44,16 +16,15 @@ from PyQt5.QtCore import Qt, QTimer
 
 from core import bridge, build_expiry_list, ts, REQ_UND
 
-from combo_constants   import SPLITTER_STYLE
-from combo_ui_left     import LeftPanelMixin
+from combo_constants      import SPLITTER_STYLE
+from combo_ui_left        import LeftPanelMixin
 from combo_ui_right_panel import RightPanelMixin
-from combo_logic       import PnlLogicMixin
-from combo_optimizer   import OptimizerPanelMixin
-from combo_trend_panel import TrendScorePanel
-from tab_combo_shortcut import ShortcutMixin
+from combo_logic          import PnlLogicMixin
+from combo_optimizer      import OptimizerPanelMixin
+from combo_trend_panel    import TrendScorePanel
+from tab_combo_shortcut   import ShortcutMixin
 
 
-# ══════════════════════════════════════════════════════════════
 class ComboStrategyGrid(
     ShortcutMixin,
     LeftPanelMixin,
@@ -78,22 +49,21 @@ class ComboStrategyGrid(
         self._opt_selected_row = -1
 
         self._trend_panel: TrendScorePanel | None = None
+        # [FIX-H] 중복 연결 방지 플래그
+        self._signals_connected = False
 
-        # [S11] Chaser 상태 미리 초기화 — _on_chase_click 방어
         from combo_order_chaser import init_chaser_state
         init_chaser_state(self)
 
         self._build()
         self._connect_signals()
 
-        # synthetic_panel 콜백 연결 (margin_mode, close_pos, chaser 등)
         try:
             from combo_order_logic import _init_synthetic_panel_callbacks
             _init_synthetic_panel_callbacks(self)
         except Exception as _e:
             print(f"[ComboStrategyGrid] 콜백 초기화 오류: {_e}")
 
-        # [S11] 연결 시 계좌 표시 갱신 — 이미 연결된 경우 즉시 시도
         QTimer.singleShot(500, self._refresh_account_display)
 
     # ──────────────────────────────────────────────────────────
@@ -107,7 +77,7 @@ class ComboStrategyGrid(
         self._main_hsplit.setStyleSheet(SPLITTER_STYLE)
         self._main_hsplit.setChildrenCollapsible(False)
 
-        self._main_hsplit.addWidget(self._build_left_with_trend())   # ← v2.3
+        self._main_hsplit.addWidget(self._build_left_with_trend())
         self._main_hsplit.addWidget(self._build_right_with_optimizer())
         self._main_hsplit.setSizes([380, 900])
         root.addWidget(self._main_hsplit, 1)
@@ -120,52 +90,23 @@ class ComboStrategyGrid(
         self._sync_timer.timeout.connect(self._auto_sync_chain)
         self._sync_timer.start()
 
-        # 단축키 이벤트 필터 설치 (ShortcutMixin)
         self._install_shortcuts()
 
-    # ── v2.3: 좌측 = 옵션 체인(상단) + 추세점수판(하단) ────────
     def _build_left_with_trend(self) -> QSplitter:
-        """좌측 수직 스플리터: 옵션 체인 + 추세점수판."""
         self._left_vsplit = QSplitter(Qt.Vertical)
         self._left_vsplit.setHandleWidth(6)
         self._left_vsplit.setStyleSheet(SPLITTER_STYLE)
         self._left_vsplit.setChildrenCollapsible(False)
-
-        # 상단: 옵션 체인
         self._left_vsplit.addWidget(self._build_left_panel())
-
-        # 하단: 추세 점수판
         self._trend_panel = TrendScorePanel(self.mw)
         self._left_vsplit.addWidget(self._trend_panel)
-
         self._left_vsplit.setSizes([540, 160])
         return self._left_vsplit
 
-    # ── 우측 패널: RightPanelMixin._build_right_panel() 에 위임 (v2.6) ──
     def _build_right_with_optimizer(self) -> QWidget:
-        """
-        RightPanelMixin._build_right_panel() 으로 통합.
-        계좌바 / 전략설정 / 손익결과|곡선 / Optimizer 슬라이드
-        모두 combo_ui_right_panel.py 에서 빌드.
-        """
         return self._build_right_panel()
 
-    # ── Tab7(ChartGrid) → DF 수신 진입점 ───────────────────────
     def set_trend_df(self, df):
-        """
-        Tab7(ChartGrid)에서 1분봉 DF를 이 탭으로 push할 때 호출.
-
-        tab_chart.py 연결 예시
-        ─────────────────────
-        # tab_chart.py 의 _on_bar_close() 또는 _fetch_done() 안에서:
-
-            combo = getattr(self.mw, 'tab_combo', None)
-            if combo and hasattr(combo, 'set_trend_df'):
-                combo.set_trend_df(self._df_1min)
-
-        DF 컬럼 (소문자 통일):
-            open, high, low, close, volume
-        """
         if self._trend_panel:
             self._trend_panel.set_df(df)
 
@@ -185,21 +126,56 @@ class ComboStrategyGrid(
 
     # ──────────────────────────────────────────────────────────
     def _connect_signals(self):
+        """
+        [FIX-H] _signals_connected 플래그로 중복 연결 완전 차단.
+        Qt 는 같은 시그널에 같은 슬롯을 여러 번 connect() 하면
+        연결 수만큼 다중 호출하므로 반드시 1회만 연결해야 한다.
+        """
+        if self._signals_connected:
+            return
+
         bridge.tick_price.connect(self._on_tick_price)
-        # [S11] 연결/재연결 시 계좌 표시 자동 갱신
         bridge.connected.connect(self._refresh_account_display)
-        # 재연결 시 합성 잔고 복원 (IB 서버 + 파일 병합)
         bridge.connected.connect(self._on_pos_reconnect_hook)
 
+        self._signals_connected = True
+
+    def _disconnect_signals(self):
+        """
+        위젯 소멸 또는 재구성 전 시그널 연결 해제.
+        closeEvent 또는 탭 재생성 시 호출.
+        """
+        if not self._signals_connected:
+            return
+        try:
+            bridge.tick_price.disconnect(self._on_tick_price)
+        except Exception:
+            pass
+        try:
+            bridge.connected.disconnect(self._refresh_account_display)
+        except Exception:
+            pass
+        try:
+            bridge.connected.disconnect(self._on_pos_reconnect_hook)
+        except Exception:
+            pass
+        self._signals_connected = False
+
+    def closeEvent(self, event):
+        """위젯 닫힐 때 시그널 해제."""
+        self._disconnect_signals()
+        super().closeEvent(event)
+
+    # ──────────────────────────────────────────────────────────
     def _on_tick_price(self, rid, tt, price):
-        REQ_COMBO_UND = 8500  # 콤보탭 전용 기초자산 reqId (combo_ui_left._req_sym_price 참조)
+        REQ_COMBO_UND = 8500
         if rid in (REQ_UND, REQ_COMBO_UND) and tt in (4, 68, 75) and price > 0:
             self._und_price = price
             QTimer.singleShot(0, lambda: self.lbl_sym_price.setText(
                 f"현재가: {price:,.2f}"))
 
     def _on_pos_reconnect_hook(self):
-        """재연결 후 합성 잔고 복원 — combo_order_logic으로 위임."""
+        """재연결 후 합성 잔고 복원 — combo_order_logic 으로 위임."""
         try:
             from combo_order_logic import _on_pos_reconnect_hook as _hook
             _hook(self)

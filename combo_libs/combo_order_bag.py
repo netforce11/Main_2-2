@@ -1,17 +1,17 @@
 """
-combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.1
+combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.2
 ──────────────────────────────────────────────────────
-v3.1 변경:
-  ★ 직접입력 가격 우선 반영
-    - NetPriceDisplay.get_bag_params() 가 {"manual": True} 를 반환하면
-      확인창에 "직접입력" 표시 추가.
-    - lmtPrice 계산 로직: 직접입력 > 전광판 자동 > legs 폴백 (기존 순서 유지).
-──────────────────────────────────────────────────────
-v3.0 버그픽스 (이전):
-  [BUG #1] _do_send_inner 미정의 → NameError 수정.
-  [BUG #2] 타임아웃 핸들러 lock 우회 수정.
-  [BUG #3] conId 세팅/zero_legs/확인창/placeOrder 블록 위치 수정.
-  [BUG #4] _chaser_current_oid / _chaser_oid 변수명 불일치 수정.
+v3.2 변경:
+  [FIX-J] _pending_lmt_override 지원
+    - _do_send_body 최상단에서 self._pending_lmt_override 체크
+    - 값이 있으면 NetPriceDisplay / legs 폴백보다 최우선 사용
+    - 소비 후 즉시 None 으로 초기화 (다음 신규 주문에 영향 없음)
+    - bag_action 은 close_legs[0].dir 로 결정
+
+v3.1 변경 (이전):
+  직접입력 가격 우선 반영 (manual mode)
+v3.0 변경 (이전):
+  BUG #1~#4 수정
 ──────────────────────────────────────────────────────
 Python 3.8 호환
 """
@@ -55,8 +55,7 @@ def _purge_stale_conid_keys() -> None:
 def _save_conid_cache() -> None:
     try:
         _CACHE_FILE.parent.mkdir(exist_ok=True)
-        _CACHE_FILE.write_text(
-            json.dumps(_CONID_CACHE, indent=2), encoding="utf-8")
+        _CACHE_FILE.write_text(json.dumps(_CONID_CACHE, indent=2), encoding="utf-8")
     except Exception:
         pass
 
@@ -126,7 +125,6 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
     symbol   = bag.symbol
     base_rid = 9910
 
-    # ── 캐시 우선 채우기 ────────────────────────────────────
     for i, (cl, opt_c) in enumerate(combo_legs):
         key = _conid_key(symbol, opt_c.right, opt_c.strike,
                          opt_c.lastTradeDateOrContractMonth)
@@ -140,13 +138,11 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
             self, bag, combo_legs, legs, strat, ib, total, resolved, session))
         return
 
-    # ── 미캐시 → bridge 시그널 수신 ─────────────────────────
     from core import bridge as _bridge
     _cd_conn = [None, None]
 
     def _on_cd(reqId, contractDetails):
-        if getattr(self, '_bag_session', None) != session:
-            return
+        if getattr(self, '_bag_session', None) != session: return
         idx = reqId - base_rid
         if 0 <= idx < total:
             cid = contractDetails.contract.conId
@@ -159,8 +155,7 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
             self._log(f"  conId 수신: 레그{idx+1} conId={cid}")
 
     def _on_cd_end(reqId):
-        if getattr(self, '_bag_session', None) != session:
-            return
+        if getattr(self, '_bag_session', None) != session: return
         idx = reqId - base_rid
         if 0 <= idx < total and idx not in resolved:
             resolved[idx] = 0
@@ -171,25 +166,19 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
 
     def _disconnect_cd():
         try:
-            if _cd_conn[0]:
-                _bridge.contract_details_sig.disconnect(_on_cd)
-        except Exception:
-            pass
+            if _cd_conn[0]: _bridge.contract_details_sig.disconnect(_on_cd)
+        except Exception: pass
         try:
-            if _cd_conn[1]:
-                _bridge.contract_details_end_sig.disconnect(_on_cd_end)
-        except Exception:
-            pass
+            if _cd_conn[1]: _bridge.contract_details_end_sig.disconnect(_on_cd_end)
+        except Exception: pass
         _cd_conn[0] = _cd_conn[1] = None
 
     _bridge.contract_details_sig.connect(_on_cd)
     _bridge.contract_details_end_sig.connect(_on_cd_end)
-    _cd_conn[0] = _on_cd
-    _cd_conn[1] = _on_cd_end
+    _cd_conn[0] = _on_cd; _cd_conn[1] = _on_cd_end
 
     for i, (cl, opt_contract) in enumerate(combo_legs):
-        if i in resolved:
-            continue
+        if i in resolved: continue
         try:
             ib.reqContractDetails(base_rid + i, opt_contract)
             self._log(
@@ -201,17 +190,15 @@ def _place_bag_with_conids(self, bag, combo_legs: list,
             resolved[i] = 0
 
     def _on_timeout():
-        if getattr(self, '_bag_session', None) != session:
-            return
+        if getattr(self, '_bag_session', None) != session: return
         _disconnect_cd()
         for i in range(total):
             if i not in resolved:
                 resolved[i] = 0
                 opt_c = combo_legs[i][1]
-                self._log(
-                    f"  ⚠ 레그{i+1} conId 타임아웃 10초 — "
-                    f"{opt_c.right} {int(opt_c.strike)} "
-                    f"{opt_c.lastTradeDateOrContractMonth}")
+                self._log(f"  ⚠ 레그{i+1} conId 타임아웃 10초 — "
+                          f"{opt_c.right} {int(opt_c.strike)} "
+                          f"{opt_c.lastTradeDateOrContractMonth}")
         _do_send(self, bag, combo_legs, legs, strat, ib, total, resolved, session)
 
     QTimer.singleShot(10000, _on_timeout)
@@ -226,12 +213,10 @@ def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
     """중복 호출 방지 lock → _do_send_body() 호출."""
     if getattr(self, '_bag_session', None) != session:
         return
-
     lock_key = f'_do_send_lock_{session}'
     if getattr(self, lock_key, False):
         return
     setattr(self, lock_key, True)
-
     try:
         _do_send_body(self, bag, combo_legs, legs, strat, ib, total, resolved, session)
     finally:
@@ -247,8 +232,9 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
     실제 주문 전송 본체.
     conId 세팅 → zero_legs 체크 → lmtPrice 계산 → 확인창 → placeOrder.
 
-    ★ v3.1: 직접입력 가격 우선 반영
-      get_bag_params()["manual"] == True 이면 "직접입력" 표시.
+    [FIX-J] _pending_lmt_override 최우선 처리
+      청산 지정가 주문 시 NetPriceDisplay 를 우회하고
+      _place_combo_legs_lmt 에서 세팅한 가격을 직접 사용.
     """
     # ── conId 세팅 ──────────────────────────────────────────
     for i, (cl, _) in enumerate(combo_legs):
@@ -258,13 +244,13 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             f"{legs[i]['dir']} {legs[i]['cp']} {int(legs[i]['strike'])}")
     bag.comboLegs = [cl for cl, _ in combo_legs]
 
-    # ── conId=0 레그 존재 시 주문 차단 ──────────────────────
+    # ── conId=0 레그 차단 ────────────────────────────────────
     zero_legs = [i + 1 for i, (cl, _) in enumerate(combo_legs) if cl.conId == 0]
     if zero_legs:
         self._bag_session = None
-        self._log(
-            f"❌ 주문 취소: 레그 {zero_legs} conId 조회 실패 (타임아웃) — "
-            f"체인 동기화 후 다시 시도하세요")
+        self._pending_lmt_override = None   # [FIX-J] override 정리
+        self._log(f"❌ 주문 취소: 레그 {zero_legs} conId 조회 실패 (타임아웃) — "
+                  f"체인 동기화 후 다시 시도하세요")
         QMessageBox.warning(
             self, "주문 오류",
             f"레그 {zero_legs}의 conId 조회가 타임아웃됐습니다.\n\n"
@@ -272,38 +258,53 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             f"잠시 기다렸다가 다시 시도하세요.")
         return
 
-    # ── lmtPrice 계산 (★ v3.1: 직접입력 우선) ──────────────
-    buy_total  = sum(
-        float(lg.get("prem", 0) or 0) * int(float(lg.get("qty", 1)))
-        for lg in legs if lg["dir"] == "BUY")
-    sell_total = sum(
-        float(lg.get("prem", 0) or 0) * int(float(lg.get("qty", 1)))
-        for lg in legs if lg["dir"] == "SELL")
-    net = round(buy_total - sell_total, 2)
+    # ── [FIX-J] 청산 지정가 override 최우선 처리 ────────────
+    override_lmt = getattr(self, '_pending_lmt_override', None)
+    if override_lmt is not None:
+        lmt_price               = round(float(override_lmt), 2)
+        bag_action              = legs[0]["dir"] if legs else "SELL"
+        is_manual_price         = True
+        self._pending_lmt_override = None
+        self._log(f"📌 지정가 청산 override: ${lmt_price:.2f}  방향:{bag_action}")
+        buy_total = sell_total = 0.0
+        net       = -lmt_price if bag_action == "SELL" else lmt_price
 
-    is_manual_price = False
-    display = getattr(self, 'net_price_display', None)
+    else:
+        # ── lmtPrice 계산 (v3.1 기존 로직) ────────────────────
+        buy_total  = sum(
+            float(lg.get("prem", 0) or 0) * int(float(lg.get("qty", 1)))
+            for lg in legs if lg["dir"] == "BUY")
+        sell_total = sum(
+            float(lg.get("prem", 0) or 0) * int(float(lg.get("qty", 1)))
+            for lg in legs if lg["dir"] == "SELL")
+        net = round(buy_total - sell_total, 2)
 
-    if display is not None:
-        params = display.get_bag_params()
+        is_manual_price = False
+        display = getattr(self, 'net_price_display', None)
 
-        # ── [BUG #2 수정] 직접입력 모드인데 가격 미입력 시 주문 차단 ──
-        if params.get("invalid", False):
-            self._bag_session = None
-            self._log("❌ 주문 취소: 직접입력 모드에서 가격이 입력되지 않았습니다.")
-            QMessageBox.warning(
-                self, "가격 미입력",
-                "직접입력 모드에서 스프레드 가격을 입력해주세요.\n\n"
-                "가격 입력 후 합성주문 버튼을 다시 누르세요.")
-            return
-
-        lmt_price       = params["lmt_price"]
-        bag_action      = params["action"]
-        is_manual_price = params.get("manual", False)
-        net = lmt_price if bag_action == "BUY" else -lmt_price
-
-        # ── [BUG #1 수정] 자동모드에서 Mid-price 미수신(0.0)이면 폴백 사용 ──
-        if not is_manual_price and lmt_price == 0.0:
+        if display is not None:
+            params = display.get_bag_params()
+            if params.get("invalid", False):
+                self._bag_session = None
+                self._log("❌ 주문 취소: 직접입력 모드에서 가격이 입력되지 않았습니다.")
+                QMessageBox.warning(
+                    self, "가격 미입력",
+                    "직접입력 모드에서 스프레드 가격을 입력해주세요.\n\n"
+                    "가격 입력 후 합성주문 버튼을 다시 누르세요.")
+                return
+            lmt_price       = params["lmt_price"]
+            bag_action      = params["action"]
+            is_manual_price = params.get("manual", False)
+            net = lmt_price if bag_action == "BUY" else -lmt_price
+            if not is_manual_price and lmt_price == 0.0:
+                try:
+                    from combo_ui_leg_panel import _recalc_net_price
+                    ui_price  = _recalc_net_price(self)
+                    lmt_price = round(abs(float(ui_price)), 2) if ui_price else round(abs(net), 2)
+                except Exception:
+                    lmt_price = round(abs(net), 2)
+                bag_action = "BUY" if net >= 0 else "SELL"
+        else:
             try:
                 from combo_ui_leg_panel import _recalc_net_price
                 ui_price  = _recalc_net_price(self)
@@ -311,23 +312,13 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             except Exception:
                 lmt_price = round(abs(net), 2)
             bag_action = "BUY" if net >= 0 else "SELL"
-    else:
-        # display 위젯 없음 → 폴백
-        try:
-            from combo_ui_leg_panel import _recalc_net_price
-            ui_price  = _recalc_net_price(self)
-            lmt_price = round(abs(float(ui_price)), 2) if ui_price else round(abs(net), 2)
-        except Exception:
-            lmt_price = round(abs(net), 2)
-        bag_action = "BUY" if net >= 0 else "SELL"
 
-    if lmt_price <= 0.0:
-        lmt_price = 0.01
+        if lmt_price <= 0.0:
+            lmt_price = 0.01
 
-    type_label = "데빗 (지불)" if bag_action == "BUY" else "크레딧 (수취)"
+    type_label   = "데빗 (지불)" if bag_action == "BUY" else "크레딧 (수취)"
     price_source = " [직접입력]" if is_manual_price else " [자동/Mid]"
 
-    # ── 장외 시간 판단 → TIF / outsideRth 자동 결정 ────────
     from combo_order_logic import _get_session_info
     after_hours, session_label, tif, outside_rth = _get_session_info()
 
@@ -343,8 +334,7 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
 
     ah_note = (
         f"\n⚠ 장외 시간({session_label}) — TIF:{tif} / 장외체결 허용"
-        if after_hours else
-        f"\n장중({session_label}) — TIF:{tif}"
+        if after_hours else f"\n장중({session_label}) — TIF:{tif}"
     )
 
     from PyQt5.QtWidgets import QMessageBox as _MB
@@ -370,15 +360,15 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         self._log("❌ nextOrderId 없음")
         return
 
-    # ── 주문 객체 생성 (장외 자동 분기) ────────────────────
+    # ── 주문 객체 ────────────────────────────────────────────
     from ibapi.order import Order as IbOrder
     ibord = IbOrder()
     ibord.action        = bag_action
     ibord.orderType     = "LMT"
     ibord.totalQuantity = 1
     ibord.lmtPrice      = lmt_price
-    ibord.tif           = tif           # DAY(장중) / GTX(장외)
-    ibord.outsideRth    = outside_rth   # False(장중) / True(장외)
+    ibord.tif           = tif
+    ibord.outsideRth    = outside_rth
     ibord.eTradeOnly    = False
     ibord.firmQuoteOnly = False
     ibord.transmit      = True
@@ -394,14 +384,13 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
 
         self._chaser_bag_contract = bag
         self._chaser_bag_order    = ibord
-        self._chaser_current_oid  = oid   # combo_order_callbacks 참조
-        self._chaser_oid          = oid   # combo_order_chaser 참조
+        self._chaser_current_oid  = oid
+        self._chaser_oid          = oid
 
         if not hasattr(self, '_exec_known_oids'):
             self._exec_known_oids = set()
         self._exec_known_oids.add(oid)
 
-        # 체결 후 합성 잔고 추가용 캐시
         self._pending_position = {
             "strategy": strat,
             "qty":      int(ibord.totalQuantity),
@@ -417,10 +406,8 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             self, oid=oid, price=lmt_price,
             action=bag_action, qty=int(ibord.totalQuantity))
 
-        # 5초 후 미체결 목록 접수 확인
         def _verify_order(check_oid=oid):
             from combo_order_open import on_open_orders
-
             def _check_cache():
                 orders = getattr(self, '_cached_open_orders', [])
                 oids   = [o.get('oid') for o in orders]
@@ -428,7 +415,6 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
                     self._log(f"✅ OID={check_oid} 주문 접수 확인 (TWS 미체결 목록)")
                 else:
                     self._log(f"⚠ OID={check_oid} 주문 미확인 — TWS에서 직접 확인 필요")
-
             on_open_orders(self)
             QTimer.singleShot(2500, _check_cache)
 

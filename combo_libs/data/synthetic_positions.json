@@ -26,5 +26,61 @@
     ],
     "status": "체결완료",
     "saved_at": "2026-05-05T00:20:41"
+  },
+  {
+    "strategy": "풋 스프레드 (풋매수 + 풋매도)",
+    "qty": 1,
+    "entry": 0.1,
+    "current": 0.1,
+    "side": "BUY",
+    "oid": 29,
+    "legs": [
+      {
+        "dir": "BUY",
+        "cp": "P",
+        "strike": 7290.0,
+        "prem": "0.7",
+        "qty": 1,
+        "expiry": "20260508"
+      },
+      {
+        "dir": "SELL",
+        "cp": "P",
+        "strike": 7285.0,
+        "prem": "0.65",
+        "qty": 1,
+        "expiry": "20260508"
+      }
+    ],
+    "status": "체결완료",
+    "saved_at": "2026-05-08T23:24:29"
+  },
+  {
+    "strategy": "풋 스프레드 (풋매수 + 풋매도)",
+    "qty": 1,
+    "entry": 0.25,
+    "current": 0.25,
+    "side": "BUY",
+    "oid": 30,
+    "legs": [
+      {
+        "dir": "BUY",
+        "cp": "P",
+        "strike": 7340.0,
+        "prem": "1.92",
+        "qty": 1,
+        "expiry": "20260508"
+      },
+      {
+        "dir": "SELL",
+        "cp": "P",
+        "strike": 7335.0,
+        "prem": "1.67",
+        "qty": 1,
+        "expiry": "20260508"
+      }
+    ],
+    "status": "체결완료",
+    "saved_at": "2026-05-08T23:40:56"
   }
 ]

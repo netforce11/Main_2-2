@@ -2,17 +2,16 @@
 combo_order_callbacks.py — BAG 주문 상태 콜백 연결 / UI 갱신
 ──────────────────────────────────────────────────────────────
 [FIX-E] Filled 시 신규/청산 주문 구분
-  - self._close_oid_set 에 청산 oid 가 있으면
-    save_one_position() 호출 차단 (역방향 포지션 중복 추가 방지).
-  - 청산 Filled 수신 시 해당 oid 파일 제거 확인 + _close_oid_set 정리.
-
 [FIX-F] Submitted 시 청산 파일 제거
-  - _on_close_position_order 에서 등록한 _pending_close_oid 를
-    Submitted 수신 시 파일에서 제거.
-  - 이렇게 하면 주문이 접수된 직후 파일 제거 → TWS 재연결해도 중복 복원 없음.
-
 [FIX-G] save_one_position 실패 로그 추가
-  - 기존 except: pass → 실패 시 self._log 출력.
+[FIX-N] tid 충돌 수정
+  기존: _POS_STREAM_BASE + (oid % 100) * 10 + leg_index
+        oid 끝 두 자리 같으면(101, 201 등) tid 완전 충돌
+        → 두 포지션 가격이 동일하게 엉켜 출력
+  수정: _POS_STREAM_BASE + oid * 10 + leg_index
+        oid 직접 사용 → 포지션마다 독립 tid 대역
+[FIX-O] update_position_prices 호출 — strategy 문자열 → oid 전달
+  패널 FIX-K 와 연동 (oid 기준 갱신)
 ──────────────────────────────────────────────────────────────
 """
 
@@ -60,7 +59,7 @@ def disconnect_order_callbacks(self) -> None:
 
 
 # ══════════════════════════════════════════════════════════════
-# 내부 핸들러
+# 주문 상태 핸들러
 # ══════════════════════════════════════════════════════════════
 
 def _on_order_status(self, oid: int, status: str,
@@ -77,7 +76,7 @@ def _on_order_status(self, oid: int, status: str,
         self._log(f"📨 OID={oid} 주문 접수됨 ({status})")
         _set_panel_status(panel, oid, "⏳ 접수됨")
 
-        # [FIX-F] 청산 주문 접수 시 파일 제거
+        # [FIX-F] 청산 주문 접수 확인 → 파일 제거
         pending_close = getattr(self, '_pending_close_oid', None)
         if pending_close and pending_close == oid:
             try:
@@ -109,11 +108,10 @@ def _on_order_status(self, oid: int, status: str,
         is_close   = (oid in close_oids)
 
         if is_close:
-            # 청산 완료 — panel 에서 포지션 제거 + 파일 재확인 제거
+            # 청산 체결 → 패널/파일에서 제거
             self._log(f"🔴 OID={oid} 청산 체결 완료")
             if panel and hasattr(panel, 'remove_position_by_oid'):
                 panel.remove_position_by_oid(oid)
-            # 혹시 Submitted 에서 제거 못했으면 여기서도 제거
             try:
                 from combo_position_store import remove_position
                 remove_position(oid)
@@ -122,7 +120,7 @@ def _on_order_status(self, oid: int, status: str,
             close_oids.discard(oid)
 
         else:
-            # 신규 체결 — panel 추가 + 파일 저장
+            # 신규 체결 → 패널 추가 + 파일 저장
             pending = getattr(self, '_pending_position', None)
             if pending and pending.get('oid') == oid:
                 if avg:
@@ -135,7 +133,7 @@ def _on_order_status(self, oid: int, status: str,
 
                 _start_position_price_stream(self, pending)
 
-                # [FIX-G] 저장 실패 로그 추가
+                # [FIX-G] 저장 실패 로그
                 try:
                     from combo_position_store import save_one_position
                     save_one_position(pending)
@@ -159,12 +157,11 @@ def _on_order_status(self, oid: int, status: str,
         if getattr(self, '_pending_position', None) and \
                 getattr(self, '_pending_position', {}).get('oid') == oid:
             self._pending_position = None
-        self._bag_session = None
+        self._bag_session        = None
         self._chaser_current_oid = None
         getattr(self, '_exec_known_oids', set()).discard(oid)
         if getattr(self, '_cancel_sent_oid', None) == oid:
             self._cancel_sent_oid = None
-        # 미체결 취소 → 파일 제거
         try:
             from combo_position_store import remove_position
             remove_position(oid)
@@ -176,7 +173,7 @@ def _on_order_status(self, oid: int, status: str,
         self._log(f"❌ OID={oid} 주문 거절/비활성")
         _set_panel_status(panel, oid, "❌ 거절됨")
         _deactivate_chaser_safe(self, reason="주문 거절")
-        self._bag_session = None
+        self._bag_session        = None
         self._chaser_current_oid = None
         if getattr(self, '_cancel_sent_oid', None) == oid:
             self._cancel_sent_oid = None
@@ -184,14 +181,9 @@ def _on_order_status(self, oid: int, status: str,
 
 def _on_exec_details(self, oid: int, sym: str,
                      side: str, qty: float, price: float) -> None:
-    """
-    TWS → execDetails 콜백.
-    레그별 개별 가격 수신. 진입가는 orderStatus.avgFillPrice 가 처리.
-    여기서는 폴백 캐시 저장 + 로그 전용.
-    """
+    """execDetails 콜백 — 폴백 캐시 저장 + 로그 전용."""
     my_oid = getattr(self, '_chaser_current_oid', None)
     known  = getattr(self, '_exec_known_oids', set())
-
     if oid != my_oid and oid not in known:
         return
 
@@ -242,25 +234,29 @@ def _on_exec_details(self, oid: int, sym: str,
 def _start_position_price_stream(self, pending: dict) -> None:
     """
     체결 완료 후 BAG net mid-price 실시간 구독.
-    레그별 tid = _POS_STREAM_BASE + (oid % 100) * 10 + leg_index
+
+    [FIX-N] tid = _POS_STREAM_BASE + oid * 10 + leg_index
+      oid 직접 사용 → 포지션마다 완전히 독립된 tid 대역 보장
+      (기존 oid % 100 방식은 oid=101, 201 처럼 끝 두 자리 같으면 충돌)
+
+    [FIX-O] panel.update_position_prices(oid, net) 으로 호출
+      strategy 문자열 → oid 기준으로 변경
     """
     from core import router
-    from PyQt5.QtCore import QTimer
 
-    legs     = pending.get('legs', [])
-    oid      = pending.get('oid', 0)
-    strategy = pending.get('strategy', '')
+    legs = pending.get('legs', [])
+    oid  = pending.get('oid', 0)
 
-    if not legs:
+    if not legs or not oid:
         return
 
     ib = getattr(getattr(self, 'mw', None), 'ib', None)
     if not ib:
         return
 
-    if not hasattr(self, '_pos_mid_ticks'):   self._pos_mid_ticks    = {}
-    if not hasattr(self, '_pos_stream_tids'): self._pos_stream_tids  = {}
-    if not hasattr(self, '_pos_stream_slots'):self._pos_stream_slots = {}
+    if not hasattr(self, '_pos_mid_ticks'):    self._pos_mid_ticks    = {}
+    if not hasattr(self, '_pos_stream_tids'):  self._pos_stream_tids  = {}
+    if not hasattr(self, '_pos_stream_slots'): self._pos_stream_slots = {}
 
     self._pos_mid_ticks[oid]    = {}
     self._pos_stream_tids[oid]  = []
@@ -276,12 +272,15 @@ def _start_position_price_stream(self, pending: dict) -> None:
             if leg_idx not in ticks:
                 ticks[leg_idx] = {}
             ticks[leg_idx][tick_type] = price
-            self._pos_mid_ticks[oid] = ticks
+            self._pos_mid_ticks[oid]  = ticks
+
             net = _calc_bag_net(self, oid, legs)
             if net is None:
                 return
+
+            # [FIX-O] oid 기준으로 패널 갱신
             if panel and hasattr(panel, 'update_position_prices'):
-                panel.update_position_prices(strategy, round(net, 2))
+                panel.update_position_prices(oid, round(net, 2))
         return _on_tick
 
     for i, leg in enumerate(legs):
@@ -290,7 +289,8 @@ def _start_position_price_stream(self, pending: dict) -> None:
             self._log(f"⚠ 실시간 손익: 레그{i+1} conId 없음 — 구독 스킵")
             continue
 
-        tid  = _POS_STREAM_BASE + (oid % 100) * 10 + i
+        # [FIX-N] tid 충돌 수정: oid * 10 + leg_index
+        tid  = _POS_STREAM_BASE + oid * 10 + i
         slot = _make_tick_handler(i)
 
         router.register_price(tid, tid, slot)
@@ -315,7 +315,7 @@ def _start_position_price_stream(self, pending: dict) -> None:
 def _calc_bag_net(self, oid: int, legs: list) -> Optional[float]:
     """레그별 mid price → BAG net mid price. 미수신 레그 있으면 None."""
     ticks = self._pos_mid_ticks.get(oid, {})
-    net = 0.0
+    net   = 0.0
     for i, leg in enumerate(legs):
         leg_ticks = ticks.get(i, {})
         bid = leg_ticks.get(1)
@@ -323,10 +323,7 @@ def _calc_bag_net(self, oid: int, legs: list) -> Optional[float]:
         if bid is None or ask is None:
             return None
         mid = (bid + ask) / 2.0
-        if leg.get('dir') == 'BUY':
-            net += mid
-        else:
-            net -= mid
+        net += mid if leg.get('dir') == 'BUY' else -mid
     return net
 
 
@@ -374,8 +371,7 @@ def stop_position_price_stream(self, oid: int) -> None:
 # ══════════════════════════════════════════════════════════════
 
 def _set_panel_status(panel, oid: int, text: str) -> None:
-    if panel is None:
-        return
+    if panel is None: return
     for pos in getattr(panel, '_positions', []):
         if pos.get('oid') == oid:
             pos['status'] = text
@@ -384,8 +380,7 @@ def _set_panel_status(panel, oid: int, text: str) -> None:
 
 
 def _set_panel_filled(panel, oid: int, avg_price: Optional[float]) -> None:
-    if panel is None:
-        return
+    if panel is None: return
     for pos in getattr(panel, '_positions', []):
         if pos.get('oid') == oid:
             pos['status'] = '체결완료'
@@ -400,15 +395,13 @@ def _set_panel_filled(panel, oid: int, avg_price: Optional[float]) -> None:
 
 
 def _set_panel_cancelled(panel, oid: int) -> None:
-    if panel is None:
-        return
+    if panel is None: return
     if hasattr(panel, 'mark_position_cancelled'):
         panel.mark_position_cancelled(oid)
 
 
 def _update_panel_entry_price(panel, oid: int, price: float) -> None:
-    if panel is None:
-        return
+    if panel is None: return
     for pos in getattr(panel, '_positions', []):
         if pos.get('oid') == oid:
             pos['entry']   = price

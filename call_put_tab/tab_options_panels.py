@@ -158,7 +158,7 @@ class PanelsMixin(PricePanelMixin):
         h6.addWidget(QLabel("행:", styleSheet="color:#aaa;font-size:11px;border:none;"))
         self.spin_n = QSpinBox()
         # ✅ 콜/풋 각 최대 25개 → 합산 50개 + REQ_UND 1개 = 51개 (한도 100개 이내)
-        self.spin_n.setRange(1, 25); self.spin_n.setValue(10)
+        self.spin_n.setRange(1, 24); self.spin_n.setValue(24)
         self.spin_n.setFixedWidth(50); self.spin_n.setFixedHeight(24)
         self.spin_n.setStyleSheet(
             "background:#0a0a18;color:#ffd700;border:1px solid #2e3060;font-size:12px;")
