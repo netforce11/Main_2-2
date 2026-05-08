@@ -1,28 +1,19 @@
 """
 combo_order_callbacks.py — BAG 주문 상태 콜백 연결 / UI 갱신
 ──────────────────────────────────────────────────────────────
-bridge.order_status_sig  → _on_order_status()
-bridge.exec_sig          → _on_exec_details()
+[FIX-E] Filled 시 신규/청산 주문 구분
+  - self._close_oid_set 에 청산 oid 가 있으면
+    save_one_position() 호출 차단 (역방향 포지션 중복 추가 방지).
+  - 청산 Filled 수신 시 해당 oid 파일 제거 확인 + _close_oid_set 정리.
 
-[BUG-FIX 1] 진입가 오류 수정
-  - 문제: order_status_sig 에 avgFillPrice 가 없어서
-          execDetails 레그별 가격(0.95 등)이 진입가로 들어갔음
-  - 수정: order_status_sig 에 avgFillPrice(5번째 인자) 추가,
-          Filled 시 avg_fill > 0 이면 이 값을 진입가로 사용
-  - execDetails 캐시(_exec_avg_cache)는 avg_fill==0 일 때만 폴백으로 사용
+[FIX-F] Submitted 시 청산 파일 제거
+  - _on_close_position_order 에서 등록한 _pending_close_oid 를
+    Submitted 수신 시 파일에서 제거.
+  - 이렇게 하면 주문이 접수된 직후 파일 제거 → TWS 재연결해도 중복 복원 없음.
 
-[BUG-FIX 2] 실시간 손익 업데이트
-  - 문제: 체결 후 current 가격이 고정되어 손익이 바뀌지 않음
-  - 수정: 체결 완료 시 _start_position_price_stream() 호출
-          → 각 레그 conId 로 reqMktData 구독
-          → Bid/Ask tick 수신 시 BAG net mid price 계산
-          → panel.update_position_prices() 로 current 갱신
-
-[BUG-FIX 3] execDetails 캐시 로직 정리
-  - 기존: cache[oid] = price (마지막 레그 가격으로 덮어씀)
-  - 수정: BAG net price 용도로만 쓰지 않고 폴백 전용으로 역할 축소
+[FIX-G] save_one_position 실패 로그 추가
+  - 기존 except: pass → 실패 시 self._log 출력.
 ──────────────────────────────────────────────────────────────
-Python 3.8 호환
 """
 
 from __future__ import annotations
@@ -31,13 +22,11 @@ from functools import partial
 from PyQt5.QtCore import Qt
 
 
-# ── 내부 상수 ───────────────────────────────────────────────────
-_STATUS_SUBMITTED  = ("Submitted", "PreSubmitted")
-_STATUS_FILLED     = ("Filled",)
-_STATUS_CANCELLED  = ("Cancelled",)
-_STATUS_INACTIVE   = ("Inactive",)
+_STATUS_SUBMITTED = ("Submitted", "PreSubmitted")
+_STATUS_FILLED    = ("Filled",)
+_STATUS_CANCELLED = ("Cancelled",)
+_STATUS_INACTIVE  = ("Inactive",)
 
-# 실시간 손익 구독용 reqId 베이스 (레그 스트림 8800 과 겹치지 않게)
 _POS_STREAM_BASE = 9200
 
 
@@ -48,14 +37,11 @@ _POS_STREAM_BASE = 9200
 def connect_order_callbacks(self) -> None:
     if getattr(self, '_cb_connected', False):
         return
-
     from core import bridge
     _slot_status = partial(_on_order_status, self)
     _slot_exec   = partial(_on_exec_details, self)
-
     bridge.order_status_sig.connect(_slot_status, Qt.QueuedConnection)
     bridge.exec_sig.connect(_slot_exec,           Qt.QueuedConnection)
-
     self._cb_slot_status = _slot_status
     self._cb_slot_exec   = _slot_exec
     self._cb_connected   = True
@@ -79,14 +65,7 @@ def disconnect_order_callbacks(self) -> None:
 
 def _on_order_status(self, oid: int, status: str,
                      filled: float, remaining: float,
-                     avg_fill: float) -> None:          # ★ avg_fill 추가
-    """
-    TWS → orderStatus 콜백.
-    [BUG-FIX 1] 5번째 인자 avg_fill(avgFillPrice) 추가.
-      - Filled 시 avg_fill > 0 이면 이 값이 BAG 전체 net 체결가
-        (콜 스프레드를 0.39에 체결 → avg_fill=0.39)
-      - execDetails 레그별 가격(0.95 등)은 더 이상 진입가로 쓰지 않음
-    """
+                     avg_fill: float) -> None:
     my_oid = getattr(self, '_chaser_current_oid', None)
     if my_oid is None or oid != my_oid:
         return
@@ -98,47 +77,72 @@ def _on_order_status(self, oid: int, status: str,
         self._log(f"📨 OID={oid} 주문 접수됨 ({status})")
         _set_panel_status(panel, oid, "⏳ 접수됨")
 
+        # [FIX-F] 청산 주문 접수 시 파일 제거
+        pending_close = getattr(self, '_pending_close_oid', None)
+        if pending_close and pending_close == oid:
+            try:
+                from combo_position_store import safe_remove_after_order
+                safe_remove_after_order(oid, log_fn=self._log)
+            except Exception as e:
+                self._log(f"⚠ 청산 파일 제거 실패: {e}")
+            self._pending_close_oid = None
+
     # ── 체결 ─────────────────────────────────────────────────
     elif status in _STATUS_FILLED:
 
-        # 부분 체결 판별
         if remaining > 0:
             self._log(f"⚡ OID={oid} 부분체결: {filled:.0f}체결 / {remaining:.0f}잔여")
             _set_panel_status(panel, oid, f"⚡ 부분체결({filled:.0f})")
             return
 
-        # ── [BUG-FIX 1] 진입가 결정 ──────────────────────────
-        # 우선순위: avg_fill(BAG net) > execDetails 캐시(폴백)
         if avg_fill > 0:
             avg = round(avg_fill, 2)
             self._log(f"✅ OID={oid} 체결완료  avg(BAG net)=${avg:.2f}")
         else:
-            # avg_fill=0 은 IB가 아직 안 보낸 경우 → execDetails 캐시 폴백
             avg = _get_avg_price(self, oid)
             msg = f"✅ OID={oid} 체결완료"
             msg += f"  avg(exec캐시)=${avg:.2f}" if avg else "  avg=미수신"
             self._log(msg)
 
-        pending = getattr(self, '_pending_position', None)
-        if pending and pending.get('oid') == oid:
-            if avg:
-                pending['entry']   = avg
-                pending['current'] = avg
-            pending['status'] = '체결완료'
+        # [FIX-E] 청산 oid 여부 판별
+        close_oids = getattr(self, '_close_oid_set', set())
+        is_close   = (oid in close_oids)
 
-            if panel and hasattr(panel, 'add_position'):
-                panel.add_position(pending)
-
-            # ── [BUG-FIX 2] 실시간 손익 구독 시작 ───────────
-            _start_position_price_stream(self, pending)
-
-            # ── 영속화 ────────────────────────────────────────
+        if is_close:
+            # 청산 완료 — panel 에서 포지션 제거 + 파일 재확인 제거
+            self._log(f"🔴 OID={oid} 청산 체결 완료")
+            if panel and hasattr(panel, 'remove_position_by_oid'):
+                panel.remove_position_by_oid(oid)
+            # 혹시 Submitted 에서 제거 못했으면 여기서도 제거
             try:
-                from combo_position_store import save_one_position
-                save_one_position(pending)
+                from combo_position_store import remove_position
+                remove_position(oid)
             except Exception:
                 pass
-            self._pending_position = None
+            close_oids.discard(oid)
+
+        else:
+            # 신규 체결 — panel 추가 + 파일 저장
+            pending = getattr(self, '_pending_position', None)
+            if pending and pending.get('oid') == oid:
+                if avg:
+                    pending['entry']   = avg
+                    pending['current'] = avg
+                pending['status'] = '체결완료'
+
+                if panel and hasattr(panel, 'add_position'):
+                    panel.add_position(pending)
+
+                _start_position_price_stream(self, pending)
+
+                # [FIX-G] 저장 실패 로그 추가
+                try:
+                    from combo_position_store import save_one_position
+                    save_one_position(pending)
+                except Exception as e:
+                    self._log(f"⚠ 잔고 저장 실패: {e}")
+
+                self._pending_position = None
 
         _set_panel_filled(panel, oid, avg)
         _deactivate_chaser_safe(self, reason="체결 완료")
@@ -160,6 +164,7 @@ def _on_order_status(self, oid: int, status: str,
         getattr(self, '_exec_known_oids', set()).discard(oid)
         if getattr(self, '_cancel_sent_oid', None) == oid:
             self._cancel_sent_oid = None
+        # 미체결 취소 → 파일 제거
         try:
             from combo_position_store import remove_position
             remove_position(oid)
@@ -181,11 +186,8 @@ def _on_exec_details(self, oid: int, sym: str,
                      side: str, qty: float, price: float) -> None:
     """
     TWS → execDetails 콜백.
-    [BUG-FIX 1] 이 함수는 레그별 개별 가격을 받음.
-      BAG 2레그 → 이 함수가 2번 호출됨 (각각 다른 price).
-      진입가(entry)는 orderStatus.avgFillPrice 로 이미 처리됨.
-      여기서는 폴백용 캐시 저장 + 로그만 남김.
-      (avg_fill=0 으로 왔을 때 대비용 폴백)
+    레그별 개별 가격 수신. 진입가는 orderStatus.avgFillPrice 가 처리.
+    여기서는 폴백 캐시 저장 + 로그 전용.
     """
     my_oid = getattr(self, '_chaser_current_oid', None)
     known  = getattr(self, '_exec_known_oids', set())
@@ -198,15 +200,11 @@ def _on_exec_details(self, oid: int, sym: str,
         f"💰 체결내역: OID={oid}  {side}  qty={qty:.0f}"
         f"  price=${price:.2f}  수수료=${commission:.2f}")
 
-    # ── 폴백용 캐시: avg_fill=0 으로 왔을 때만 사용됨 ────────
-    # BAG net price 는 마지막 레그 가격이 아니므로
-    # 여기서는 첫 번째 수신값(첫 레그)만 저장하고 덮어쓰지 않음
     cache = getattr(self, '_exec_avg_cache', {})
-    if oid not in cache:          # ★ 첫 레그만 저장 (덮어쓰기 방지)
+    if oid not in cache:
         cache[oid] = price
         self._exec_avg_cache = cache
 
-    # DB 저장 (trade_log 없으면 조용히 스킵)
     pending  = getattr(self, '_pending_position', None)
     strategy = pending.get('strategy', "") if pending and pending.get('oid') == oid else ""
 
@@ -217,7 +215,6 @@ def _on_exec_details(self, oid: int, sym: str,
             und_ctx = _get_ctx()
         except Exception:
             und_ctx = None
-        # pending 에서 레그 정보 추출
         legs = pending.get('legs', []) if pending and pending.get('oid') == oid else []
         leg  = next((l for l in legs if l.get('sym') == sym), legs[0] if legs else {})
         log_exec(
@@ -233,27 +230,19 @@ def _on_exec_details(self, oid: int, sym: str,
     except Exception:
         pass
 
-    # panel 진입가 갱신은 orderStatus.avgFillPrice 가 처리하므로
-    # 여기서는 avg_fill=0 이었던 경우만 보완
     panel = getattr(self, 'synthetic_panel', None)
     if panel and hasattr(panel, 'mark_position_filled'):
         panel.mark_position_filled(oid)
 
 
 # ══════════════════════════════════════════════════════════════
-# [BUG-FIX 2] 실시간 손익 스트림
+# 실시간 손익 스트림
 # ══════════════════════════════════════════════════════════════
 
 def _start_position_price_stream(self, pending: dict) -> None:
     """
-    체결 완료 후 BAG net mid-price 를 실시간 구독.
-    각 레그의 conId 로 reqMktData → Bid/Ask tick 수신
-    → BAG net mid price 계산 → panel.update_position_prices() 갱신.
-
-    구조:
-      - 레그별 tid = _POS_STREAM_BASE + (oid * 10) + leg_index
-      - 레그별 bid/ask 를 _pos_mid_ticks[oid][leg_idx] 에 저장
-      - 모든 레그 mid 계산 가능해지면 net price 갱신
+    체결 완료 후 BAG net mid-price 실시간 구독.
+    레그별 tid = _POS_STREAM_BASE + (oid % 100) * 10 + leg_index
     """
     from core import router
     from PyQt5.QtCore import QTimer
@@ -261,7 +250,6 @@ def _start_position_price_stream(self, pending: dict) -> None:
     legs     = pending.get('legs', [])
     oid      = pending.get('oid', 0)
     strategy = pending.get('strategy', '')
-    side     = pending.get('side', 'BUY')   # BUY=데빗, SELL=크레딧
 
     if not legs:
         return
@@ -270,46 +258,32 @@ def _start_position_price_stream(self, pending: dict) -> None:
     if not ib:
         return
 
-    # 상태 저장소 초기화
-    if not hasattr(self, '_pos_mid_ticks'):
-        self._pos_mid_ticks = {}
-    if not hasattr(self, '_pos_stream_tids'):
-        self._pos_stream_tids = {}
-    if not hasattr(self, '_pos_stream_slots'):
-        self._pos_stream_slots = {}
+    if not hasattr(self, '_pos_mid_ticks'):   self._pos_mid_ticks    = {}
+    if not hasattr(self, '_pos_stream_tids'): self._pos_stream_tids  = {}
+    if not hasattr(self, '_pos_stream_slots'):self._pos_stream_slots = {}
 
-    self._pos_mid_ticks[oid]    = {}   # {leg_idx: {1: bid, 2: ask}}
+    self._pos_mid_ticks[oid]    = {}
     self._pos_stream_tids[oid]  = []
     self._pos_stream_slots[oid] = []
 
     panel = getattr(self, 'synthetic_panel', None)
 
-    def _make_tick_handler(leg_idx: int, leg_dir: str):
-        """레그별 tick 핸들러 클로저."""
+    def _make_tick_handler(leg_idx: int):
         def _on_tick(req_id: int, tick_type: int, price: float):
-            if price <= 0:
+            if price <= 0 or tick_type not in (1, 2):
                 return
-            if tick_type not in (1, 2):   # 1=Bid, 2=Ask
-                return
-
             ticks = self._pos_mid_ticks.get(oid, {})
             if leg_idx not in ticks:
                 ticks[leg_idx] = {}
             ticks[leg_idx][tick_type] = price
             self._pos_mid_ticks[oid] = ticks
-
-            # 모든 레그 mid 계산 가능 여부 확인
             net = _calc_bag_net(self, oid, legs)
             if net is None:
                 return
-
-            # panel current 갱신
             if panel and hasattr(panel, 'update_position_prices'):
                 panel.update_position_prices(strategy, round(net, 2))
-
         return _on_tick
 
-    # 레그별 구독 시작
     for i, leg in enumerate(legs):
         con_id = _get_leg_conid(self, leg)
         if not con_id:
@@ -317,7 +291,7 @@ def _start_position_price_stream(self, pending: dict) -> None:
             continue
 
         tid  = _POS_STREAM_BASE + (oid % 100) * 10 + i
-        slot = _make_tick_handler(i, leg.get('dir', 'BUY'))
+        slot = _make_tick_handler(i)
 
         router.register_price(tid, tid, slot)
         self._pos_stream_tids[oid].append(tid)
@@ -339,13 +313,7 @@ def _start_position_price_stream(self, pending: dict) -> None:
 
 
 def _calc_bag_net(self, oid: int, legs: list) -> Optional[float]:
-    """
-    레그별 mid price → BAG net mid price 계산.
-    모든 레그의 bid/ask 가 수신되지 않았으면 None 반환.
-
-    net = Σ(BUY 레그 mid) - Σ(SELL 레그 mid)
-    데빗 스프레드(BUY>SELL) → 양수 = 현재 비용
-    """
+    """레그별 mid price → BAG net mid price. 미수신 레그 있으면 None."""
     ticks = self._pos_mid_ticks.get(oid, {})
     net = 0.0
     for i, leg in enumerate(legs):
@@ -353,7 +321,7 @@ def _calc_bag_net(self, oid: int, legs: list) -> Optional[float]:
         bid = leg_ticks.get(1)
         ask = leg_ticks.get(2)
         if bid is None or ask is None:
-            return None   # 아직 모든 레그 수신 안 됨
+            return None
         mid = (bid + ask) / 2.0
         if leg.get('dir') == 'BUY':
             net += mid
@@ -363,15 +331,8 @@ def _calc_bag_net(self, oid: int, legs: list) -> Optional[float]:
 
 
 def _get_leg_conid(self, leg: dict) -> int:
-    """
-    레그 딕셔너리에서 conId 조회.
-    순서: leg['con_id'] → combo_order_bag 캐시 → 0
-    """
-    # 1) leg 딕셔너리에 직접 저장된 경우
     if leg.get('con_id'):
         return int(leg['con_id'])
-
-    # 2) _CONID_CACHE 에서 조회
     try:
         from combo_order_bag import _CONID_CACHE, _conid_key
         sym_w  = getattr(self, 'edit_sym_combo', None)
@@ -383,17 +344,13 @@ def _get_leg_conid(self, leg: dict) -> int:
             float(leg.get('strike', 0)),
             str(leg.get('expiry', '')),
         )
-        cid = _CONID_CACHE.get(key, 0)
-        return int(cid)
+        return int(_CONID_CACHE.get(key, 0))
     except Exception:
         return 0
 
 
 def stop_position_price_stream(self, oid: int) -> None:
-    """
-    청산/취소 시 해당 포지션의 실시간 구독 해제.
-    _on_close_position_order 에서 호출.
-    """
+    """청산/취소 시 해당 포지션 실시간 구독 해제."""
     from core import router
     ib = getattr(getattr(self, 'mw', None), 'ib', None)
 

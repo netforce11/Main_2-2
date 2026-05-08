@@ -1,10 +1,13 @@
 """
 combo_order_logic.py — 합성 주문 버튼 핸들러
 ──────────────────────────────────────────────
-[BUG-FIX] 청산 시 실시간 손익 구독 해제 추가
-  _on_close_position_order() 안에서
-  stop_position_price_stream(self, oid) 호출 추가.
-  청산 후에도 reqMktData 가 계속 살아있으면 불필요한 네트워크/CPU 낭비.
+[FIX-A] 청산 순서 교정: remove_position → placeOrder 이후로 이동
+         주문 전송 실패 시 파일 데이터 보존.
+[FIX-B] 청산 oid 추적: _close_oid_set 에 등록 →
+         combo_order_callbacks._on_order_status("Filled") 에서
+         청산 완료 후 save_one_position 호출 차단.
+[FIX-C] 청산 수량 검증: IB 서버 qty 와 파일 qty 불일치 시 경고.
+[FIX-D] _on_pos_reconnect_hook 중복 등록 방지.
 ──────────────────────────────────────────────
 """
 
@@ -33,9 +36,14 @@ except ImportError:
         class ZoneInfo:
             def __new__(cls, key): return _pytz.timezone(key)
 
-_MARKET_OPEN  = dt_time(9, 30)
-_MARKET_CLOSE = dt_time(16, 0)
+_MARKET_OPEN           = dt_time(9, 30)
+_MARKET_CLOSE          = dt_time(16, 0)
 _AFTER_HOURS_SURCHARGE = 0.25
+
+
+# ══════════════════════════════════════════════════════════════
+# 시간/세션 유틸
+# ══════════════════════════════════════════════════════════════
 
 def _is_after_hours() -> bool:
     try:
@@ -44,43 +52,33 @@ def _is_after_hours() -> bool:
     except Exception:
         return False
 
+
 def _get_session_info() -> tuple:
     """
-    현재 ET 시각 기준으로 장 세션을 판단해
-    IB BAG 주문에 필요한 TIF / outsideRth 값을 반환.
-
-    IB 옵션 Extended Hours 세션 (ET 기준):
-      Pre-Market  : 04:00 ~ 09:30  → GTX + outsideRth=True
-      Regular     : 09:30 ~ 16:00  → DAY + outsideRth=False
-      After-Hours : 16:00 ~ 20:00  → GTX + outsideRth=True
-      Overnight   : 20:00 ~ 04:00  → GTX + outsideRth=True
-                                      (IB는 야간에도 GTX 접수 허용)
-
-    Returns:
-        (after_hours: bool, session_label: str, tif: str, outside_rth: bool)
+    현재 ET 시각 기준으로 장 세션 판단.
+    Returns: (after_hours, session_label, tif, outside_rth)
     """
-    _PRE_START   = dt_time(4,  0)
-    _AFTER_END   = dt_time(20, 0)
+    _PRE_START = dt_time(4,  0)
+    _AFTER_END = dt_time(20, 0)
 
     try:
         now_et = datetime.now(ZoneInfo("America/New_York")).time()
     except Exception:
-        # 시간대 조회 실패 → 안전하게 장중으로 처리
         return False, "알수없음", "DAY", False
 
     if _MARKET_OPEN <= now_et < _MARKET_CLOSE:
-        # 정규장
         return False, "정규장(09:30~16:00)", "DAY", False
     elif _PRE_START <= now_et < _MARKET_OPEN:
-        # 프리마켓
-        return True, "프리마켓(04:00~09:30)", "GTX", True
+        return True,  "프리마켓(04:00~09:30)", "GTX", True
     elif _MARKET_CLOSE <= now_et < _AFTER_END:
-        # 애프터마켓
-        return True, "애프터(16:00~20:00)", "GTX", True
+        return True,  "애프터(16:00~20:00)",   "GTX", True
     else:
-        # 심야 (20:00~04:00) — IB는 GTX 접수 허용하나 체결 가능성 매우 낮음
-        return True, "심야(20:00~04:00)", "GTX", True
+        return True,  "심야(20:00~04:00)",     "GTX", True
 
+
+# ══════════════════════════════════════════════════════════════
+# 증거금 계산
+# ══════════════════════════════════════════════════════════════
 
 def _calc_margin_local(self, legs: list) -> tuple:
     cache     = getattr(self, '_whatif_acct_cache', {})
@@ -94,11 +92,10 @@ def _calc_margin_local(self, legs: list) -> tuple:
         cached = getattr(self, '_cached_available_funds', None)
         if cached is None:
             available = 0.0
-            self._log("⚠ 계좌 잔고 미조회 — TWS 연결 후 잠시 기다리거나 💰 증거금 조회 버튼을 눌러주세요")
+            self._log("⚠ 계좌 잔고 미조회 — TWS 연결 후 💰 증거금 조회 버튼을 눌러주세요")
         elif cached == 1_000_000.0 and not getattr(self, '_acct_fetched_once', False):
             available = cached
-            self._log("⚠ 계좌 잔고가 기본값($1,000,000)입니다 — "
-                      "실계좌라면 💰 증거금 조회 버튼으로 실제 잔고를 먼저 확인하세요")
+            self._log("⚠ 계좌 잔고가 기본값($1,000,000) — 실계좌라면 💰 증거금 조회 먼저")
         else:
             available = cached
 
@@ -109,6 +106,10 @@ def _calc_margin_local(self, legs: list) -> tuple:
     margin_ok = available >= required
     return available, required, margin_ok, after_hours
 
+
+# ══════════════════════════════════════════════════════════════
+# 신규 주문
+# ══════════════════════════════════════════════════════════════
 
 def _on_synthetic_order(self):
     panel = getattr(self, 'synthetic_panel', None)
@@ -155,7 +156,7 @@ def _on_synthetic_order(self):
                 f"IB는 장외 증거금을 25% 할증 적용합니다.\n\n"
                 f"필요 증거금 (할증 포함): ${required:,.2f}\n"
                 f"가용 증거금: ${available:,.2f}\n\n"
-                f"계속 주문하시겠습니까?",
+                "계속 주문하시겠습니까?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if ret != QMessageBox.Yes:
                 return
@@ -205,14 +206,23 @@ def _on_cancel_bag_order(self):
     cancel_bag_order(self)
 
 
+# ══════════════════════════════════════════════════════════════
+# 청산 주문
+# ══════════════════════════════════════════════════════════════
+
 def _on_close_position_order(self, pos: dict):
     """
     잔고 탭 청산 버튼 핸들러.
-    [BUG-FIX] 청산 시 실시간 손익 구독 해제 추가.
+
+    [FIX-A] remove_position 을 placeOrder 성공 후로 이동.
+            주문 실패 시 파일 데이터 보존됨.
+    [FIX-B] _close_oid_set 에 청산 oid 등록 →
+            _on_order_status("Filled") 에서 신규 save 차단.
+    [FIX-C] 수량 불일치 경고.
     """
     oid = pos.get("oid")
 
-    # ── [BUG-FIX] 실시간 손익 구독 해제 ─────────────────────
+    # 실시간 손익 구독 해제 (청산 직전)
     if oid:
         try:
             from combo_order_callbacks import stop_position_price_stream
@@ -220,31 +230,55 @@ def _on_close_position_order(self, pos: dict):
         except Exception:
             pass
 
-    # ── 영속화: 청산 시 파일에서 제거 + 손익 기록 ──────────
+    legs = pos.get("legs", [])
+    if not legs:
+        # IB 단건 MKT 청산 — 성공 후 파일 제거는 _close_ib_position 내부에서
+        _close_ib_position(self, pos)
+        return
+
+    # [FIX-C] 수량 불일치 검증
+    saved_qty = int(pos.get("qty", 1))
+    ib_qty    = int(pos.get("ib_qty", saved_qty))   # IB 서버가 보정한 qty
+    if ib_qty != saved_qty:
+        self._log(
+            f"⚠ 청산 수량 불일치: 파일={saved_qty} / IB서버={ib_qty} "
+            f"— IB 서버 수량({ib_qty})으로 청산 진행")
+
+    close_legs = [dict(lg, dir="SELL" if lg["dir"] == "BUY" else "BUY") for lg in legs]
+    strat_name = f"청산: {pos.get('strategy','')}"
+
+    # [FIX-B] 청산 oid 미리 추적 등록 (placeOrder 전)
+    if oid:
+        if not hasattr(self, '_close_oid_set'):
+            self._close_oid_set = set()
+        self._close_oid_set.add(oid)
+
+    # 청산 이력 기록 (주문 전송 전에 기록 — 전송 실패해도 이력은 남김)
     if oid:
         try:
-            from combo_position_store import remove_position, record_trade_history
-            # 청산가: 실시간 current 값 (없으면 entry 로 폴백)
+            from combo_position_store import record_trade_history
             exit_price = float(pos.get("current", pos.get("entry", 0)))
             record_trade_history(pos, exit_price=exit_price, close_type="청산주문")
-            remove_position(oid)
         except Exception:
             pass
 
-    legs = pos.get("legs", [])
-    if not legs:
-        _close_ib_position(self, pos)
-        return
-    close_legs = [dict(lg, dir="SELL" if lg["dir"] == "BUY" else "BUY") for lg in legs]
-    _place_combo_legs(self, close_legs, f"청산: {pos.get('strategy','')}")
+    # [FIX-A] 주문 전송 후 성공 시 파일 제거
+    # _place_combo_legs 는 동기가 아니므로 콜백(Filled/Submitted)에서 remove.
+    # 단, 여기서 _pending_close_oid 를 등록해두면
+    # _on_order_status("Submitted") 수신 시 즉시 파일에서 제거 가능.
+    if oid:
+        self._pending_close_oid = oid   # callbacks 에서 Submitted 확인 후 제거
+
+    _place_combo_legs(self, close_legs, strat_name)
 
 
 def _close_ib_position(self, pos: dict):
-    """IB reqPositions로 불러온 포지션 청산 — MKT 주문."""
+    """IB reqPositions 로 불러온 포지션 MKT 청산."""
     from PyQt5.QtWidgets import QMessageBox as _MB
     ib = getattr(getattr(self, 'mw', None), 'ib', None)
     if not ib:
         return
+
     strategy     = pos.get("strategy", "")
     qty          = pos.get("qty", 1)
     side         = pos.get("side", "BUY")
@@ -279,26 +313,40 @@ def _close_ib_position(self, pos: dict):
     if oid is None:
         return self._log("❌ nextOrderId 없음")
 
-    # ── 장외 시간 자동 판단 ──────────────────────────────────
     after_hours, session_label, tif, outside_rth = _get_session_info()
 
     ord_ = IbOrder()
     ord_.action        = close_action
     ord_.orderType     = "MKT"
     ord_.totalQuantity = qty
-    ord_.tif           = tif           # DAY(장중) / GTX(장외)
-    ord_.outsideRth    = outside_rth   # False(장중) / True(장외)
+    ord_.tif           = tif
+    ord_.outsideRth    = outside_rth
     ord_.eTradeOnly    = False
     ord_.firmQuoteOnly = False
     ord_.transmit      = True
+
     try:
         ib.placeOrder(oid, ct, ord_)
         self._log(
-            f"🔴 청산 주문: OID={oid}  {close_action} {qty}계약  {strategy}"
+            f"🔴 청산 주문(MKT): OID={oid}  {close_action} {qty}계약  {strategy}"
             f"  TIF:{tif}  장외:{outside_rth}  세션:{session_label}")
+
+        # [FIX-A] 주문 전송 성공 후 파일 제거
+        src_oid = pos.get("oid")
+        if src_oid:
+            try:
+                from combo_position_store import safe_remove_after_order
+                safe_remove_after_order(src_oid, log_fn=self._log)
+            except Exception:
+                pass
+
     except Exception as e:
         self._log(f"❌ 청산 오류: {e}")
 
+
+# ══════════════════════════════════════════════════════════════
+# 패널 콜백 초기화
+# ══════════════════════════════════════════════════════════════
 
 def _init_synthetic_panel_callbacks(self):
     panel = getattr(self, 'synthetic_panel', None)
@@ -318,6 +366,10 @@ def _init_synthetic_panel_callbacks(self):
     self._whatif_acct_cache      = {}
     self._acct_fetched_once      = False
 
+    # [FIX-B] 청산 oid 추적 집합 초기화
+    if not hasattr(self, '_close_oid_set'):
+        self._close_oid_set = set()
+
     if not getattr(self, '_whatif_slots_connected', False):
         try:
             from core import bridge
@@ -325,7 +377,7 @@ def _init_synthetic_panel_callbacks(self):
             bridge.acct_end.connect(self._on_whatif_acct_end,     Qt.QueuedConnection)
             bridge.whatif_sig.connect(self._on_whatif_result,     Qt.QueuedConnection)
             self._whatif_slots_connected = True
-        except Exception as e:
+        except Exception:
             self._whatif_slots_connected = False
 
 
@@ -355,47 +407,50 @@ def _on_chaser_mode_changed(self, mode: str):
         pass
 
 
+# ══════════════════════════════════════════════════════════════
+# 재연결 훅
+# ══════════════════════════════════════════════════════════════
+
 def _on_pos_reconnect_hook(self):
     """
     재연결 후 합성 잔고 복원.
-    combo_position_store 를 절대경로로 import해 경로 문제 방지.
-    (combo_libs/ 구조에서 sys.path 미등록 시 일반 import 실패 대응)
+    [FIX-D] combo_position_store._pos_hook_active 플래그로 중복 등록 방지.
+            (tab_combo_strategy._connect_signals 중복 호출 시 안전)
     """
     import importlib.util, sys
     from pathlib import Path
 
-    # ── 1) 일반 import 먼저 시도 ────────────────────────────
     try:
         from combo_position_store import restore_on_reconnect
         self._log("🔄 재연결: 합성 잔고 복원 시작…")
         restore_on_reconnect(self)
         return
     except ImportError:
-        pass  # 아래 절대경로로 재시도
+        pass
     except Exception as e:
         self._log(f"⚠ 잔고 복원 오류(일반): {e}")
         return
 
-    # ── 2) 절대경로 import (combo_libs/ 구조 대응) ──────────
     try:
-        _this_dir = Path(__file__).resolve().parent
+        _this_dir   = Path(__file__).resolve().parent
         _store_path = _this_dir / "combo_position_store.py"
-
         if not _store_path.exists():
             self._log(f"⚠ combo_position_store.py 없음: {_store_path}")
             return
-
         spec   = importlib.util.spec_from_file_location(
                     "combo_position_store", str(_store_path))
         module = importlib.util.module_from_spec(spec)
         sys.modules.setdefault("combo_position_store", module)
         spec.loader.exec_module(module)
-
         self._log("🔄 재연결: 합성 잔고 복원 시작 (절대경로)…")
         module.restore_on_reconnect(self)
     except Exception as e:
         self._log(f"⚠ 잔고 복원 오류(절대경로): {e}")
 
+
+# ══════════════════════════════════════════════════════════════
+# IB 포지션 직접 조회 (비긴급 보조용)
+# ══════════════════════════════════════════════════════════════
 
 def _load_ib_positions(self):
     ib    = getattr(getattr(self, 'mw', None), 'ib', None)

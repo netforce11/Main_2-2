@@ -48,15 +48,22 @@ if IBAPI_AVAILABLE:
     class IBapi(EWrapper, EClient):
         def __init__(self):
             EClient.__init__(self, self)
-            self._next_id = None
+            self._next_id       = None
+            self._next_id_ready = False   # [BUG-FIX] 재연결 OID 동기화 완료 플래그
 
         def nextValidId(self, orderId):
-            self._next_id = orderId
+            self._next_id       = orderId
+            self._next_id_ready = True    # [BUG-FIX] OID 동기화 완료
             _bridge().connected.emit()
             try:
                 self.reqAccountSummary(9901, "All", "AvailableFunds,BuyingPower")
             except Exception as e:
                 print(f"[core] reqAccountSummary 구독 실패: {e}")
+
+        def connectionClosed(self):
+            """[BUG-FIX] 연결 끊김 시 OID 플래그 리셋 — 재연결 전 주문 차단."""
+            self._next_id_ready = False
+            print("[core] TWS 연결 끊김 — nextValidId 대기 중")
 
         def tickPrice(self, reqId, tickType, price, attrib):
             _bridge().tick_price.emit(reqId, int(tickType), float(price))
@@ -223,6 +230,12 @@ if IBAPI_AVAILABLE:
             _bridge().hist_ticks.emit(reqId, tick_list, bool(done))
 
         def get_next_id(self):
+            # [BUG-FIX] 재연결 후 nextValidId 수신 전 주문 차단
+            # 두 번 끊김 등 불안정한 재연결 시 이전/중복 OID로 placeOrder 되면
+            # TWS가 조용히 드랍 (에러 콜백 없음) — 플래그로 방어
+            if not getattr(self, '_next_id_ready', False):
+                print("[core] ⚠ get_next_id: nextValidId 미수신 — 주문 차단")
+                return None
             oid = self._next_id
             if oid is not None:
                 self._next_id += 1
