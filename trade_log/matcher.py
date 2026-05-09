@@ -1,6 +1,11 @@
 """
-trade_log/matcher.py — BUY/SELL 매칭 → 실현손익 계산
-log_exec() 호출 직후 run_match() 를 호출하면 자동으로 매칭.
+trade_log/matcher.py — BUY/SELL 매칭 → 실현손익 계산  v1.1
+
+[v1.1 수정] SQLite DB locked 방지
+  - run_match()를 logger.py의 _db_write_queue에 직렬화하여 실행
+  - 기존: get_conn()을 직접 호출 → GUI/시세 스레드와 충돌 가능
+  - 수정: logger.py의 큐에 매칭 작업 추가 → DB 쓰기 스레드에서 순차 처리
+  - _match() 내부 로직 변경 없음 (conn 인자 전달 방식 유지)
 
 매칭 규칙 (FIFO):
   동일 (source, sym, expiry, right, strike) 기준
@@ -10,6 +15,7 @@ log_exec() 호출 직후 run_match() 를 호출하면 자동으로 매칭.
 
 from __future__ import annotations
 from .db import get_conn
+from .logger import _db_write_queue   # [v1.1] 공유 큐 사용
 
 _MULTIPLIER = 100   # SPX/SPXW 옵션 승수
 
@@ -19,13 +25,22 @@ def run_match(source: str, sym: str, expiry: str,
     """
     새 체결이 들어온 뒤 해당 종목의 BUY/SELL 을 FIFO 매칭.
     log_exec() 직후 호출.
+
+    [v1.1] logger._db_write_queue에 작업을 추가하여
+    DB 쓰기 스레드에서 순차 처리 → DB locked 방지.
     """
-    try:
-        conn = get_conn()
-        _match(conn, source, sym, expiry, right, strike)
-        conn.close()
-    except Exception as e:
-        print(f"[trade_log] 매칭 오류: {e}")
+    # 인자 스냅샷 캡처
+    _key = (source, sym, expiry, right, strike)
+
+    def _write():
+        try:
+            conn = get_conn()
+            _match(conn, *_key)
+            conn.close()
+        except Exception as e:
+            print(f"[trade_log] 매칭 오류: {e}")
+
+    _db_write_queue.put(_write)
 
 
 def _match(conn, source, sym, expiry, right, strike) -> None:
@@ -59,7 +74,6 @@ def _match(conn, source, sym, expiry, right, strike) -> None:
                 pnl = (price - top["price"]) * matched * _MULTIPLIER
                 total_comm = (comm / qty * matched) + (top["comm"] / top["qty"] * matched)
 
-                # trades 테이블에 없으면 INSERT, 있으면 갱신
                 conn.execute("""
                     INSERT INTO trades
                       (open_date, close_date, source, sym, expiry, right,

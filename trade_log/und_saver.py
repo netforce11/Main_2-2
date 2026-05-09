@@ -1,5 +1,11 @@
 """
-trade_log/und_saver.py — 기초자산(지수) 가격 DB 저장  v1.3
+trade_log/und_saver.py — 기초자산(지수) 가격 DB 저장  v1.4
+
+[v1.4 수정]
+  - _DATA_DIR: 상대 경로(프로젝트 루트 기준) → 절대 경로로 변경
+    기존: Path(__file__).resolve().parent.parent / "data" / "und_price"
+    수정: /home/netforce/trading_terminal/Main2_1/data/und_price
+    이유: 리눅스 환경에서 실행 위치에 따라 경로가 달라지는 문제 방지
 
 [v1.3 수정 내역]
 1. _warmup_from_db(): 앱 시작 시 당일 DB에서 최근 60분치 데이터를 버퍼에 로드
@@ -29,7 +35,9 @@ except ImportError:
             def __new__(cls, key): return _pytz.timezone(key)
 
 _ET       = ZoneInfo("America/New_York")
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "und_price"
+# [v1.4] 절대 경로로 변경 — 실행 위치 무관하게 항상 동일한 경로 사용
+# 기존: Path(__file__).resolve().parent.parent / "data" / "und_price"
+_DATA_DIR = Path("/home/netforce/trading_terminal/Main2_1/data/und_price")
 _DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 _VALID_INTERVALS = (5, 10, 30)

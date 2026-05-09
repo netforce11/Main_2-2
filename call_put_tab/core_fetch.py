@@ -562,6 +562,11 @@ class CoreFetchMixin(CoreFetchPosMixin):
                         self.lbl_status.setText("● 연결됨")
                         self.lbl_status.setStyleSheet(
                             "color:#00ff88;font-weight:bold;border:none;")
+                    # [v6.6] 대량 조회 완료 시점에 IV 패널 명시적 갱신
+                    # set_source(self)만으로는 타이밍 불일치 발생 가능
+                    iv = getattr(self, '_iv_panel', None)
+                    if iv is not None and hasattr(iv, 'update'):
+                        QTimer.singleShot(300, iv.update)
                     QTimer.singleShot(500, self._notify_sniper_sync)
                     return
 
@@ -1236,18 +1241,31 @@ class CoreFetchMixin(CoreFetchPosMixin):
     def _w_load(self):
         """watchlist.json 읽어 관심종목 복원.
         ★ v6.5: 새 구조(dict) + 구버전(list) 모두 호환.
+        ★ v6.6: list 원소가 dict인 경우 방어 처리 추가
+          (예: [{"futures":[...], "stocks":[...]}] 잘못 저장된 포맷)
         """
         raw = load_json(self._WATCH_FILE, [])
         if not raw:
             return
 
-        # 구버전 단순 리스트 → 자동 분류
-        if isinstance(raw, list):
-            futures = [s for s in raw if self._is_futures_sym(s)]
-            stocks  = [s for s in raw if not self._is_futures_sym(s)]
-        else:
+        # ── 포맷 정규화 ──────────────────────────────────────
+        # Case 1: 딕셔너리 {"futures": [...], "stocks": [...]}
+        if isinstance(raw, dict):
             futures = raw.get("futures", [])
-            stocks  = raw.get("stocks", [])
+            stocks  = raw.get("stocks",  [])
+
+        # Case 2: 리스트인데 첫 원소가 dict → 잘못 감싸진 구조
+        elif isinstance(raw, list) and raw and isinstance(raw[0], dict):
+            inner   = raw[0]
+            futures = inner.get("futures", [])
+            stocks  = inner.get("stocks",  [])
+            self._log("[watchlist] ⚠ 잘못된 저장 포맷 감지 — 자동 복구됨")
+
+        # Case 3: 구버전 단순 문자열 리스트 ["SPX", "NDX", ...]
+        else:
+            safe    = [s for s in raw if isinstance(s, str)]
+            futures = [s for s in safe if self._is_futures_sym(s)]
+            stocks  = [s for s in safe if not self._is_futures_sym(s)]
 
         fut_lst = getattr(self, 'watchlist_fut', None)
 

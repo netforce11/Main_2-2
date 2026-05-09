@@ -1,5 +1,17 @@
 """
-combo_order_chaser.py — Smart Chaser (체결 추격 주문) + 취소 주문 로직  v2.3
+combo_order_chaser.py — Smart Chaser (체결 추격 주문) + 취소 주문 로직  v2.4
+──────────────────────────────────────────────────────────────────────────────
+변경 (v2.4):
+  [BUG #TICK] 소수점 정밀도 문제 수정 — IBKR "Invalid Order Price" 거절 방지
+    · _snap_to_tick(price, tick) 함수 추가
+      → 계산된 가격을 해당 틱 사이즈의 배수로 math.ceil/floor 처리
+    · _do_chase_with_price():
+        new_price = round(mid + tick, 2)  →  _snap_to_tick(mid + tick, tick)
+        fallback  = round(price + tick, 2) → _snap_to_tick(price + tick, tick)
+    · _chaser_max_price 계산도 틱 단위로 정렬
+    · _read_mid_from_cache() mid 계산도 _snap_to_tick 적용
+    · 모든 변경은 _get_tick_size() 반환값 기준으로 동작하므로
+      XSP($0.01) / 저가($0.05) / 고가($0.10) 모두 자동 적용
 ──────────────────────────────────────────────────────────────────────────────
 변경 (v2.3):
   [BUG #5] _fetch_mid_price_sync(): QTimer 콜백(자동 추격) 안에서
@@ -32,6 +44,7 @@ Python 3.8 호환
 """
 
 from __future__ import annotations
+import math
 import time
 from typing import Optional
 from PyQt5.QtCore import QTimer
@@ -57,6 +70,42 @@ def _get_tick_size(price: float, symbol: str = "") -> float:
     if symbol.upper() in _PENNY_TICK_SYMBOLS:
         return 0.01
     return CHASE_TICK_HIGH if price >= 3.0 else CHASE_MIN_TICK
+
+
+def _snap_to_tick(price: float, tick: float, direction: str = "buy") -> float:
+    """
+    [v2.4] 계산된 가격을 틱 사이즈 배수로 스냅.
+
+    IBKR은 SPX 등 인덱스 옵션에서 $0.01 단위 가격을 Invalid Order Price로
+    거절합니다. 이 함수는 price를 tick 배수의 가장 가까운 값으로 올림(매수)
+    또는 내림(매도) 처리하여 IBKR 규정에 맞는 가격을 반환합니다.
+
+    Args:
+        price     : 원본 계산 가격
+        tick      : 틱 사이즈 (0.01 / 0.05 / 0.10)
+        direction : "buy"  → 올림 (ceil) — 추격 매수가 높아지는 방향
+                    "sell" → 내림 (floor) — 추격 매도가 낮아지는 방향
+
+    Returns:
+        tick 배수로 정렬된 가격 (소수점 오차 제거)
+
+    Examples:
+        _snap_to_tick(5.123, 0.10, "buy")  → 5.20
+        _snap_to_tick(5.123, 0.10, "sell") → 5.10
+        _snap_to_tick(2.031, 0.05, "buy")  → 2.05
+        _snap_to_tick(0.047, 0.01, "buy")  → 0.05
+    """
+    if tick <= 0:
+        return round(price, 2)
+    # 부동소수점 오차 방지: 1/tick 배율로 정수 연산 후 복원
+    inv = 1.0 / tick
+    if direction == "sell":
+        snapped = math.floor(price * inv) / inv
+    else:
+        snapped = math.ceil(price * inv) / inv
+    # 최종 소수점 정리 (tick 소수점 자리수 기준)
+    decimals = max(0, -int(math.floor(math.log10(tick)))) if tick < 1 else 0
+    return round(snapped, decimals)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -92,7 +141,10 @@ def register_chaser(self, oid: int, price: float, action: str,
     self._chaser_qty       = max(1, int(qty))   # ★ v2.1
     self._chaser_attempts  = 0
     self._chaser_active    = True
-    self._chaser_max_price = round(price + max_slippage, 2)
+    # [v2.4] max_price도 틱 단위로 정렬 (매수=올림, 매도=내림)
+    _direction             = "sell" if action.upper() == "SELL" else "buy"
+    _tick_for_cap          = _get_tick_size(price + max_slippage)
+    self._chaser_max_price = _snap_to_tick(price + max_slippage, _tick_for_cap, _direction)
     self._last_bag_oid     = oid
 
     _update_chaser_ui(self, active=True)
@@ -287,7 +339,11 @@ def _do_chase(self, reason: str = "") -> None:
                 except Exception:
                     pass
                 _restore()
-                mid_val = round((result[1] + result[2]) / 2, 2)
+                # [v2.4] 틱 단위 스냅 적용
+                _raw_mid   = (result[1] + result[2]) / 2
+                _tick_s    = _get_tick_size(_raw_mid)
+                _direction = "sell" if getattr(self, '_chaser_action', 'BUY').upper() == "SELL" else "buy"
+                mid_val    = _snap_to_tick(_raw_mid, _tick_s, _direction)
                 QTimer.singleShot(0, lambda: _do_chase_with_price(self, mid_val, reason))
 
     def _on_timeout():
@@ -313,17 +369,21 @@ def _do_chase(self, reason: str = "") -> None:
 def _do_chase_with_price(self, mid: Optional[float], reason: str) -> None:
     """Mid price(또는 None)를 받아 실제 정정 주문 수행."""
     # ★ FIX: _chaser_bag_contract.symbol에서 종목 읽기 (XSP=$0.01 / SPX=$0.05 분기)
-    _bag = getattr(self, '_chaser_bag_contract', None)
-    _sym = _bag.symbol if _bag is not None else ""
-    tick = _get_tick_size(self._chaser_price, _sym)
+    _bag       = getattr(self, '_chaser_bag_contract', None)
+    _sym       = _bag.symbol if _bag is not None else ""
+    _direction = "sell" if self._chaser_action.upper() == "SELL" else "buy"
+    tick       = _get_tick_size(self._chaser_price, _sym)
+
     if mid is not None and mid > 0:
-        new_price = round(mid + tick, 2)
-        self._log(f"   ↳ Mid=${mid:.2f} + 1틱(${tick}) = ${new_price:.2f}")
+        # [v2.4] round(mid+tick, 2) → _snap_to_tick으로 틱 배수 정렬
+        new_price = _snap_to_tick(mid + tick, tick, _direction)
+        self._log(f"   ↳ Mid=${mid:.2f} + 1틱(${tick}) = ${new_price:.2f}  [틱스냅 적용]")
     else:
-        new_price = round(self._chaser_price + tick, 2)
+        # [v2.4] fallback도 동일하게 틱 스냅 적용
+        new_price = _snap_to_tick(self._chaser_price + tick, tick, _direction)
         self._log(
             f"   ↳ Mid unavailable → fallback: ${self._chaser_price:.2f}"
-            f" + tick ${tick} = ${new_price:.2f}")
+            f" + tick ${tick} = ${new_price:.2f}  [틱스냅 적용]")
 
     if new_price > self._chaser_max_price:
         self._log(
@@ -352,6 +412,7 @@ def _read_mid_from_cache(self) -> Optional[float]:
     """
     캐시(_mid_ticks 8800-8815)에서 유효한 bid/ask를 찾아 mid 반환.
     없으면 None.
+    [v2.4] 반환 mid도 틱 단위로 스냅하여 후속 계산 정확도 보장.
     """
     mid_ticks: dict = getattr(self, '_mid_ticks', {})
     for tid in range(_TICKER_BASE + 15, _TICKER_BASE - 1, -1):
@@ -360,7 +421,10 @@ def _read_mid_from_cache(self) -> Optional[float]:
             bid = entry.get(1)
             ask = entry.get(2)
             if bid and ask and bid > 0 and ask > 0:
-                return round((bid + ask) / 2, 2)
+                raw_mid    = (bid + ask) / 2
+                tick       = _get_tick_size(raw_mid)
+                _direction = "sell" if getattr(self, '_chaser_action', 'BUY').upper() == "SELL" else "buy"
+                return _snap_to_tick(raw_mid, tick, _direction)
     return None
 
 def _modify_order(self, oid: int, new_price: float) -> None:

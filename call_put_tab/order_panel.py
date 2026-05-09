@@ -1,5 +1,5 @@
 """
-order_panel.py — 빠른 주문 패널 UI  v6.9
+order_panel.py — 빠른 주문 패널 UI  v7.0
 변경:
   - 잔고 버튼 → 플로팅 잔고창 토글 (항상 위, X버튼 없음)
   - 버튼 클릭 시 QPropertyAnimation 피드백
@@ -7,6 +7,14 @@ order_panel.py — 빠른 주문 패널 UI  v6.9
   - +1호가 매수 버튼
   - 긴급 매도 버튼 (잔고 전체 + 미체결 취소)
   - 체결 시 잔고창 자동 팝업
+
+[v7.0] ERR 201 수정 — _emergency_sell_positions():
+  IBKR은 SPX 등 지수 옵션에 대해 시장가(MKT) 주문을 거부(ERR 201).
+  MKT → LMT 전환:
+    · Bid 가격 기반 2틱 아래 LMT 주문으로 변경
+    · Bid 미수신 시 Last → avg_cost 순으로 폴백
+    · 가격 결정 불가 시 로그 남기고 해당 포지션 스킵
+    · 틱 사이즈: XSP=$0.01 / $3 미만=$0.05 / $3 이상=$0.10
 """
 import re
 from datetime import datetime, timezone, timedelta
@@ -1236,48 +1244,167 @@ class OrderPanelMixin:
         self._emergency_cancel_orders()
 
     def _emergency_sell_positions(self):
-        """IBKR 포지션 전체를 시장가(MKT)로 즉시 매도."""
+        """
+        [v7.0] IBKR 포지션 전체를 LMT(지정가)로 즉시 매도.
+
+        ERR 201 수정:
+          IBKR은 SPX 등 지수 옵션에 대해 MKT 주문을 거부합니다.
+          Bid 기준 2틱 아래 LMT 주문으로 전환하여 빠른 체결을 유도합니다.
+
+        가격 결정 우선순위 (포지션당):
+          1) 실시간 Bid  — _emrg_bid_cache[sym] (아래 _emrg_tick 핸들러)
+          2) Last 가격   — _emrg_last_cache[sym]
+          3) avg_cost    — reqPositions 콜백에서 수신한 평균단가
+          4) 가격 없음   — 해당 포지션 스킵 + 로그
+        """
         if not self.mw.connected:
             self._log("🚨 긴급매도: 미연결"); return
+
         ib = self.mw.ib
-        _pos_buf = []
 
+        # Bid / Last 실시간 수신 캐시 (sym → price)
+        self._emrg_bid_cache  = {}
+        self._emrg_last_cache = {}
+
+        _pos_buf = []   # [(contract, qty, avg_cost)]
+
+        # ── 시세 핸들러 (Bid=1, Ask=2, Last=4 캐싱) ──────────
+        _orig_tick = getattr(ib, 'tickPrice', lambda *a: None)
+
+        def _emrg_tick(req_id, tick_type, price, attrib=None):
+            # 원래 핸들러도 함께 호출 (시세 수신 마비 방지)
+            try:
+                if attrib is not None:
+                    _orig_tick(req_id, tick_type, price, attrib)
+                else:
+                    _orig_tick(req_id, tick_type, price)
+            except Exception:
+                pass
+            if price <= 0:
+                return
+            sym = self._emrg_reqid_to_sym.get(req_id)
+            if not sym:
+                return
+            if tick_type == 1:    # Bid
+                self._emrg_bid_cache[sym] = price
+            elif tick_type == 4:  # Last
+                self._emrg_last_cache[sym] = price
+
+        self._emrg_reqid_to_sym = {}
+        ib.tickPrice = _emrg_tick
+
+        # ── 포지션 수신 ──────────────────────────────────────
         def _on_pos(account, contract, pos, avg_cost):
-            if getattr(contract,'secType','') == 'OPT' and int(pos) > 0:
-                _pos_buf.append((contract, int(pos)))
+            if getattr(contract, 'secType', '') == 'OPT' and int(pos) > 0:
+                _pos_buf.append((contract, int(pos), float(avg_cost or 0)))
 
+        # ── 포지션 수신 완료 → 시세 구독 후 500ms 뒤 발주 ───
         def _on_pos_end():
             if not _pos_buf:
-                self._log("🚨 긴급매도: 보유 포지션 없음"); return
+                self._log("🚨 긴급매도: 보유 포지션 없음")
+                _restore()
+                return
+
+            # 각 포지션 시세 구독 (Bid 수신용)
+            _base_rid = 8850
+            for i, (contract, qty, avg_cost) in enumerate(_pos_buf):
+                sym = (getattr(contract, 'localSymbol', '')
+                       or getattr(contract, 'symbol', '') or f"OPT_{i}")
+                rid = _base_rid + i
+                self._emrg_reqid_to_sym[rid] = sym
+                try:
+                    ib.reqMktData(rid, contract, "", True, False, [])
+                except Exception:
+                    pass
+
+            # 500ms 후 수집된 Bid로 LMT 주문 발송
+            QTimer.singleShot(500, lambda: _fire_orders(_pos_buf))
+
+        def _fire_orders(pos_buf):
             from ibapi.order import Order as IBOrder
-            for contract, qty in _pos_buf:
+            try:
+                from order_logic import get_emergency_sell_lmt_price
+            except ImportError:
+                # 헬퍼 미임포트 시 인라인 폴백 (틱 스냅 포함)
+                import math as _m
+                def get_emergency_sell_lmt_price(bid, sym="", ticks_below=2):
+                    if not bid or bid <= 0: return 0.05
+                    tick = 0.01 if sym.upper() == "XSP" else (0.10 if bid >= 3.0 else 0.05)
+                    raw  = max(bid - tick * ticks_below, tick)
+                    inv  = 1.0 / tick
+                    dec  = max(0, -int(_m.floor(_m.log10(tick)))) if tick < 1 else 0
+                    return round(_m.floor(raw * inv) / inv, dec)
+
+            sent, skipped = 0, 0
+            for i, (contract, qty, avg_cost) in enumerate(pos_buf):
+                sym = (getattr(contract, 'localSymbol', '')
+                       or getattr(contract, 'symbol', '') or f"OPT_{i}")
+
+                # 가격 결정: Bid → Last → avg_cost 순
+                bid  = self._emrg_bid_cache.get(sym)
+                last = self._emrg_last_cache.get(sym)
+                ref  = bid if (bid and bid > 0) else (last if (last and last > 0) else avg_cost)
+
+                if not ref or ref <= 0:
+                    self._log(f"⚠ 긴급매도 스킵: {sym} — 가격 미수신 (Bid/Last/avg 모두 없음)")
+                    skipped += 1
+                    continue
+
+                price_src = ("Bid" if bid and bid > 0
+                             else ("Last" if last and last > 0 else "avg_cost"))
+                lmt_price = get_emergency_sell_lmt_price(ref, sym=sym, ticks_below=2)
+
                 order = IBOrder()
                 order.action        = "SELL"
-                order.orderType     = "MKT"
+                order.orderType     = "LMT"          # [v7.0] MKT → LMT
+                order.lmtPrice      = lmt_price
                 order.totalQuantity = qty
                 order.tif           = "DAY"
                 order.eTradeOnly    = False
                 order.firmQuoteOnly = False
                 try:
-                    oid = ib.nextOrderId if hasattr(ib,'nextOrderId') else 0
+                    oid = (ib.get_next_id() if hasattr(ib, 'get_next_id')
+                           else getattr(ib, 'nextOrderId', 0))
                     ib.placeOrder(oid, contract, order)
-                    sym = getattr(contract,'localSymbol','') or getattr(contract,'symbol','')
-                    self._log(f"🚨 긴급매도 전송: {sym} {qty}계약 시장가")
+                    self._log(
+                        f"🚨 긴급매도 전송: {sym}  {qty}계약  "
+                        f"LMT ${lmt_price:.2f}  ({price_src}={ref:.2f} 기준 2틱↓)")
+                    sent += 1
                 except Exception as e:
-                    self._log(f"❌ 긴급매도 오류: {e}")
+                    self._log(f"❌ 긴급매도 오류 {sym}: {e}")
+                    skipped += 1
 
-        ib._orig_pos    = getattr(ib,'position',    lambda *a:None)
-        ib._orig_posEnd = getattr(ib,'positionEnd', lambda:None)
-        ib.position    = _on_pos
-        ib.positionEnd = _on_pos_end
-        try: ib.reqPositions()
-        except Exception as e: self._log(f"❌ 긴급매도 포지션조회 오류: {e}")
+                # 구독 해제
+                rid = 8850 + i
+                try:
+                    ib.cancelMktData(rid)
+                except Exception:
+                    pass
 
-        # [v1.2] 튜플 반환 람다 → def 교체 (sipBadCatcherResult 방지)
-        def _restore_emrg_handlers():
+            self._log(f"🚨 긴급매도 완료: {sent}건 전송 / {skipped}건 스킵")
+            _restore()
+
+        def _restore():
+            # tickPrice 핸들러 복원
+            try:
+                ib.tickPrice = _orig_tick
+            except Exception:
+                pass
             ib.position    = ib._orig_pos
             ib.positionEnd = ib._orig_posEnd
-        QTimer.singleShot(3000, _restore_emrg_handlers)
+
+        ib._orig_pos    = getattr(ib, 'position',    lambda *a: None)
+        ib._orig_posEnd = getattr(ib, 'positionEnd', lambda: None)
+        ib.position    = _on_pos
+        ib.positionEnd = _on_pos_end
+        try:
+            ib.reqPositions()
+        except Exception as e:
+            self._log(f"❌ 긴급매도 포지션조회 오류: {e}")
+            _restore()
+
+        # 안전망: 5초 후 핸들러 강제 복원 (응답 없을 경우 대비)
+        QTimer.singleShot(5000, _restore)
 
     def _emergency_cancel_orders(self):
         """미체결 전체 주문(BUY + SELL) 취소."""

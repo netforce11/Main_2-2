@@ -1,5 +1,5 @@
 """
-order_logic.py — 주문 실행 로직  v6.4
+order_logic.py — 주문 실행 로직  v6.6
 ════════════════════════════════════════════════════════
 수정 대상: 주문 전송 동작, TIF, 확인 팝업
 포함 메서드:
@@ -7,6 +7,19 @@ order_logic.py — 주문 실행 로직  v6.4
   _cancel_order()  취소 전송
   _qord_fill()     주문창 자동 입력
   _qord_place()    신규 주문 전송
+
+[v6.6 수정]
+  ① 중복 주문 발주 위험 수정 (_sniper_check / _sniper_fire):
+    - triggered=True 설정을 placeOrder 성공 후로 이동
+    - placeOrder 예외 시 triggered=False 복구 + UI 오류 표시
+    - OrderID 없음 시에도 triggered=False 복구
+
+  ② 정정 주문 Contract 소실 방지 (_amend_order):
+    - 재시작 후 _open_orders_buf 비어있으면 자동으로 미체결 조회 후 재시도
+    - 5초 후 재시도 1회 (QTimer.singleShot)
+
+  ③ 스나이퍼 JSON 저장 경로 절대경로 + 날짜 포함 파일명
+  ④ get_emergency_sell_lmt_price() 헬퍼 추가 (ERR 201 대응)
 ════════════════════════════════════════════════════════
 """
 
@@ -34,10 +47,23 @@ class OrderLogicMixin:
             # ✅ 미체결 버퍼에서 OID에 해당하는 contract 조회
             buf = getattr(self, '_open_orders_buf', [])
             matched = next((o for o in buf if o["oid"] == oid), None)
+
+            # [v6.6 ②] Contract 소실 방지: 버퍼 비어있으면 자동 조회 후 재시도
             if matched is None or matched.get("contract") is None:
-                QMessageBox.warning(self, "정정 오류",
-                    f"OID={oid} 의 contract 정보를 찾을 수 없습니다.\n"
-                    "'미체결 주문 조회'를 먼저 클릭하세요.")
+                if not buf:
+                    self._log(f"⚠ 정정: _open_orders_buf 비어있음 → 미체결 자동 조회 후 재시도")
+                    if hasattr(self, '_fetch_open_orders'):
+                        self._fetch_open_orders()
+                    from PyQt5.QtCore import QTimer
+                    QTimer.singleShot(5000, self._amend_order)
+                    self.lbl_amend_status.setText("⏳ 미체결 조회 중… 5초 후 재시도")
+                    self.lbl_amend_status.setStyleSheet(
+                        "color:#ffbb00;font-size:11px;"
+                        "border:1px solid #333;border-radius:3px;padding:2px;")
+                else:
+                    QMessageBox.warning(self, "정정 오류",
+                        f"OID={oid} 의 contract 정보를 찾을 수 없습니다.\n"
+                        "'미체결 주문 조회'를 먼저 클릭하세요.")
                 return
             contract = matched["contract"]
 
@@ -470,7 +496,8 @@ class OrderLogicMixin:
 
             # 3) 두 조건 모두 충족 → 발주
             if time_ok and price_ok:
-                sn["triggered"] = True
+                # [v6.6 ①] triggered=True는 placeOrder 성공 후 설정
+                # (기존: 발주 전 True → 예외 시 영구 잠금 버그 수정)
                 ri = sn.get("row_idx")
                 if ri is not None:
                     from PyQt5.QtWidgets import QTableWidgetItem
@@ -486,16 +513,25 @@ class OrderLogicMixin:
                 self.snp_status.setStyleSheet(
                     "color:#ff4444;font-size:11px;font-weight:bold;"
                     "border:1px solid #ff4444;border-radius:3px;padding:2px;")
-                self._sniper_fire(rid, sn)
+                fired = self._sniper_fire(rid, sn)
+                # placeOrder 성공 시에만 triggered=True
+                if fired:
+                    sn["triggered"] = True
 
         # 모두 triggered면 타이머 중지
         if all(s["triggered"] for s in self._snipers.values()):
             self._sniper_timer.stop()
 
     # ── 주문 전송 ─────────────────────────────────────────────
-    def _sniper_fire(self, rid: int, sn: dict):
+    def _sniper_fire(self, rid: int, sn: dict) -> bool:
+        """
+        [v6.6 ①] placeOrder 성공 시 True, 실패 시 False 반환.
+        호출자(_sniper_check)에서 반환값으로 triggered=True 여부를 결정한다.
+        예외 발생 시 triggered는 여전히 False → 다음 타이머 주기에 재시도 가능.
+        """
         if not self.mw.connected:
-            self._log("[스나이퍼] TWS 미연결 — 주문 전송 불가"); return
+            self._log("[스나이퍼] TWS 미연결 — 주문 전송 불가")
+            return False
         try:
             from ibapi.order import Order as IbOrder
             contract = make_opt_contract(
@@ -511,7 +547,8 @@ class OrderLogicMixin:
                 ibord.lmtPrice = sn["order_price"]
             oid = self.mw.ib.get_next_id()
             if oid is None:
-                self._log("[스나이퍼] OrderID 없음"); return
+                self._log("[스나이퍼] OrderID 없음 — triggered 복구, 재시도 가능")
+                return False  # triggered=True 설정 안 함
             self.mw.ib.placeOrder(oid, contract, ibord)
             self._log(
                 f"[스나이퍼 주문전송] oid={oid}  "
@@ -524,8 +561,18 @@ class OrderLogicMixin:
                 it = QTableWidgetItem(f"📤 전송 oid={oid}")
                 it.setForeground(QBrush(QColor("#00e676")))
                 self.snp_tbl.setItem(ri, 4, it)
+            return True  # ✅ 성공
         except Exception as e:
-            self._log(f"[스나이퍼] 주문 오류: {e}")
+            self._log(f"[스나이퍼] 주문 오류: {e} — triggered 복구, 재시도 가능")
+            # UI에 오류 표시
+            ri = sn.get("row_idx")
+            if ri is not None:
+                from PyQt5.QtWidgets import QTableWidgetItem
+                from PyQt5.QtGui import QColor, QBrush
+                it = QTableWidgetItem(f"❌ 오류: {e}")
+                it.setForeground(QBrush(QColor("#ff4444")))
+                self.snp_tbl.setItem(ri, 4, it)
+            return False  # triggered=True 설정 안 함 → 재시도 가능
 
     # ── 행 클릭 → 개별 해제 ──────────────────────────────────
     def _sniper_row_click(self, row: int, col: int):
@@ -592,7 +639,11 @@ class OrderLogicMixin:
     def _sniper_save(self):
         import json
         from pathlib import Path
-        save_path = Path("data") / "sniper_conditions.json"
+        from datetime import datetime
+        # [v6.6] 절대 경로 + 날짜 포함 파일명
+        _SNIPER_DIR = Path("/home/netforce/trading_terminal/Main2_1/data/sniper")
+        date_str    = datetime.now().strftime("%Y%m%d")
+        save_path   = _SNIPER_DIR / f"sniper_conditions_{date_str}.json"
         data = []
         for sn in self._snipers.values():
             data.append({
@@ -604,7 +655,7 @@ class OrderLogicMixin:
                 "order_type": sn["order_type"], "order_price": sn["order_price"],
             })
         try:
-            save_path.parent.mkdir(exist_ok=True)
+            _SNIPER_DIR.mkdir(parents=True, exist_ok=True)
             save_path.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             self._log(f"[스나이퍼] {len(data)}개 저장 → {save_path}")
@@ -619,8 +670,14 @@ class OrderLogicMixin:
     def _sniper_load(self):
         import json
         from pathlib import Path
-        save_path = Path("data") / "sniper_conditions.json"
-        if not save_path.exists(): return
+        # [v6.6] 절대 경로에서 가장 최근 날짜 파일 자동 선택
+        _SNIPER_DIR = Path("/home/netforce/trading_terminal/Main2_1/data/sniper")
+        candidates  = sorted(
+            _SNIPER_DIR.glob("sniper_conditions_????????.json"),
+            reverse=True)
+        if not candidates:
+            self._log("[스나이퍼] 복원할 파일 없음"); return
+        save_path = candidates[0]
         try:
             data = json.loads(save_path.read_text(encoding="utf-8"))
         except Exception as e:
@@ -644,3 +701,28 @@ class OrderLogicMixin:
             self.snp_status.setStyleSheet(
                 "color:#00cfff;font-size:11px;border:1px solid #333;"
                 "border-radius:3px;padding:2px;")
+
+# ═══════════════════════════════════════════════════════
+# [v6.6] ERR 201 대응 헬퍼 — 긴급 옵션 매도 LMT 가격 계산
+# ═══════════════════════════════════════════════════════
+import math as _math
+
+
+def get_emergency_sell_lmt_price(
+    bid: float,
+    sym: str = "",
+    ticks_below: int = 2,
+) -> float:
+    """
+    긴급 매도 시 MKT 대신 사용할 LMT 가격.
+    Bid에서 ticks_below 틱 아래, 틱 단위로 정렬하여 반환.
+
+    틱 사이즈: XSP=$0.01 / $3 미만=$0.05 / $3 이상=$0.10
+    """
+    if not bid or bid <= 0:
+        return 0.05
+    tick = 0.01 if sym.upper() == "XSP" else (0.10 if bid >= 3.0 else 0.05)
+    raw  = max(bid - tick * ticks_below, tick)
+    inv  = 1.0 / tick
+    dec  = max(0, -int(_math.floor(_math.log10(tick)))) if tick < 1 else 0
+    return round(_math.floor(raw * inv) / inv, dec)

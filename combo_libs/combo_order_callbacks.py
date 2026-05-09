@@ -1,6 +1,13 @@
 """
 combo_order_callbacks.py — BAG 주문 상태 콜백 연결 / UI 갱신
 ──────────────────────────────────────────────────────────────
+[v2.4] 소수점 정밀도 수정:
+  _calc_bag_net:
+    · tick_type 1,2 외에 Last(4), Close(9) 폴백 추가 (OTM 유동성 낮은 레그 대응)
+    · 레그 mid를 _snap_to_tick으로 틱 단위 정렬 후 합산
+  _make_tick_handler:
+    · tick_type 캐싱 범위를 (1,2) → (1,2,4,9) 로 확장 (폴백 데이터 확보)
+──────────────────────────────────────────────────────────────
 [FIX-E] Filled 시 신규/청산 주문 구분
 [FIX-F] Submitted 시 청산 파일 제거
 [FIX-G] save_one_position 실패 로그 추가
@@ -266,7 +273,8 @@ def _start_position_price_stream(self, pending: dict) -> None:
 
     def _make_tick_handler(leg_idx: int):
         def _on_tick(req_id: int, tick_type: int, price: float):
-            if price <= 0 or tick_type not in (1, 2):
+            # [v2.4] Bid(1), Ask(2), Last(4), Close(9) 모두 캐싱
+            if price <= 0 or tick_type not in (1, 2, 4, 9):
                 return
             ticks = self._pos_mid_ticks.get(oid, {})
             if leg_idx not in ticks:
@@ -313,17 +321,36 @@ def _start_position_price_stream(self, pending: dict) -> None:
 
 
 def _calc_bag_net(self, oid: int, legs: list) -> Optional[float]:
-    """레그별 mid price → BAG net mid price. 미수신 레그 있으면 None."""
+    """
+    레그별 mid price → BAG net mid price.
+
+    [v2.4] 틱 스냅 적용: 개별 레그 mid를 틱 단위로 정렬 후 합산.
+    미수신 레그 bid/ask는 Last → Close 순으로 폴백 (None 방지).
+    모든 레그 시세가 완전히 없으면 None 반환.
+    """
     ticks = self._pos_mid_ticks.get(oid, {})
     net   = 0.0
     for i, leg in enumerate(legs):
         leg_ticks = ticks.get(i, {})
         bid = leg_ticks.get(1)
         ask = leg_ticks.get(2)
+
         if bid is None or ask is None:
-            return None
-        mid = (bid + ask) / 2.0
-        net += mid if leg.get('dir') == 'BUY' else -mid
+            # 폴백: Last(4) → Close(9) 순으로 사용
+            last  = leg_ticks.get(4)
+            close = leg_ticks.get(9)
+            mid   = last if last is not None and last > 0 else close
+            if mid is None or mid <= 0:
+                return None  # 폴백도 없으면 포기
+        else:
+            mid = (bid + ask) / 2.0
+
+        # [v2.4] 레그 mid를 틱 단위 스냅
+        from combo_order_chaser import _get_tick_size, _snap_to_tick
+        tick      = _get_tick_size(mid)
+        mid_snapped = _snap_to_tick(mid, tick, "buy")
+
+        net += mid_snapped if leg.get('dir') == 'BUY' else -mid_snapped
     return net
 
 

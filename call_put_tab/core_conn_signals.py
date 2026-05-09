@@ -1,15 +1,58 @@
 """
-core_conn_signals.py — 연결 시그널·Watchdog·재연결·체결콜백·로그  v6.5
+core_conn_signals.py — 연결 시그널·Watchdog·재연결·체결콜백·로그  v6.6
 [버그 수정]
   #1: 풋옵션 TickRouter 등록 범위 26개로 제한 (불필요한 slot 호출 제거)
   #2: 체결 통보 누락 — _hook_fill_callbacks 패치 강화
   #3: TickRouter 등록 범위 하드코딩 25 (REQ_*+25 = 26개)
+
+[v6.6 추가]
+  #4: 텔레그램 알림 통합 (_tg_send)
+    · 재연결 시작/성공/실패
+    · 시세 멈춤 감지 (10초 이상)
+    · 주문 거부/비활성 (Inactive) 감지
+    · 설정: TG_TOKEN / TG_CHAT_ID 환경변수 또는 상수로 설정
 """
 
 from datetime import datetime
 from collections import deque
+import os
+import threading
 from PyQt5.QtCore import QTimer
 from core import bridge, router, ts, REQ_UND, REQ_CALL, REQ_PUT
+
+
+# ── [v6.6] 텔레그램 설정 ─────────────────────────────────────
+# 환경변수 우선, 없으면 아래 상수 직접 입력
+_TG_TOKEN   = os.environ.get("TG_TOKEN",   "")   # 예: "123456:ABC-DEF..."
+_TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "")   # 예: "-1001234567890"
+
+
+def _tg_send(msg: str) -> None:
+    """
+    텔레그램 메시지 비동기 전송 (별도 스레드 — UI 블로킹 없음).
+    TG_TOKEN / TG_CHAT_ID 미설정 시 조용히 무시.
+    """
+    if not _TG_TOKEN or not _TG_CHAT_ID:
+        return
+
+    def _send():
+        try:
+            import urllib.request, urllib.parse, json
+            payload = json.dumps({
+                "chat_id": _TG_CHAT_ID,
+                "text":    msg,
+                "parse_mode": "HTML",
+            }).encode("utf-8")
+            url = f"https://api.telegram.org/bot{_TG_TOKEN}/sendMessage"
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                resp.read()
+        except Exception as e:
+            print(f"[TG] 전송 실패: {e}")
+
+    threading.Thread(target=_send, daemon=True).start()
 
 
 class ConnSignalsMixin:
@@ -68,11 +111,20 @@ class ConnSignalsMixin:
             self.lbl_status.setText("● 데이터 멈춤!")
             self.lbl_status.setStyleSheet(
                 "color:#ff4444;font-weight:bold;border:none;")
+            # [v6.6] 텔레그램: 멈춤 감지 최초 1회만 전송 (중복 방지)
+            if not getattr(self, '_tg_stale_sent', False):
+                self._tg_stale_sent = True
+                _tg_send(
+                    f"⚠️ <b>시세 멈춤 감지</b>\n"
+                    f"마지막 틱 수신 후 {int(elapsed)}초 경과\n"
+                    f"자동 재연결을 시도합니다.")
         elif elapsed > 3:
             self.lbl_status.setText("● 지연 발생")
             self.lbl_status.setStyleSheet(
                 "color:#ffbb00;font-weight:bold;border:none;")
         else:
+            # 정상 복귀 시 플래그 초기화
+            self._tg_stale_sent = False
             cur = self.lbl_status.text()
             if cur in ("● 데이터 멈춤!", "● 지연 발생"):
                 self.lbl_status.setText("● 연결됨")
@@ -90,6 +142,8 @@ class ConnSignalsMixin:
         self.lbl_status.setText("● 재연결 중…")
         self.lbl_status.setStyleSheet(
             "color:#ff9800;font-weight:bold;border:none;")
+        # [v6.6] 재연결 시작 텔레그램 알림
+        _tg_send("🔄 <b>TWS 재연결 시작</b>\n시세 수신 중단 감지 → 자동 재연결 진행 중")
 
         try:
             if self.mw.ib:
@@ -112,8 +166,12 @@ class ConnSignalsMixin:
             self._reconnecting = False
             if not self.mw.connected:
                 self._log("⚠ 재연결 실패 — 수동으로 연결 버튼을 눌러주세요.")
+                # [v6.6] 재연결 실패 텔레그램 알림
+                _tg_send("❌ <b>TWS 재연결 실패</b>\n수동으로 연결 버튼을 눌러주세요.")
                 return
             self._log("🔄 재구독 시작…")
+            # [v6.6] 재연결 성공 텔레그램 알림
+            _tg_send("✅ <b>TWS 재연결 성공</b>\n시세 재구독을 시작합니다.")
             sym = self.edit_sym.text().strip().upper() or "SPX"
             self._req_und(sym)
             QTimer.singleShot(1000, self._fetch)
@@ -189,6 +247,14 @@ class ConnSignalsMixin:
                              whyHeld, mktCapPrice)
             except Exception:
                 pass
+
+            # [v6.6] 주문 거부/비활성 텔레그램 알림
+            if status == 'Inactive':
+                reason = whyHeld or "사유 미수신"
+                self._log(f"❌ OID={orderId} 주문 거부/비활성: {reason}")
+                _tg_send(
+                    f"❌ <b>주문 거부 (Inactive)</b>\n"
+                    f"OID: {orderId}\n사유: {reason}")
 
             if status != 'Filled' or filled <= 0:
                 return
