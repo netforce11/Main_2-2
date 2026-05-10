@@ -163,13 +163,13 @@ class SyntheticStatusPanel(QWidget):
         self._lbl_no_pos.setStyleSheet("color:#333355;padding:14px;")
         lay.addWidget(self._lbl_no_pos)
 
-        self._tbl_pos = QTableWidget(0, 6)
+        self._tbl_pos = QTableWidget(0, 7)
         self._tbl_pos.setHorizontalHeaderLabels(
-            ["전략명", "수량", "진입가", "현재가", "손익", "상태"])
+            ["전략명", "수량", "진입가", "현재가", "손익", "수익률", "상태"])
         self._tbl_pos.setFont(_f(12))
         self._tbl_pos.horizontalHeader().setFont(_f(11, bold=True))
         self._tbl_pos.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for c in range(1, 6):
+        for c in range(1, 7):
             self._tbl_pos.horizontalHeader().setSectionResizeMode(
                 c, QHeaderView.ResizeToContents)
         self._tbl_pos.verticalHeader().setVisible(False)
@@ -463,6 +463,15 @@ class SyntheticStatusPanel(QWidget):
                 it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 return it
 
+            # 수익률: (현재가 - 진입가) / 진입가 × 100
+            if is_filled and entry > 0:
+                pnl_rate     = (current - entry) / entry * 100
+                pnl_rate_txt = f"{pnl_rate:+.1f}%"
+                pnl_rate_col = "#00ff88" if pnl_rate > 0 else "#ff4444" if pnl_rate < 0 else "#888899"
+            else:
+                pnl_rate_txt = "―"
+                pnl_rate_col = "#888899"
+
             st_col  = "#00ff88" if is_filled else "#ffaa44"
             st_text = "✅ 체결" if is_filled else "⏳ 미체결"
             tbl.setItem(r, 0, _it(pos.get("strategy","―"), "#e0e0ff", Qt.AlignLeft|Qt.AlignVCenter))
@@ -470,7 +479,8 @@ class SyntheticStatusPanel(QWidget):
             tbl.setItem(r, 2, _it(f"${entry:.2f}",           "#aaaaaa"))
             tbl.setItem(r, 3, _it(f"${current:.2f}",         "#e0e0e0"))
             tbl.setItem(r, 4, _it(f"${pnl:+,.2f}" if is_filled else "―", pnl_col))
-            tbl.setItem(r, 5, _it(st_text,                   st_col))
+            tbl.setItem(r, 5, _it(pnl_rate_txt,              pnl_rate_col))
+            tbl.setItem(r, 6, _it(st_text,                   st_col))
 
         tc = "#00ff88" if total_pnl > 0 else "#ff4444" if total_pnl < 0 else "#888899"
         self._lbl_total_pnl.setText(f"${total_pnl:+,.2f}")

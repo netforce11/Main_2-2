@@ -16,9 +16,9 @@ from PyQt5.QtWidgets import (
     QLabel, QPushButton, QLineEdit,
     QGroupBox, QMessageBox,
     QTableWidget, QHeaderView, QAbstractItemView,
-    QSplitter,
+    QSplitter, QSpinBox,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 
 from combo_constants import SPLITTER_STYLE, mk_item
@@ -37,37 +37,58 @@ class LeftPanelMixin:
         v  = QVBoxLayout(gb)
         v.setSpacing(3); v.setContentsMargins(4, 6, 4, 4)
 
-        # 헤더 행 1: 종목 + 현재가 조회
+        # 헤더 행 1: 자동 캡쳐 컨트롤
         sym_row = QHBoxLayout(); sym_row.setSpacing(6)
-        sym_row.addWidget(QLabel("종목:"))
+
+        # 종목/현재가 조회 위젯 (내부 참조용 — 화면 비표시)
         self.edit_sym_combo = QLineEdit("SPX")
-        self.edit_sym_combo.setFixedHeight(24)
-        self.edit_sym_combo.setStyleSheet(
-            "background:#0a0a1e;color:#ffd700;border:1px solid #3a3a6a;"
-            "border-radius:3px;font-weight:bold;")
-        sym_row.addWidget(self.edit_sym_combo)
-        btn_req = QPushButton("▶ 현재가 조회")
-        btn_req.setFixedHeight(24)
-        btn_req.setStyleSheet(
-            "background:#1a5c2e;color:#00ff88;font-weight:bold;padding:3px 8px;")
-        btn_req.clicked.connect(self._req_sym_price)
-        sym_row.addWidget(btn_req)
+        self.edit_sym_combo.setVisible(False)
         self.lbl_sym_price = QLabel("현재가: ―")
-        self.lbl_sym_price.setFont(QFont("Arial", 12, QFont.Bold))
-        self.lbl_sym_price.setStyleSheet("color:#ffd700;border:none;")
-        sym_row.addWidget(self.lbl_sym_price)
-        sym_row.addWidget(QLabel("만기:"))
+        self.lbl_sym_price.setVisible(False)
         self.edit_expiry_combo = QLineEdit()
-        self.edit_expiry_combo.setFixedWidth(72)
-        self.edit_expiry_combo.setFixedHeight(24)
-        self.edit_expiry_combo.setPlaceholderText("YYYYMMDD")
         self.edit_expiry_combo.setReadOnly(True)
-        self.edit_expiry_combo.setStyleSheet(
-            "background:#0a0a1e;color:#aaffaa;border:1px solid #3a6a3a;"
+        self.edit_expiry_combo.setVisible(False)
+
+        # ── 캡쳐 간격 ──────────────────────────────────────
+        lbl_interval = QLabel("캡쳐 간격(초):")
+        lbl_interval.setStyleSheet("color:#888;font-size:11px;border:none;")
+        sym_row.addWidget(lbl_interval)
+
+        self._capture_spin = QSpinBox()
+        self._capture_spin.setRange(10, 3600)
+        self._capture_spin.setValue(60)
+        self._capture_spin.setSuffix(" 초")
+        self._capture_spin.setFixedHeight(24)
+        self._capture_spin.setFixedWidth(80)
+        self._capture_spin.setStyleSheet(
+            "background:#0a0a1e;color:#ffd700;border:1px solid #3a3a6a;"
             "border-radius:3px;font-size:11px;font-weight:bold;")
-        self.edit_expiry_combo.setToolTip("콜-풋 탭 만기 자동 수신")
-        sym_row.addWidget(self.edit_expiry_combo)
+        sym_row.addWidget(self._capture_spin)
+
+        # ── 토글 버튼 ──────────────────────────────────────
+        self._btn_capture_toggle = QPushButton("📷 캡쳐 시작")
+        self._btn_capture_toggle.setFixedHeight(26)
+        self._btn_capture_toggle.setCheckable(True)
+        self._btn_capture_toggle.setStyleSheet(
+            "QPushButton{background:#1a2a0a;color:#aaffaa;font-weight:bold;"
+            "padding:3px 10px;border:1px solid #3a6a2a;border-radius:3px;}"
+            "QPushButton:checked{background:#0a3a0a;color:#00ff88;"
+            "border:2px solid #00ff88;}")
+        self._btn_capture_toggle.clicked.connect(self._on_capture_toggle)
+        sym_row.addWidget(self._btn_capture_toggle)
+
+        # ── 상태 라벨 ──────────────────────────────────────
+        self._lbl_capture_status = QLabel("대기 중")
+        self._lbl_capture_status.setStyleSheet(
+            "color:#445566;font-size:11px;border:none;")
+        sym_row.addWidget(self._lbl_capture_status)
         sym_row.addStretch()
+
+        # ── 내부 캡쳐 타이머 초기화 ────────────────────────
+        self._capture_timer  = QTimer()
+        self._capture_active = False
+        self._capture_timer.timeout.connect(self._do_capture)
+
         v.addLayout(sym_row)
 
         # 헤더 행 2: 심볼 표시 + 즉시 동기화
@@ -249,3 +270,57 @@ class LeftPanelMixin:
     # ── 위임 메서드: combo_ui_left_chain.py ───────────────────
     def _on_chain_click(self, row: int, col: int, side: str):
         from combo_ui_left_chain import _on_chain_click as _f; _f(self, row, col, side)
+    # ── 자동 캡쳐 ─────────────────────────────────────────────
+
+    def _on_capture_toggle(self, checked: bool):
+        """토글 버튼: 1번(ON) / 2번(OFF)."""
+        if checked:
+            interval_ms = self._capture_spin.value() * 1000
+            self._capture_timer.start(interval_ms)
+            self._capture_active = True
+            self._btn_capture_toggle.setText("⏹ 캡쳐 정지")
+            self._lbl_capture_status.setStyleSheet(
+                "color:#00ff88;font-size:11px;border:none;font-weight:bold;")
+            self._lbl_capture_status.setText(
+                f"●  {self._capture_spin.value()}초마다 저장 중")
+            self._log(f"📷 자동 캡쳐 시작: {self._capture_spin.value()}초 간격")
+            self._do_capture()          # 시작 즉시 1회 캡쳐
+        else:
+            self._capture_timer.stop()
+            self._capture_active = False
+            self._btn_capture_toggle.setText("📷 캡쳐 시작")
+            self._lbl_capture_status.setStyleSheet(
+                "color:#445566;font-size:11px;border:none;")
+            self._lbl_capture_status.setText("대기 중")
+            self._log("📷 자동 캡쳐 정지")
+
+    def _do_capture(self):
+        """실제 캡쳐 & 저장."""
+        import os
+        from datetime import datetime
+        from PyQt5.QtWidgets import QApplication
+
+        save_dir = "/home/netforce/US_Data/Data/Account_pic"
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except Exception as e:
+            self._log(f"❌ 캡쳐 폴더 생성 실패: {e}")
+            return
+
+        now      = datetime.now()
+        filename = now.strftime("Account_%Y%m%d_%H%M%S.jpg")
+        filepath = os.path.join(save_dir, filename)
+
+        try:
+            # 메인 윈도우 전체 화면 캡쳐
+            target = self.mw if hasattr(self, 'mw') else self
+            screen  = QApplication.primaryScreen()
+            pixmap  = screen.grabWindow(target.winId())
+            if pixmap.save(filepath, "JPG", 92):
+                self._lbl_capture_status.setText(
+                    f"●  저장: {filename}")
+                self._log(f"📸 캡쳐 저장: {filepath}")
+            else:
+                self._log(f"❌ 캡쳐 저장 실패: {filepath}")
+        except Exception as e:
+            self._log(f"❌ 캡쳐 오류: {e}")
