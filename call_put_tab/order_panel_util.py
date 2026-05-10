@@ -222,13 +222,6 @@ class OrderUtilMixin:
         self._ps_expiry = expiry   # ex) "20260410"
         self._ps_sym    = ps_sym   # ex) "NANOS" → make_opt_contract에 전달
 
-        # ── 디버그 로그 (원인 확인용) ──
-        self._log(f"🔎 잔고클릭 디버그: side={side} strike={strike} expiry={expiry} ps_sym={ps_sym} snapshot_size={len(snapshot)}")
-        if snapshot:
-            first_key = next(iter(snapshot))
-            first_val = snapshot[first_key]
-            self._log(f"🔎 snapshot 첫번째: key={first_key}  val={first_val}")
-
         # 빠른매도 탭 필드 자동입력
         sell_price_w = getattr(self, 'sell_price', None)
         sell_qty_w   = getattr(self, 'sell_qty',   None)

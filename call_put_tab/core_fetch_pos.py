@@ -1,19 +1,17 @@
 """
-core_fetch_pos.py — 포지션 조회 / 잔고 컬럼 갱신  v1.5
-════════════════════════════════════════════════════
+core_fetch_pos.py — 포지션 조회 / 잔고 컬럼 갱신  v1.6
+
+[v1.6 수정]
+  ① _pnl_req_id_counter 재연결 시 리셋 (_on_pos_reconnect_hook):
+    - 기존: 카운터가 세션 재시작 없이 누적 → reqId 범위(9900~) 무한 증가
+    - 수정: _on_pos_reconnect_hook 호출 전 카운터 초기화
+    - _stop_server_pnl()에서 _pnl_req_ids 딕셔너리도 함께 초기화
+
 [버그 #4 수정] 실시간 잔고 엉킴 3가지 원인 수정:
   (A) _refresh_positions(): 중복 호출 레이스 — 2초 cooling 추가
   (B) _refresh_positions(): 핸들러 복원 실패 — 이중 복원 방지 + try-finally
   (C) _start_server_pnl(): req_to_row → self._pnl_req_to_row (instance 변수)
-      pnlSingle 콜백이 재구독 후에도 항상 최신 매핑 참조
   (D) _stop_server_pnl(): self._pnl_req_to_row = {} 추가 (in-flight 콜백 무효화)
-
-v1.1: positionEnd 타임아웃 / 재연결 훅 / 튜플람다→def
-v1.2: tbl_positions 필터 완화 / _normalize_sym / 길이 방어
-v1.3: sym_label "SPX 0410 C" / 5컬럼 / _update_pos_pnl 로컬계산
-v1.4: 서버 PnL 모드 (reqPnLSingle) 추가
-v1.5: [버그 #4] 잔고 엉킴 수정
-════════════════════════════════════════════════════
 """
 
 from __future__ import annotations
@@ -195,6 +193,18 @@ class CoreFetchPosMixin:
         if not self.mw.connected:
             return
         self._log("🔄 재연결 감지 — 잔고 자동 재조회")
+
+        # [v1.6 ①] PnL reqId 카운터 리셋
+        # 재연결마다 누적되면 reqId 범위(9900~)가 무한 증가
+        # _stop_server_pnl()에서 기존 구독 해제 + 딕셔너리 초기화 후 카운터 리셋
+        try:
+            self._stop_server_pnl()
+        except Exception:
+            pass
+        self._pnl_req_id_counter = 9900
+        self._pnl_req_ids        = {}
+        self._log("🔄 PnL reqId 카운터 리셋 완료 (9900부터 재시작)")
+
         self._refresh_positions()
 
     # ── _ensure_pnl_checkbox ────────────────────────────────────────────────

@@ -448,15 +448,60 @@ class OrderLogicMixin:
 
     # ── 시세 틱 수신 ─────────────────────────────────────────
     def _sniper_tick(self, rid: int, tt: int, price: float):
-        if rid not in self._snipers or price <= 0: return
-        if tt not in (4, 68, 75, 14): return
+        """
+        [v6.6] 틱 타입 범위 확대 — 지연 시세(MDT=3) 환경 대응.
+
+        기존: (4, 68, 75, 14) — Last 계열만 처리
+        추가: 9(Close), 1(Bid), 2(Ask) — 장외/지연 환경에서 Last 대신 오는 타입
+          · tt=9  (CLOSE)     : 장외 시간 또는 지연 시세에서 종가 수신
+          · tt=1  (BID)       : 호가 기반 현재가 추정 (실시간 환경 보조)
+          · tt=2  (ASK)       : 동일
+          · tt=68 (DELAYED_LAST)   : 지연 Last
+          · tt=75 (DELAYED_CLOSE)  : 지연 Close
+          · tt=14 (LAST_SIZE 관련) : 기존 유지
+
+        가격 결정 우선순위: Last(4) > DelayedLast(68) > Close(9,75) > Mid(Bid+Ask/2)
+        """
+        if rid not in self._snipers or price <= 0:
+            return
+
+        # [v6.6] 허용 틱 타입 확장
+        _LAST_TYPES  = (4, 68)       # Last 계열 (최우선)
+        _CLOSE_TYPES = (9, 75, 14)   # Close / Delayed Close 계열
+        _QUOTE_TYPES = (1, 2)        # Bid / Ask (Bid+Ask 평균 사용)
+
+        if tt not in _LAST_TYPES + _CLOSE_TYPES + _QUOTE_TYPES:
+            return
+
         from PyQt5.QtWidgets import QTableWidgetItem
         from PyQt5.QtGui import QColor, QBrush
         sn = self._snipers[rid]
-        sn["cur_price"] = price
+
+        # Bid/Ask는 캐시에 모아뒀다가 둘 다 있으면 Mid로 계산
+        if tt in _QUOTE_TYPES:
+            cache = sn.setdefault("_quote_cache", {})
+            cache[tt] = price
+            bid = cache.get(1)
+            ask = cache.get(2)
+            if bid and ask and bid > 0 and ask > 0:
+                display_price = (bid + ask) / 2.0
+            else:
+                return   # 한 쪽만 있으면 대기
+        else:
+            # Last / Close 계열: 더 신뢰도 높은 타입이 오면 덮어씀
+            prev = sn.get("cur_price")
+            prev_tt = sn.get("_last_tt", 99)
+            # Last(4,68) > Close(9,75,14) 우선순위
+            _priority = {4: 0, 68: 1, 9: 2, 75: 3, 14: 4}
+            if prev is not None and _priority.get(tt, 9) > _priority.get(prev_tt, 9):
+                return   # 더 낮은 우선순위 틱은 무시
+            sn["_last_tt"] = tt
+            display_price = price
+
+        sn["cur_price"] = display_price
         ri = sn.get("row_idx")
         if ri is not None:
-            it = QTableWidgetItem(f"{price:.2f}")
+            it = QTableWidgetItem(f"{display_price:.2f}")
             it.setForeground(QBrush(QColor("#00cfff")))
             self.snp_tbl.setItem(ri, 2, it)
 
