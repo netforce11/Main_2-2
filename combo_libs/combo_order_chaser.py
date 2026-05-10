@@ -1,17 +1,16 @@
 """
-combo_order_chaser.py — Smart Chaser (체결 추격 주문) + 취소 주문 로직  v2.4
+combo_order_chaser.py — Smart Chaser (체결 추격 주문) + 취소 주문 로직  v2.5
 ──────────────────────────────────────────────────────────────────────────────
+변경 (v2.5):
+  [L-A] tickPrice 직접 덮어쓰기 제거 — 중앙 라우터 구독 방식으로 전환
+    · _do_chase(): ib.tickPrice = _on_tick 제거
+    · price_tick_sig.connect(_on_tick, {_CHASE_TICKER_ID}) 로 대체
+    · Bid/Ask 수신 완료 또는 타임아웃 시 price_tick_sig.disconnect(_on_tick)
+    · _restore() 함수 불필요 — 삭제
+    · 동시 실행 / 예외 발생 시에도 다른 모듈 시세 수신에 영향 없음
+
 변경 (v2.4):
-  [BUG #TICK] 소수점 정밀도 문제 수정 — IBKR "Invalid Order Price" 거절 방지
-    · _snap_to_tick(price, tick) 함수 추가
-      → 계산된 가격을 해당 틱 사이즈의 배수로 math.ceil/floor 처리
-    · _do_chase_with_price():
-        new_price = round(mid + tick, 2)  →  _snap_to_tick(mid + tick, tick)
-        fallback  = round(price + tick, 2) → _snap_to_tick(price + tick, tick)
-    · _chaser_max_price 계산도 틱 단위로 정렬
-    · _read_mid_from_cache() mid 계산도 _snap_to_tick 적용
-    · 모든 변경은 _get_tick_size() 반환값 기준으로 동작하므로
-      XSP($0.01) / 저가($0.05) / 고가($0.10) 모두 자동 적용
+  [BUG #TICK] 소수점 정밀도 수정 — _snap_to_tick() 함수 추가
 ──────────────────────────────────────────────────────────────────────────────
 변경 (v2.3):
   [BUG #5] _fetch_mid_price_sync(): QTimer 콜백(자동 추격) 안에서
@@ -288,81 +287,107 @@ def _auto_chase_tick(self) -> None:
 
 def _do_chase(self, reason: str = "") -> None:
     """
-    [BUG #5 수정] QEventLoop 제거 → 비동기 방식으로 교체.
+    [v2.5 L-A] ib.tickPrice 덮어쓰기 제거 → price_tick_sig 구독 방식.
 
-    기존: _fetch_mid_price_sync() 안에서 QEventLoop.exec_()를 실행해
-    QTimer 콜백(자동 추격) 내부에서 중첩 이벤트 루프가 돌아 UI 프리즈 위험.
+    기존: ib.tickPrice = _on_tick  (전역 슬롯 독점 → 예외 시 전체 시세 마비)
+    수정: price_tick_sig.connect(_on_tick, {_CHASE_TICKER_ID})
+          → Bid/Ask 수신 완료 또는 타임아웃 시 disconnect
 
-    수정: Mid price 조회를 비동기로 수행.
-      1) 캐시(_mid_ticks)에 이미 유효한 bid/ask가 있으면 즉시 사용.
-      2) 캐시 없으면 reqMktData 요청 후 500ms QTimer로 결과 확인.
-         결과 수신 시 → _do_chase_with_price() 호출.
-         타임아웃 시  → fallback(현재 chaser_price + tick) 사용.
+    흐름:
+      1) 캐시(_mid_ticks)에 유효한 bid/ask 있으면 즉시 사용
+      2) 없으면 reqMktData(_CHASE_TICKER_ID) 전송
+         price_tick_sig 에서 해당 reqId 틱만 수신
+         → Bid + Ask 둘 다 오면 Mid 계산 → _do_chase_with_price()
+         → 500ms 타임아웃 시 fallback (현재 chaser_price + tick)
     """
-    # Step 1: 캐시 우선 확인
     mid = _read_mid_from_cache(self)
     if mid is not None:
         _do_chase_with_price(self, mid, reason)
         return
 
-    # Step 2: 비동기 reqMktData
     ib  = getattr(getattr(self, 'mw', None), 'ib', None)
     bag = getattr(self, '_chaser_bag_contract', None)
     if ib is None or bag is None:
         _do_chase_with_price(self, None, reason)
         return
 
+    # [L-A] price_tick_sig 구독 방식
+    try:
+        from call_put_tab.bridge_price_tick import subscribe as _sub
+        from call_put_tab.bridge_price_tick import unsubscribe as _unsub
+        _use_router = True
+    except ImportError:
+        _use_router = False
+
     result: dict = {}
-    _orig = getattr(ib, 'tickPrice', lambda *a: None)
     _done = [False]
 
-    def _restore():
-        try:
-            ib.tickPrice = _orig
-        except Exception:
-            pass
-
-    def _on_tick(req_id, tick_type, price, attrib=None):
-        try:
-            if attrib is not None:
-                _orig(req_id, tick_type, price, attrib)
-            else:
-                _orig(req_id, tick_type, price)
-        except Exception:
-            pass
-        if req_id == _CHASE_TICKER_ID and tick_type in (1, 2) and price > 0:
-            result[tick_type] = price
-            if 1 in result and 2 in result and not _done[0]:
-                _done[0] = True
-                try:
-                    ib.cancelMktData(_CHASE_TICKER_ID)
-                except Exception:
-                    pass
-                _restore()
-                # [v2.4] 틱 단위 스냅 적용
-                _raw_mid   = (result[1] + result[2]) / 2
-                _tick_s    = _get_tick_size(_raw_mid)
-                _direction = "sell" if getattr(self, '_chaser_action', 'BUY').upper() == "SELL" else "buy"
-                mid_val    = _snap_to_tick(_raw_mid, _tick_s, _direction)
-                QTimer.singleShot(0, lambda: _do_chase_with_price(self, mid_val, reason))
-
-    def _on_timeout():
-        if _done[0]:
-            return
-        _done[0] = True
-        _restore()
+    def _cleanup():
+        """구독 해제 + 시세 취소 — 항상 안전하게 수행."""
+        if _use_router:
+            try:
+                _unsub(_on_tick)
+            except Exception:
+                pass
         try:
             ib.cancelMktData(_CHASE_TICKER_ID)
         except Exception:
             pass
+
+    def _on_tick(req_id: int, tick_type: int, price: float) -> None:
+        """price_tick_sig 콜백 — _CHASE_TICKER_ID 의 Bid/Ask만 처리."""
+        if req_id != _CHASE_TICKER_ID:
+            return
+        if tick_type not in (1, 2) or price <= 0:
+            return
+        result[tick_type] = price
+        if 1 in result and 2 in result and not _done[0]:
+            _done[0] = True
+            _cleanup()
+            _raw_mid   = (result[1] + result[2]) / 2
+            _tick_s    = _get_tick_size(_raw_mid)
+            _direction = "sell" if getattr(self, '_chaser_action', 'BUY').upper() == "SELL" else "buy"
+            mid_val    = _snap_to_tick(_raw_mid, _tick_s, _direction)
+            QTimer.singleShot(0, lambda: _do_chase_with_price(self, mid_val, reason))
+
+    def _on_timeout() -> None:
+        if _done[0]:
+            return
+        _done[0] = True
+        _cleanup()
         _do_chase_with_price(self, None, reason)
 
-    ib.tickPrice = _on_tick
+    # 구독 등록 (router 없으면 직접 덮어쓰기 폴백)
+    if _use_router:
+        _sub(_on_tick, req_ids={_CHASE_TICKER_ID})
+    else:
+        # bridge_price_tick 임포트 불가 시 기존 방식으로 폴백 (호환성)
+        _orig = getattr(ib, 'tickPrice', lambda *a: None)
+
+        def _on_tick_legacy(req_id, tick_type, price, attrib=None):
+            try:
+                _orig(req_id, tick_type, price) if attrib is None \
+                    else _orig(req_id, tick_type, price, attrib)
+            except Exception:
+                pass
+            _on_tick(req_id, tick_type, price)
+
+        ib.tickPrice = _on_tick_legacy
+
+        original_cleanup = _cleanup
+
+        def _cleanup():  # noqa: F811
+            try:
+                ib.tickPrice = _orig
+            except Exception:
+                pass
+            original_cleanup()
+
     try:
         ib.reqMktData(_CHASE_TICKER_ID, bag, "", True, False, [])
         QTimer.singleShot(500, _on_timeout)
     except Exception:
-        _restore()
+        _cleanup()
         _do_chase_with_price(self, None, reason)
 
 
