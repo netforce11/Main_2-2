@@ -1,6 +1,18 @@
 """
-combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.2
+combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.4
 ──────────────────────────────────────────────────────
+v3.4 변경:
+  [BUG #TICK] 틱 단위 가격 선택 다이얼로그
+    · lmtPrice가 정확히 틱 배수(0.05 / 0.10)이면 → 그냥 주문 (기존 동일)
+    · 틱 배수가 아니면 → 큰 버튼 2개로 사용자에게 선택 요청
+        [ $2.20 내림(floor) ]   [ $2.25 올림(ceil) ]
+    · 사용자가 직접 선택 → 선택된 가격으로 기존 확인창 진행
+    · 취소 버튼 → 주문 취소
+    · 함수: _ask_tick_snap_dialog()
+
+v3.3 변경:
+  [BUG #TICK] lmtPrice 틱 스냅 자동 적용 (v3.4에서 선택 방식으로 전환)
+
 v3.2 변경:
   [FIX-J] _pending_lmt_override 지원
     - _do_send_body 최상단에서 self._pending_lmt_override 체크
@@ -17,12 +29,149 @@ Python 3.8 호환
 """
 
 from __future__ import annotations
+import math
 import json
 from pathlib import Path
-from PyQt5.QtWidgets import QMessageBox
-from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 from combo_order_chaser import register_chaser
 from combo_order_callbacks import connect_order_callbacks
+
+
+# ══════════════════════════════════════════════════════════════
+# [v3.4] 틱 단위 가격 선택 다이얼로그
+# ══════════════════════════════════════════════════════════════
+
+def _is_tick_aligned(price: float, tick: float) -> bool:
+    """price가 tick의 정확한 배수인지 확인 (부동소수점 오차 허용)."""
+    if tick <= 0:
+        return True
+    remainder = abs(price - round(price / tick) * tick)
+    return remainder < tick * 0.001   # 0.1% 오차 허용
+
+
+def _ask_tick_snap_dialog(parent, price: float, tick: float,
+                          bag_action: str) -> float | None:
+    """
+    [v3.4] 입력 가격이 틱 배수가 아닐 때 사용자에게 선택을 요청하는 다이얼로그.
+
+    Args:
+        parent     : QWidget 부모
+        price      : 원본 입력 가격 (틱 배수 아님)
+        tick       : 틱 사이즈 (0.05 / 0.10 / 0.01)
+        bag_action : "BUY" 또는 "SELL"
+
+    Returns:
+        선택된 가격 (float) — 사용자가 하나 선택
+        None               — 취소
+    """
+    import math as _m
+
+    inv  = 1.0 / tick
+    dec  = max(0, -int(_m.floor(_m.log10(tick)))) if tick < 1 else 0
+
+    price_floor = round(_m.floor(price * inv) / inv, dec)
+    price_ceil  = round(_m.ceil(price  * inv) / inv, dec)
+
+    # 최솟값 보정
+    price_floor = max(price_floor, tick)
+    price_ceil  = max(price_ceil,  tick)
+
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("⚠ 주문 가격 조정 필요")
+    dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+    dlg.setStyleSheet(
+        "QDialog { background:#0d1520; color:#ccc; }"
+        "QLabel  { border:none; }")
+    dlg.setMinimumWidth(400)
+
+    v = QVBoxLayout(dlg)
+    v.setContentsMargins(20, 18, 20, 18)
+    v.setSpacing(14)
+
+    # ── 안내 문구 ──────────────────────────────────────────
+    lbl_warn = QLabel(
+        f"입력 가격  <b style='color:#ffd700'>${price:.2f}</b>  은 "
+        f"틱 단위(<b style='color:#aaa'>${tick}</b>)가 아닙니다.<br>"
+        f"아래 두 가격 중 하나를 선택하세요.")
+    lbl_warn.setStyleSheet("color:#ccc; font-size:12px;")
+    lbl_warn.setWordWrap(True)
+    lbl_warn.setAlignment(Qt.AlignCenter)
+    v.addWidget(lbl_warn)
+
+    # ── 버튼 행 ────────────────────────────────────────────
+    h = QHBoxLayout()
+    h.setSpacing(16)
+
+    def _make_btn(snap_price: float, label_top: str,
+                  label_bot: str, color: str) -> QPushButton:
+        btn = QPushButton()
+        btn.setFixedSize(160, 72)
+        btn.setFont(QFont("Consolas", 11, QFont.Bold))
+        btn.setText(f"${snap_price:.2f}\n{label_top}\n{label_bot}")
+        btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background:#0a1a0a; color:{color};"
+            f"  border:2px solid {color}; border-radius:8px;"
+            f"  font-size:13px; font-weight:bold;"
+            f"  padding:6px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background:{color}; color:#000;"
+            f"}}"
+            f"QPushButton:pressed {{"
+            f"  background:{color}; color:#000;"
+            f"  border:2px solid #fff;"
+            f"}}")
+        return btn
+
+    # floor 버튼
+    btn_floor = _make_btn(
+        price_floor,
+        "▼ 내림 (floor)",
+        "매도 유리" if bag_action == "SELL" else "매수 불리",
+        "#4c9fff")
+
+    # ceil 버튼
+    btn_ceil = _make_btn(
+        price_ceil,
+        "▲ 올림 (ceil)",
+        "매수 유리" if bag_action == "BUY" else "매도 불리",
+        "#4cff4c")
+
+    # 선택된 가격 저장
+    _result = [None]
+
+    def _pick(p):
+        _result[0] = p
+        dlg.accept()
+
+    btn_floor.clicked.connect(lambda: _pick(price_floor))
+    btn_ceil.clicked.connect(lambda:  _pick(price_ceil))
+
+    h.addStretch()
+    h.addWidget(btn_floor)
+    h.addWidget(btn_ceil)
+    h.addStretch()
+    v.addLayout(h)
+
+    # ── 취소 버튼 ──────────────────────────────────────────
+    btn_cancel = QPushButton("취소")
+    btn_cancel.setFixedHeight(28)
+    btn_cancel.setStyleSheet(
+        "QPushButton { background:#1a1a1a; color:#888; "
+        "border:1px solid #444; border-radius:4px; font-size:11px; }"
+        "QPushButton:hover { background:#333; color:#ccc; }")
+    btn_cancel.clicked.connect(dlg.reject)
+    v.addWidget(btn_cancel, alignment=Qt.AlignCenter)
+
+    if dlg.exec_() == QDialog.Accepted:
+        return _result[0]
+    return None
+
+
+from PyQt5.QtCore import QTimer
 
 
 # ── conId 캐시 ─────────────────────────────────────────────────
@@ -315,6 +464,30 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
 
         if lmt_price <= 0.0:
             lmt_price = 0.01
+
+    # ── [v3.4] 틱 단위 확인 → 비배수면 선택 다이얼로그 ──────────
+    try:
+        from combo_order_chaser import _get_tick_size
+        _tick_size = _get_tick_size(lmt_price)
+
+        if not _is_tick_aligned(lmt_price, _tick_size):
+            # 틱 배수가 아님 → 사용자에게 floor / ceil 선택 요청
+            self._log(
+                f"   ⚠ 입력가격 ${lmt_price:.2f}이 틱 단위(${_tick_size}) 아님 "
+                f"→ 선택 다이얼로그 표시")
+            chosen = _ask_tick_snap_dialog(self, lmt_price, _tick_size, bag_action)
+            if chosen is None:
+                # 취소
+                self._bag_session = None
+                self._log("   주문 취소 (틱 가격 선택 취소)")
+                return
+            self._log(f"   틱 가격 선택: ${lmt_price:.2f} → ${chosen:.2f}")
+            lmt_price = chosen
+        else:
+            self._log(f"   틱 단위 확인: ${lmt_price:.2f} ✅ (틱={_tick_size})")
+
+    except Exception as _e:
+        self._log(f"   ⚠ 틱 단위 확인 실패 ({_e}) — 원본 가격 사용: ${lmt_price:.2f}")
 
     type_label   = "데빗 (지불)" if bag_action == "BUY" else "크레딧 (수취)"
     price_source = " [직접입력]" if is_manual_price else " [자동/Mid]"
