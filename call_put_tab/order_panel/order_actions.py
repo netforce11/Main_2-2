@@ -16,7 +16,7 @@ from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QMessageBox, QTableWidgetItem
 from PyQt5.QtGui import QColor
 
-from order_panel.helpers import _kst_now
+from .helpers import _kst_now
 
 
 class OrderActionsMixin:
@@ -66,6 +66,12 @@ class OrderActionsMixin:
                 ib.openOrderEnd = ib._orig_openOrderEnd
 
         def _on_open_order_end():
+            # [버그수정 P2-④] 정상 수신 시 타임아웃 타이머 중지
+            # 기존: singleShot이라 취소 불가 → 5초 후 _populate_open_order_tables 중복 호출
+            # 수정: 인스턴스 타이머를 stop()하여 이중 렌더링 방지
+            t = getattr(self, '_oo_timeout_timer', None)
+            if t is not None:
+                t.stop()
             _restore_handlers()
             QTimer.singleShot(0, self._populate_open_order_tables)
 
@@ -78,11 +84,21 @@ class OrderActionsMixin:
             self._log("📋 미체결 주문 조회 요청...")
         except Exception as e:
             self._log(f"❌ 주문 조회 오류: {e}")
-        # 안전망: 5초 후 강제 복원 + 테이블 갱신
-        QTimer.singleShot(5000, lambda: (
+
+        # [버그수정 P2-④] 안전망 타이머를 인스턴스 변수로 보관
+        # openOrderEnd 정상 수신 시 _on_open_order_end에서 stop() 호출됨
+        if not hasattr(self, '_oo_timeout_timer'):
+            self._oo_timeout_timer = QTimer(self)
+            self._oo_timeout_timer.setSingleShot(True)
+        else:
+            self._oo_timeout_timer.stop()
+        self._oo_timeout_timer.timeout.disconnect() if self._oo_timeout_timer.receivers(
+            self._oo_timeout_timer.timeout) > 0 else None
+        self._oo_timeout_timer.timeout.connect(lambda: (
             _restore_handlers(),
             self._populate_open_order_tables()
         ) if not self._fetch_oo_done else None)
+        self._oo_timeout_timer.start(5000)
 
     def _populate_open_order_tables(self):
         def _mk(text, color="#ccc"):

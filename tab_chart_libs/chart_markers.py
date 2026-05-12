@@ -6,7 +6,7 @@ chart_markers.py — 시간 마커 + 차트 캡쳐
   add_time_marker()     — ▼ 마커 버튼 핸들러
   on_marker_chk()       — 마커 체크박스 해제 → 삭제
   redraw_time_markers() — 차트 재렌더링 후 마커 복원
-  capture_chart()       — 📷 차트 캡쳐 → C:\data\chart_save\ 저장 (신규)
+  capture_chart()       — 📷 차트 캡쳐 → C:/data/chart_save/ 저장 (신규)
 """
 
 import os as _os, sys as _sys
@@ -28,8 +28,12 @@ try:
 except ImportError:
     PG = False
 
-# 캡쳐 저장 경로
-CAPTURE_DIR = Path(r"C:\data\chart_save")
+# 캡쳐 저장 경로 — [수정] 크로스플랫폼 (기존: Windows 전용 경로)
+import platform as _platform
+if _platform.system() == "Windows":
+    CAPTURE_DIR = Path(r"C:\data\chart_save")
+else:
+    CAPTURE_DIR = Path("/home/netforce/US_Data/chart_save")
 
 
 def parse_time_input(txt: str) -> str:
@@ -182,40 +186,6 @@ def redraw_time_markers(self):
         self._time_markers[slot]['line'] = marker
 
 
-def capture_chart(self):
-    """
-    📷 차트 영역(gfx 위젯)만 캡쳐 → C:\\data\\chart_save\\ 저장.
-    파일명: {조회날짜}_{캡쳐시각}_{심볼}.png
-    예)    20260413_143022_SPY.png
-    """
-    if not PG or not hasattr(self, 'gfx'):
-        QMessageBox.warning(self, "캡쳐 불가", "차트가 초기화되지 않았습니다.")
-        return
 
-    try:
-        CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
-    except Exception as e:
-        QMessageBox.critical(self, "캡쳐 오류", f"저장 폴더 생성 실패:\n{e}")
-        return
-
-    # 파일명 구성
-    chart_date = (self.selected_date.strftime("%Y%m%d")
-                  if self.selected_date else
-                  datetime.now().strftime("%Y%m%d"))
-    capture_ts = datetime.now().strftime("%H%M%S")
-    sym        = getattr(self, 'current_sym', 'chart').upper()
-    fname      = f"{chart_date}_{capture_ts}_{sym}.png"
-    fpath      = CAPTURE_DIR / fname
-
-    try:
-        # gfx 위젯 전체를 QPixmap으로 grab
-        pixmap = self.gfx.grab()
-        if pixmap.isNull():
-            QMessageBox.warning(self, "캡쳐 오류", "빈 이미지가 반환되었습니다.")
-            return
-        pixmap.save(str(fpath), "PNG")
-        if hasattr(self, 'lbl_hline_info'):
-            self.lbl_hline_info.setText(f"📷 캡쳐 저장: {fname}")
-        print(f"[ChartCapture] 저장 완료: {fpath}")
-    except Exception as e:
-        QMessageBox.critical(self, "캡쳐 오류", f"저장 실패:\n{e}")
+# [분리] capture_chart → chart_capture.py
+from chart_capture import capture_chart  # noqa: F401

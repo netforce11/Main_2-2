@@ -229,7 +229,10 @@ class OrderUtilMixin:
             sell_price_w.setText(avg if avg else "")
         if sell_qty_w:
             try:    sell_qty_w.setValue(abs(int(float(qty))))
-            except: sell_qty_w.setValue(1)
+            except Exception as _qe:
+                # [버그수정 P3-⑥] 조용히 1계약으로 세팅하던 폴백에 로그 추가
+                self._log(f"⚠ sell_qty setValue 실패 (qty={qty!r}): {_qe} → 1계약으로 폴백")
+                sell_qty_w.setValue(1)
 
         # 상태 레이블 업데이트
         lbl = getattr(self, 'lbl_sell_status', None)

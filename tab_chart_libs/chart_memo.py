@@ -1,20 +1,13 @@
 """
-chart_memo.py — 날짜별 메모 관리 모듈  v1.0
+chart_memo.py — 날짜별 메모 패널 UI (진입점)
 ════════════════════════════════════════════════════════════════
-기능:
-  - 날짜별 메모 추가 / 수정 / 삭제
-  - JSON 파일로 영구 저장
-    저장 경로: /home/netforce/US_Data/chart_memos.json
-  - 캘린더 날짜 클릭 시 해당 날짜 메모 자동 출력
-  - 메모 패널 토글 (열기/닫기)
+[분리] v2:
+  chart_memo_io.py      — JSON 저장/로드 헬퍼
+  chart_memo_actions.py — 저장/삭제/상태 핸들러
+  이 파일 — build_memo_panel, toggle_memo_panel, on_memo_date_changed
 
-외부 API:
-  build_memo_panel(self) → QWidget   사이드바에 삽입할 패널
-  toggle_memo_panel(self)             패널 열기/닫기 토글
-  on_memo_date_changed(self, qdate)   캘린더 클릭 시 호출 → 해당일 메모 표시
-════════════════════════════════════════════════════════════════
+외부에서 이 파일만 import 하면 됩니다 (하위 호환).
 """
-
 import json
 from pathlib import Path
 
@@ -26,45 +19,11 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont
 
-# ── 저장 경로 ────────────────────────────────────────────────
+from chart_memo_io      import _load_memos, _save_memos, _date_key  # noqa: F401
+from chart_memo_actions import _memo_save, _memo_delete, _set_memo_status  # noqa: F401
+
 _MEMO_FILE = Path("/home/netforce/US_Data/chart_memos.json")
 
-
-# ══════════════════════════════════════════════════════════════
-# 내부 저장/로드 헬퍼
-# ══════════════════════════════════════════════════════════════
-def _load_memos() -> dict:
-    """JSON 파일에서 메모 딕셔너리 로드. {날짜문자열: 메모내용}"""
-    try:
-        if _MEMO_FILE.exists():
-            return json.loads(_MEMO_FILE.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"[Memo] 로드 오류: {e}")
-    return {}
-
-
-def _save_memos(memos: dict):
-    """메모 딕셔너리를 JSON 파일로 저장."""
-    try:
-        _MEMO_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _MEMO_FILE.write_text(
-            json.dumps(memos, ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8"
-        )
-    except Exception as e:
-        print(f"[Memo] 저장 오류: {e}")
-
-
-def _date_key(qdate) -> str:
-    """QDate → 'YYYY-MM-DD' 문자열"""
-    if isinstance(qdate, QDate):
-        return qdate.toString("yyyy-MM-dd")
-    return str(qdate)
-
-
-# ══════════════════════════════════════════════════════════════
-# 패널 빌드
-# ══════════════════════════════════════════════════════════════
 def build_memo_panel(self) -> QWidget:
     """
     메모 패널 QWidget 생성 후 반환.
@@ -240,61 +199,3 @@ def on_memo_date_changed(self, qdate):
 
 # ══════════════════════════════════════════════════════════════
 # 저장 / 삭제
-# ══════════════════════════════════════════════════════════════
-def _memo_save(self):
-    """현재 날짜에 메모 저장."""
-    key = getattr(self, "_memo_current_date", None)
-    if not key:
-        _set_memo_status(self, "⚠ 캘린더에서 날짜를 먼저 선택하세요.", error=True)
-        return
-
-    edit = getattr(self, "_memo_edit", None)
-    text = edit.toPlainText().strip() if edit else ""
-
-    if not text:
-        _set_memo_status(self, "⚠ 내용이 비어 있습니다.", error=True)
-        return
-
-    # 메모 딕셔너리 갱신 후 저장
-    self._memo_data[key] = text
-    _save_memos(self._memo_data)
-    _set_memo_status(self, f"💾 저장 완료 ({key})", error=False)
-
-
-def _memo_delete(self):
-    """현재 날짜의 메모 삭제 (확인 후)."""
-    key = getattr(self, "_memo_current_date", None)
-    if not key:
-        _set_memo_status(self, "⚠ 캘린더에서 날짜를 먼저 선택하세요.", error=True)
-        return
-
-    if key not in self._memo_data:
-        _set_memo_status(self, "삭제할 메모가 없습니다.", error=True)
-        return
-
-    reply = QMessageBox.question(
-        None, "메모 삭제",
-        f"{key} 의 메모를 삭제하시겠습니까?",
-        QMessageBox.Yes | QMessageBox.No,
-        QMessageBox.No
-    )
-    if reply != QMessageBox.Yes:
-        return
-
-    del self._memo_data[key]
-    _save_memos(self._memo_data)
-
-    edit = getattr(self, "_memo_edit", None)
-    if edit:
-        edit.clear()
-    _set_memo_status(self, f"🗑 삭제 완료 ({key})", error=True)
-
-
-def _set_memo_status(self, msg: str, error: bool = False):
-    """메모 상태 라벨 텍스트 & 색상 설정."""
-    lbl = getattr(self, "_memo_status_lbl", None)
-    if lbl is None:
-        return
-    lbl.setText(msg)
-    color = "#ef5350" if error else "#4caf50"
-    lbl.setStyleSheet(f"color:{color};font-size:10px;padding-left:2px;")

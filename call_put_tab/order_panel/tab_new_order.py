@@ -15,8 +15,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
-from order_panel.helpers              import _animate_press
-from order_panel.tab_new_order_buttons import build_new_order_buttons
+from .helpers import _animate_press
+from .tab_new_order_buttons import build_new_order_buttons
 
 
 def build_new_order_tab(m) -> QWidget:

@@ -49,6 +49,13 @@ def fetch_ibkr_history(self, symbol, tgt):
     c     = make_und_contract(symbol)
     end_s = datetime.combine(tgt, time(23, 59, 59)).strftime("%Y%m%d %H:%M:%S")
     self.df_raw.clear()
+
+    # [수정] 이전 연결이 남아있으면 먼저 해제 (반복 조회 시 중복 연결 방지)
+    try: bridge.hist_bar.disconnect(_on_ibkr_hist_bar.__get__(self))
+    except Exception: pass
+    try: bridge.hist_end.disconnect(_on_ibkr_hist_end.__get__(self))
+    except Exception: pass
+
     self.mw.ib.reqHistoricalData(
         REQ_HIST, c, end_s, "1 D", "1 min", "TRADES", 1, 1, False, [])
     bridge.hist_bar.connect(_on_ibkr_hist_bar.__get__(self))
@@ -161,42 +168,6 @@ def download_day(self, symbol: str, tgt, fp):
         print(f"[ChartTab] _download_day: {e}")
 
 
-# ── 강제 재다운로드 ──────────────────────────────────────
 
-def force_redownload(self):
-    """기존 CSV 캐시를 삭제하고 Polygon API에서 강제 재다운로드."""
-    if not PANDAS:
-        QMessageBox.warning(self, "오류", "pandas 가 설치되지 않았습니다."); return
-    symbol = self.sym_in.text().upper().strip()
-    if not symbol:
-        QMessageBox.warning(self, "오류", "종목 코드를 입력하세요."); return
-    qd  = self.calendar.selectedDate()
-    from datetime import date
-    tgt = date(qd.year(), qd.month(), qd.day())
-    month_str = tgt.strftime("%Y%m")
-    from pathlib import Path
-    csv_path = DATA_ROOT / symbol / f"{month_str}.csv"
-    # 기존 CSV 삭제
-    if csv_path.exists():
-        try:
-            csv_path.unlink()
-            print(f"[ChartTab] 캐시 삭제: {csv_path}")
-        except Exception as e:
-            print(f"[ChartTab] 캐시 삭제 실패: {e}")
-    # 재다운로드 후 표시
-    download_day(self, symbol, tgt, csv_path)
-    from chart_data import update_display, push_trend_df
-    df = load_day_df(self, symbol, tgt)
-    if df is not None and not df.empty:
-        self.df = df
-        self.df_raw = df.to_dict('records')
-        self.status_lbl.setText(f"📅 {tgt} 강제 재다운로드 완료 (ET)")
-        update_display(self)
-        try:
-            import pyqtgraph as pg
-            self.p1.autoRange()
-        except Exception: pass
-        push_trend_df(self)
-    else:
-        QMessageBox.warning(self, "데이터 없음",
-            f"{tgt} 재다운로드 실패.\n(휴장일 또는 API 오류)")
+# [분리] force_redownload → chart_tab_ibkr_force.py
+from chart_tab_ibkr_force import force_redownload  # noqa: F401

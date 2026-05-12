@@ -108,23 +108,25 @@ def draw_vol_surge(self, candle_data, vol_data):
 
 
 def _redraw_vol_bars(self, vol_data, mask):
-    """p2 거래량 바를 급증 봉은 주황, 나머지는 기본색으로 재그림."""
+    """
+    p2 거래량 바 재그림.
+    [수정] 봉 개수만큼 addItem → brushes 리스트 단일 BarGraphItem 으로 최적화
+    """
     if not vol_data:
         return
-
     for item in getattr(self, '_vol_bar_items', []):
-        try:
-            self.p2.removeItem(item)
-        except Exception:
-            pass
-    self._vol_bar_items = []
+        try: self.p2.removeItem(item)
+        except Exception: pass
 
-    for i, (x, v) in enumerate(vol_data):
-        color = COLOR_SURGE if (i < len(mask) and mask[i]) else COLOR_VOL_NORM
-        bar = pg.BarGraphItem(x=[x], height=[v], width=0.6,
-                               brush=color, pen=pg.mkPen(None))
-        self.p2.addItem(bar)
-        self._vol_bar_items.append(bar)
+    xs      = [x for x, _ in vol_data]
+    heights = [v for _, v in vol_data]
+    brushes = [COLOR_SURGE if (i < len(mask) and mask[i]) else COLOR_VOL_NORM
+               for i in range(len(vol_data))]
+
+    item = pg.BarGraphItem(x=xs, height=heights, width=0.6,
+                           brushes=brushes, pen=pg.mkPen(None))
+    self.p2.addItem(item)
+    self._vol_bar_items = [item]
 
 
 def _draw_plain_vol(self, vol_data):

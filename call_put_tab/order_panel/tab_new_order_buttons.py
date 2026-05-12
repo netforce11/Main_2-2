@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
-from order_panel.helpers import _animate_press
+from .helpers import _animate_press
 
 
 def build_new_order_buttons(m, root_v) -> None:

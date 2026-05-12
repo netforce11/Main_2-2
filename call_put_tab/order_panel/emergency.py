@@ -111,7 +111,7 @@ class EmergencyMixin:
         def _fire_orders(pos_buf):
             from ibapi.order import Order as IBOrder
             try:
-                from order_logic import get_emergency_sell_lmt_price
+                from call_put_tab.order_logic import get_emergency_sell_lmt_price
             except ImportError:
                 import math as _m
                 def get_emergency_sell_lmt_price(bid, sym="", ticks_below=2):

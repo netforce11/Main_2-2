@@ -49,6 +49,7 @@ COLOR_DIM    = "#aaaaaa"
 _tick_times  = deque()   # Last 틱
 _quote_times = deque()   # Bid/Ask 변경
 _current_sym = ""        # 현재 구독 종목 (DB 저장용)
+_db_batch: list = []     # [수정] 배치 버퍼 (30초치 모아서 한 번에 INSERT)
 
 
 def on_ibkr_tick(tick_type: int, price: float):
@@ -127,7 +128,7 @@ if PG:
 
         # 2초 타이머
         self._ts_timer = QTimer(self)
-        self._ts_timer.timeout.connect(lambda: _update(self))
+        self._ts_timer.timeout.connect(lambda: __import__('chart_tick_updater')._update(self))
         self._ts_timer.start(TIMER_MS)
 
     def stop_tick_speed(self):
@@ -140,96 +141,3 @@ else:
     def stop_tick_speed(self): pass
 
 
-def _update(self):
-    """2초마다 호출 — 집계 + 라벨 갱신 + DB 저장."""
-    if not PG:
-        return
-
-    now = time.time()
-    _purge(now - max(WINDOWS) - 5)
-
-    counts = {}
-    for w in WINDOWS:
-        qc = _count(_quote_times, w)   # 호가
-        ec = _count(_tick_times,  w)   # 체결 (Last)
-        counts[w] = {"quote": qc, "exec": ec}
-
-        hist = self._ts_hist[w]
-        hist["quote"].append(qc)
-        hist["exec"].append(ec)
-        if len(hist["quote"]) > HISTORY_LEN: hist["quote"].pop(0)
-        if len(hist["exec"])  > HISTORY_LEN: hist["exec"].pop(0)
-
-    x = self._ts_x
-    self._ts_x += 1
-
-    # ── 윈도우별 라벨 갱신 ──────────────────────────────────
-    # y 위치: 호가=상단(0.68), 체결=하단(0.35)
-    # x 위치: 10s=좌, 30s=중, 60s=우
-    vr    = self.p3.getViewBox().viewRange()
-    x_min = vr[0][0]
-    x_span = max(vr[0][1] - vr[0][0], 1)
-    col_w  = x_span / len(WINDOWS)
-
-    for i, w in enumerate(WINDOWS):
-        qc = counts[w]["quote"]
-        ec = counts[w]["exec"]
-        hist = self._ts_hist[w]
-
-        q_color = _get_color(qc, hist["quote"])
-        e_color = _get_color(ec, hist["exec"])
-        q_ratio = _ratio_str(qc, hist["quote"])
-        e_ratio = _ratio_str(ec, hist["exec"])
-
-        lx = x_min + col_w * i + col_w * 0.02
-        lbl = self._ts_labels[w]
-
-        # 호가: 상단, 체결: 하단
-        lbl["quote"].setText(f"{w}s 호가 {qc:>3} {q_ratio}", color=q_color)
-        lbl["exec"].setText( f"{w}s 체결 {ec:>3} {e_ratio}", color=e_color)
-        lbl["quote"].setPos(lx, 1.0)
-        lbl["exec"].setPos( lx, 0.5)
-
-        # 히스토리 바: 10s 윈도우만 (호가=상단 절반, 체결=하단 절반)
-        if w == 10:
-            if qc > 0:
-                b = pg.BarGraphItem(x=[x], height=[0.44], width=0.8,
-                                     y0=0.55, brush=q_color, pen=pg.mkPen(None))
-                self.p3.addItem(b)
-                self._ts_bars[w]["quote"].append(b)
-            if ec > 0:
-                b2 = pg.BarGraphItem(x=[x], height=[0.44], width=0.8,
-                                      y0=0.05, brush=e_color, pen=pg.mkPen(None))
-                self.p3.addItem(b2)
-                self._ts_bars[w]["exec"].append(b2)
-            _trim_bars(self.p3, self._ts_bars[w]["quote"], HISTORY_LEN)
-            _trim_bars(self.p3, self._ts_bars[w]["exec"],  HISTORY_LEN)
-
-    # ── DB 저장 ───────────────────────────────────────────────
-    _save_to_db(counts)
-
-
-def _save_to_db(counts: dict):
-    """tick_speed 테이블에 현재 집계값 저장."""
-    try:
-        from db_manager import DBManager
-        db = DBManager.get()
-        db.insert_tick_speed(
-            symbol    = _current_sym or "UNKNOWN",
-            w10_tick  = counts[10]["exec"],
-            w10_quote = counts[10]["quote"],
-            w30_tick  = counts[30]["exec"],
-            w30_quote = counts[30]["quote"],
-            w60_tick  = counts[60]["exec"],
-            w60_quote = counts[60]["quote"],
-        )
-    except Exception:
-        pass   # DB 미연결 시 조용히 패스
-
-
-def _trim_bars(plot, bar_list: list, max_len: int):
-    while len(bar_list) > max_len:
-        try:
-            plot.removeItem(bar_list.pop(0))
-        except Exception:
-            bar_list.pop(0) if bar_list else None

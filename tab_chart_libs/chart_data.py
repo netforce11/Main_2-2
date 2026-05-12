@@ -54,121 +54,21 @@ except Exception:
 
 from chart_theme import _THEME
 from chart_workers import CandlestickItem
+# [분리] 시간 유틸 → chart_time_utils.py
+from chart_time_utils import et_to_kst_str, fmt_time, on_range_changed
 
-# ── 순환참조 방지: chart_tab_ibkr 은 내부에서 lazy import 하므로
-#    여기서는 파일 상단에 한 번만 import (chart_tab_ibkr → chart_data 방향 없음)
+# ── 순환참조 방지: lazy import 사용 (chart_tab_ibkr → chart_data 방향 없음)
 from chart_tab_ibkr import (
     fetch_ibkr_history, fetch_polygon_history,
     load_day_df, download_day,
 )
 
 
-# ── KST 변환 ────────────────────────────────────────────────
-
-def et_to_kst_str(self, et_dt) -> str:
-    try:
-        d = et_dt.date() if hasattr(et_dt, 'date') else et_dt
-        year = d.year
-        mar1 = date(year, 3, 1); sun_count = 0
-        for day_offset in range(31):
-            dd = mar1 + timedelta(days=day_offset)
-            if dd.weekday() == 6:
-                sun_count += 1
-                if sun_count == 2: dst_start = dd; break
-        nov1 = date(year, 11, 1)
-        for day_offset in range(7):
-            dd = nov1 + timedelta(days=day_offset)
-            if dd.weekday() == 6: dst_end = dd; break
-        is_dst  = dst_start <= d < dst_end
-        offset_h = 13 if is_dst else 14
-        kst = et_dt + timedelta(hours=offset_h)
-        return kst.strftime('%m/%d %H:%M')
-    except Exception:
-        return "??:??"
-
-
-def fmt_time(self, et_dt) -> str:
-    use_kst = hasattr(self, 'kst_chk') and self.kst_chk.isChecked()
-    return et_to_kst_str(self, et_dt) if use_kst else et_dt.strftime('%m/%d %H:%M')
-
-
-def on_range_changed(self, vb, ranges):
-    if not hasattr(self, 'lbl_zoom_time'): return
-    if not hasattr(self, '_x_time_map') or not self._x_time_map: return
-    try:
-        xmin, xmax = ranges[0]
-        keys = sorted(self._x_time_map.keys())
-        vis  = [k for k in keys if xmin <= k <= xmax]
-        if vis:
-            t_start = self._x_time_map.get(vis[0], "")
-            t_end   = self._x_time_map.get(vis[-1], "")
-            self.lbl_zoom_time.setText(
-                f"📊 {t_start} ~ {t_end}  ({len(vis)}봉)")
-    except Exception:
-        pass
-
-
 # ── 캘린더 / 연속보기 ─────────────────────────────────────
 
-def on_calendar(self, qdate=None):
-    from chart_rt import stop_rt
-    stop_rt(self)
-    qd  = self.calendar.selectedDate()
-    tgt = date(qd.year(), qd.month(), qd.day())
-    self.selected_date = tgt
-    sym = self.sym_in.text().upper()
 
-    # ── 일봉 뷰 활성 중이면 일봉도 자동 갱신 ─────────────────
-    if getattr(self, '_daily_view_active', False):
-        from chart_daily import load_daily_data
-        load_daily_data(self)
-        return   # 일봉 모드일 때는 분봉 로드 생략
-
-    if self._multi_day_active:
-        do_multi_day(self, self._multi_day_count); return
-    if self.mode == "ibkr" and self.mw.connected:
-        fetch_ibkr_history(self, sym, tgt)
-    else:
-        fetch_polygon_history(self, sym, tgt)
-
-
-def on_multi_chk(self, days: int, chk, state: int):
-    if state == Qt.Checked:
-        for d, c in self.multi_chks.items():
-            if d != days:
-                c.blockSignals(True); c.setChecked(False); c.blockSignals(False)
-        self._multi_day_active = True
-        self._multi_day_count  = days
-        do_multi_day(self, days)
-    else:
-        self._multi_day_active = False
-        self._multi_day_count  = 1
-        on_calendar(self)
-
-
-def do_multi_day(self, num_days: int):
-    symbol   = self.sym_in.text().upper().strip()
-    qd       = self.calendar.selectedDate()
-    end_date = date(qd.year(), qd.month(), qd.day())
-    frames, collected, d, attempts = [], 0, end_date, 0
-    while collected < num_days and attempts < num_days + 14:
-        attempts += 1
-        f = load_day_df(self, symbol, d)
-        if f is not None and not f.empty:
-            frames.insert(0, f); collected += 1
-        d -= timedelta(days=1)
-    if not frames:
-        QMessageBox.warning(self, "데이터 없음", "연속 데이터를 불러올 수 없습니다.")
-        return
-    self.df_raw = []
-    for f in frames:
-        self.df_raw.extend(f.to_dict('records'))
-    self.selected_date = end_date
-    self.status_lbl.setText(f"📅 {num_days}일 연속 (ET, 정규장)")
-    update_display(self, force_regular=True)
-    if PG: self.p1.autoRange()
-    push_trend_df(self)
-
+# [분리] 캘린더/연속보기 → chart_data_nav.py
+from chart_data_nav import on_calendar, on_multi_chk, do_multi_day  # noqa: F401
 
 def update_display(self, force_regular=False):
     raw = self.df_raw
@@ -254,14 +154,25 @@ def update_display(self, force_regular=False):
     redraw_time_markers(self)
     redraw_hlines(self)
 
-    # current_processed: 체결 마커 등이 참조하는 봉 목록 (전체 봉 기준)
-    # [(r_dict, et, eok), ...] — hi_rows 아닌 filtered 전체
-    self.current_processed = [
-        {**r, 'h': r.get('h', r.get('high', 0)),
-               'l': r.get('l', r.get('low',  0)),
-               't': r.get('t', 0)}
-        for r, et in filtered
-    ]
+    # current_processed: (r_dict, et_datetime, eok_float) 튜플 리스트
+    # peak1/peak2/update_peak3 및 chart_exec_marker 모두 이 형식 사용
+    self.current_processed = []
+    for r, et in filtered:
+        eok_val = (r.get('c', r.get('close', 0)) *
+                   r.get('v', r.get('volume', 0)) * fx) / 100_000_000
+        # exec_marker 가 참조하는 키 정규화
+        r_norm = {**r,
+                  'h': r.get('h', r.get('high', 0)),
+                  'l': r.get('l', r.get('low',  0)),
+                  't': r.get('t', 0)}
+        self.current_processed.append((r_norm, et, eok_val))
+
+    # [수정] self.df 갱신 — push_trend_df 가 오래된 데이터를 보내는 버그 수정
+    if PANDAS and filtered:
+        try:
+            self.df = pd.DataFrame([r for r, _ in filtered])
+        except Exception:
+            pass
 
     # ── 기능5: 체결 마커 오버레이 ────────────────────────────
     try:
@@ -270,62 +181,11 @@ def update_display(self, force_regular=False):
     except Exception as _e:
         pass
 
-    hi_sorted = sorted(hi_rows, key=lambda x: -x[3])
-    self.table_l.setRowCount(len(hi_sorted))
-    for ri, (i, r, et, eok) in enumerate(hi_sorted):
-        et_s = et.strftime('%H:%M:%S')
-        vals = [et_s,
-                f"{r.get('o', 0):,.2f}", f"{r.get('h', 0):,.2f}",
-                f"{r.get('l', 0):,.2f}", f"{r.get('c', 0):,.2f}",
-                f"{eok:,.2f}"]
-        for ci, v in enumerate(vals):
-            it = QTableWidgetItem(str(v))
-            it.setTextAlignment(Qt.AlignCenter)
-            it.setForeground(QColor(C['fg']))
-            self.table_l.setItem(ri, ci, it)
-            if ci == 5:
-                bg = (C['row_hi'] if eok >= 5000
-                      else (C['row_mid'] if eok >= 3000 else C['row_lo']))
-                self.table_l.item(ri, ci).setBackground(QColor(bg))
+
+    # [분리] 테이블 렌더링
+    from chart_data_render import _render_left_table
+    _render_left_table(self, hi_rows, fx, C)
 
 
-def append_right(self, data, eok):
-    C = _THEME[self.dark_mode]
-    from core import ts
-    try:
-        et_s = (pd.Timestamp(data['s'], unit='ms', tz='UTC')
-                .tz_convert('America/New_York').strftime('%H:%M:%S')
-                if PANDAS else ts())
-    except Exception:
-        et_s = ts()
-    r = self.table_r.rowCount(); self.table_r.insertRow(r)
-    vals = [et_s,
-            f"{data.get('o', 0):,.2f}", f"{data.get('h', 0):,.2f}",
-            f"{data.get('l', 0):,.2f}", f"{data.get('c', 0):,.2f}",
-            f"{eok:,.2f}", "실시간"]
-    for ci, v in enumerate(vals):
-        it = QTableWidgetItem(str(v))
-        it.setTextAlignment(Qt.AlignCenter)
-        it.setForeground(QColor(C['fg']))
-        self.table_r.setItem(r, ci, it)
-        if ci == 5:
-            bg = (C['row_hi'] if eok >= 5000
-                  else (C['row_mid'] if eok >= 3000 else C['row_lo']))
-            self.table_r.item(r, ci).setBackground(QColor(bg))
-    self.table_r.scrollToBottom()
-
-
-def clr_right(self):
-    self.table_r.setRowCount(0)
-
-
-def push_trend_df(self):
-    if not PANDAS or self.df is None or self.df.empty: return
-    try:
-        combo = getattr(self.mw, 'tab_combo', None)
-        if combo and hasattr(combo, 'set_trend_df'):
-            col_map = {'o': 'open', 'h': 'high', 'l': 'low',
-                       'c': 'close', 'v': 'volume'}
-            combo.set_trend_df(self.df.rename(columns=col_map))
-    except Exception as e:
-        print(f"[ChartGrid] _push_trend_df 오류: {e}")
+# ── re-export: tab_chart.py 가 chart_data 에서 직접 임포트하는 함수들 ──
+from chart_data_table import append_right, clr_right, push_trend_df  # noqa: F401

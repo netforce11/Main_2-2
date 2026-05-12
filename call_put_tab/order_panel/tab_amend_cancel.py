@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
-from order_panel.helpers import _animate_press, _kst_now
+from .helpers import _animate_press, _kst_now
 
 _TBL_S = (
     "QTableWidget{background:#05050f;color:#ccc;"

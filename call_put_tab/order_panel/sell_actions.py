@@ -13,7 +13,7 @@ order_panel/sell_actions.py — 빠른매도·지정가매도·bump·잔고패�
 
 from PyQt5.QtWidgets import QMessageBox
 
-from order_panel.sell_place import SellPlaceMixin
+from .sell_place import SellPlaceMixin
 
 
 class SellActionsMixin(SellPlaceMixin):
@@ -92,7 +92,12 @@ class SellActionsMixin(SellPlaceMixin):
         self._log(f"📤 빠른매도: _ps_side={side} _ps_strike={strike_txt}")
         if not side or not strike_txt:
             if lbl: lbl.setText("⚠ 잔고 행을 먼저 클릭하세요"); return
-        qty = sell_qty_w.value() if sell_qty_w else 1
+        # [버그수정 P1-②] sell_qty 위젯 None 시 qty=1 폴백 제거 → 조기 리턴
+        if not sell_qty_w:
+            msg = "❌ 수량 위젯 초기화 안 됨 — 탭을 닫았다 다시 여세요"
+            if lbl: lbl.setText(msg)
+            self._log("❌ 빠른매도 중단: sell_qty 위젯 없음"); return
+        qty = sell_qty_w.value()
         if not self.mw.connected:
             QMessageBox.warning(self, "미연결", "TWS에 먼저 연결하세요."); return
         bid_price = getattr(self, '_pp_opt_bid', None)
@@ -127,7 +132,11 @@ class SellActionsMixin(SellPlaceMixin):
         if not side or not strike_txt:
             if lbl: lbl.setText("⚠ 잔고 행을 먼저 클릭하세요"); return
         price_txt = sell_price_w.text().strip() if sell_price_w else ""
-        qty       = sell_qty_w.value()           if sell_qty_w   else 1
+        # [버그수정 P1-②] sell_qty 위젯 None 시 qty=1 폴백 제거 → 조기 리턴
+        if not sell_qty_w:
+            if lbl: lbl.setText("❌ 수량 위젯 초기화 안 됨 — 탭을 닫았다 다시 여세요")
+            self._log("❌ 지정가매도 중단: sell_qty 위젯 없음"); return
+        qty = sell_qty_w.value()
         if not price_txt:
             if lbl: lbl.setText("⚠ 매도 가격을 입력하세요"); return
         try:

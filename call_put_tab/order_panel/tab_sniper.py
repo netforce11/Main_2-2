@@ -16,8 +16,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QObject, QEvent
 
-from order_panel.helpers          import _animate_press
-from order_panel.tab_sniper_order import build_sniper_order_section
+from .helpers import _animate_press
+from .tab_sniper_order import build_sniper_order_section
 
 
 def build_sniper_tab(m, tab_w) -> None:

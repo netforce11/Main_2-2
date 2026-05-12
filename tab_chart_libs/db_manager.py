@@ -5,12 +5,59 @@ db_manager.py — SQLite 헬퍼 (싱글턴)
   pnl_history  — 체결/PnL 이력
   watch_alerts — 감시 알람 이력
   tick_speed   — 틱/호가 속도 집계
+
+[수정] v2:
+  - DB 디렉터리 자동 생성
+  - __init__ 에서 스키마 자동 생성
+  - db_schema.py 스키마 통합 (중복 제거)
+  - insert_tick_speed_batch() 추가
 """
 import sqlite3
 import os
 from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "data", "trades.db")
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS pnl_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          TEXT NOT NULL,
+    symbol      TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    qty         INTEGER NOT NULL,
+    price       REAL NOT NULL,
+    commission  REAL DEFAULT 0.0,
+    pnl         REAL DEFAULT 0.0,
+    strategy    TEXT DEFAULT '',
+    spx_price   REAL DEFAULT 0.0,
+    vix         REAL DEFAULT 0.0,
+    note        TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS watch_alerts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          TEXT NOT NULL,
+    symbol      TEXT NOT NULL,
+    alert_type  TEXT NOT NULL,
+    condition   TEXT DEFAULT '',
+    triggered   INTEGER DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS tick_speed (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          TEXT NOT NULL,
+    symbol      TEXT NOT NULL,
+    w10_tick    INTEGER DEFAULT 0,
+    w10_quote   INTEGER DEFAULT 0,
+    w30_tick    INTEGER DEFAULT 0,
+    w30_quote   INTEGER DEFAULT 0,
+    w60_tick    INTEGER DEFAULT 0,
+    w60_quote   INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pnl_ts     ON pnl_history(ts);
+CREATE INDEX IF NOT EXISTS idx_pnl_symbol ON pnl_history(symbol);
+CREATE INDEX IF NOT EXISTS idx_alert_ts   ON watch_alerts(ts);
+CREATE INDEX IF NOT EXISTS idx_tick_ts    ON tick_speed(ts);
+CREATE INDEX IF NOT EXISTS idx_tick_sym   ON tick_speed(symbol);
+"""
 
 
 class DBManager:
@@ -23,8 +70,11 @@ class DBManager:
         return cls._instance
 
     def __init__(self):
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)   # [수정] 디렉터리 자동 생성
         self._conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._conn.executescript(_SCHEMA)                        # [수정] 테이블 자동 생성
+        self._conn.commit()
 
     # ── PnL ──────────────────────────────────────────────────
     def insert_trade(self, symbol, action, qty, price,
@@ -83,27 +133,27 @@ class DBManager:
                           w10_tick, w10_quote,
                           w30_tick, w30_quote,
                           w60_tick, w60_quote):
-        """2초마다 chart_tick_speed._save_to_db() 에서 호출."""
         ts = datetime.now().isoformat(timespec="seconds")
         self._conn.execute("""
             INSERT INTO tick_speed
-            (ts, symbol, w10_tick, w10_quote,
-                         w30_tick, w30_quote,
-                         w60_tick, w60_quote)
+            (ts,symbol,w10_tick,w10_quote,w30_tick,w30_quote,w60_tick,w60_quote)
             VALUES (?,?,?,?,?,?,?,?)
-        """, (ts, symbol,
-              w10_tick, w10_quote,
-              w30_tick, w30_quote,
-              w60_tick, w60_quote))
+        """, (ts, symbol, w10_tick, w10_quote, w30_tick, w30_quote, w60_tick, w60_quote))
+        self._conn.commit()
+
+    def insert_tick_speed_batch(self, rows: list):
+        """배치 INSERT — 30초치를 한 번에 커밋."""
+        if not rows:
+            return
+        ts = datetime.now().isoformat(timespec="seconds")
+        self._conn.executemany("""
+            INSERT INTO tick_speed
+            (ts,symbol,w10_tick,w10_quote,w30_tick,w30_quote,w60_tick,w60_quote)
+            VALUES (:ts,:symbol,:w10_tick,:w10_quote,:w30_tick,:w30_quote,:w60_tick,:w60_quote)
+        """, [{**r, 'ts': ts} for r in rows])
         self._conn.commit()
 
     def fetch_tick_speed(self, symbol=None, date=None, limit=1000):
-        """
-        Pandas DataFrame 반환.
-        활용 예:
-            df = db.fetch_tick_speed(symbol='SPX', date='2026-04-24')
-            surge = df[df['w10_tick'] > df['w10_tick'].mean() * 3]
-        """
         try:
             import pandas as pd
             sql = "SELECT * FROM tick_speed WHERE 1=1"
@@ -117,12 +167,7 @@ class DBManager:
         except Exception:
             return None
 
-    def tick_surge_moments(self, symbol, date=None,
-                           window="w10_tick", mult=3.0):
-        """
-        특정 날짜에서 틱 급등 구간 반환.
-        window: 'w10_tick' | 'w30_tick' | 'w60_tick'
-        """
+    def tick_surge_moments(self, symbol, date=None, window="w10_tick", mult=3.0):
         df = self.fetch_tick_speed(symbol=symbol, date=date, limit=5000)
         if df is None or df.empty:
             return None
