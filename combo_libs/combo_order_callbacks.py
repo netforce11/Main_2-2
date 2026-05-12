@@ -19,6 +19,12 @@ combo_order_callbacks.py — BAG 주문 상태 콜백 연결 / UI 갱신
         oid 직접 사용 → 포지션마다 독립 tid 대역
 [FIX-O] update_position_prices 호출 — strategy 문자열 → oid 전달
   패널 FIX-K 와 연동 (oid 기준 갱신)
+[FIX-P] _on_order_status 필터 수정 — 합성주문 체결 후 잔고 누락 버그 수정
+  기존: _chaser_current_oid 필터만 사용
+        → Smart Chaser 모드 OFF 시 콜백 무시 → 잔고 리스트에 미표시
+  수정: _pending_position oid 기반 필터로 변경
+        → Chaser 모드 ON/OFF 무관하게 모든 합성주문 체결 처리
+        _on_exec_details 도 동일하게 수정
 ──────────────────────────────────────────────────────────────
 """
 
@@ -72,8 +78,17 @@ def disconnect_order_callbacks(self) -> None:
 def _on_order_status(self, oid: int, status: str,
                      filled: float, remaining: float,
                      avg_fill: float) -> None:
-    my_oid = getattr(self, '_chaser_current_oid', None)
-    if my_oid is None or oid != my_oid:
+    # [FIX-P] 필터 수정: _chaser_current_oid → _pending_position 기반으로 변경
+    # 기존: Smart Chaser 모드 OFF 시 _chaser_current_oid=None → 콜백 무시
+    #       → 합성주문 체결 후 잔고 리스트에 미표시 버그
+    # 수정: _pending_position 의 oid 기준으로 필터링
+    #       → Chaser ON/OFF 무관하게 모든 합성주문 체결 처리
+    # 단, _close_oid_set 등록된 청산 주문은 pending 없어도 처리해야 하므로 OR 조건 유지
+    pending          = getattr(self, '_pending_position', None)
+    close_oids_check = getattr(self, '_close_oid_set', set())
+    is_pending_match = bool(pending and pending.get('oid') == oid)
+    is_close_match   = oid in close_oids_check
+    if not is_pending_match and not is_close_match:
         return
 
     panel = getattr(self, 'synthetic_panel', None)
@@ -133,7 +148,7 @@ def _on_order_status(self, oid: int, status: str,
                 if avg:
                     pending['entry']   = avg
                     pending['current'] = avg
-                pending['status'] = '체결완료'
+                pending['status'] = '보유'   # [FIX-S] "체결완료" → "보유"
 
                 if panel and hasattr(panel, 'add_position'):
                     panel.add_position(pending)
@@ -189,9 +204,11 @@ def _on_order_status(self, oid: int, status: str,
 def _on_exec_details(self, oid: int, sym: str,
                      side: str, qty: float, price: float) -> None:
     """execDetails 콜백 — 폴백 캐시 저장 + 로그 전용."""
-    my_oid = getattr(self, '_chaser_current_oid', None)
-    known  = getattr(self, '_exec_known_oids', set())
-    if oid != my_oid and oid not in known:
+    # [FIX-P] _pending_position 기반 필터로 변경 (known oids 보조)
+    pending    = getattr(self, '_pending_position', None)
+    known      = getattr(self, '_exec_known_oids', set())
+    is_pending = bool(pending and pending.get('oid') == oid)
+    if not is_pending and oid not in known:
         return
 
     commission = round(float(qty) * 1.0, 2)
@@ -410,7 +427,7 @@ def _set_panel_filled(panel, oid: int, avg_price: Optional[float]) -> None:
     if panel is None: return
     for pos in getattr(panel, '_positions', []):
         if pos.get('oid') == oid:
-            pos['status'] = '체결완료'
+            pos['status'] = '보유'   # [FIX-S] "체결완료" → "보유"
             if avg_price:
                 pos['entry']   = avg_price
                 pos['current'] = avg_price

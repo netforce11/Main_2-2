@@ -39,6 +39,16 @@
       "minutes": 40,
       "points": 25.0,
       "direction": "상승"
+    },
+    {
+      "minutes": 5,
+      "points": 20.0,
+      "direction": "상승"
+    },
+    {
+      "minutes": 5,
+      "points": 20.0,
+      "direction": "하락"
     }
   ],
   "cond_b": []

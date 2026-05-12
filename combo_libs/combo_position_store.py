@@ -17,6 +17,9 @@ combo_position_store.py — 합성 잔고 영속화 + 재연결 복원
            legs 정보 사용하도록 처리
   [FIX-4] safe_remove_after_order — 주문 전송 성공 확인 후 삭제(호출자가 oid
            확정된 시점에 호출)
+  [FIX-Q] _on_pos_end — IB 서버에만 있고 파일에 없는 포지션 패널에 추가
+           기존: 파일 기준 qty 보정만 → 파일 미저장 포지션은 재연결 후에도 누락
+           수정: ib_buf 중 파일 미매칭 항목 → panel.add_position + 파일 저장
 ──────────────────────────────────────────────────────────────
 """
 
@@ -46,7 +49,7 @@ def save_one_position(pos: dict) -> None:
     [FIX-1] threading.Lock + atomic rename 으로 동시 쓰기 경합 방지.
     status != '체결완료' 이면 저장하지 않음.
     """
-    if pos.get("status") != "체결완료":
+    if pos.get("status") not in ("체결완료", "보유"):   # [FIX-S] 두 값 모두 허용
         return
     try:
         with _write_lock:
@@ -175,6 +178,9 @@ def load_positions() -> list:
                     continue
             except (ValueError, TypeError):
                 pass
+            # [FIX-S] 기존 파일의 "체결완료" → "보유" 마이그레이션
+            if p.get("status") == "체결완료":
+                p["status"] = "보유"
             filtered.append(p)
 
         if len(filtered) != len(data):
@@ -276,16 +282,30 @@ def restore_on_reconnect(self) -> None:
             "right":    cp,
             "strike":   strike,
             "legs":     [],
-            "status":   "체결완료",
+            "status":   "보유",   # [FIX-S] "체결완료" → "보유"
         })
 
     def _on_pos_end():
-        """IB positionEnd — 파일 포지션 qty 보정."""
+        """IB positionEnd — 파일 포지션 qty 보정 + 파일 미저장 포지션 추가.
+
+        [FIX-Q] 기존: 파일 기준 qty 보정만
+                → 파일에 없는 IB 포지션(FIX-P 이전 버그 등)은 재연결 후에도 누락
+                수정: ib_buf 중 파일 미매칭 항목을 패널에 직접 추가 + 파일 저장
+        """
         _restore_done()
         if not ib_buf:
             self._log("ℹ IB 서버 옵션 포지션 없음 (파일 복원 유지)")
             return
 
+        # ── 파일 포지션들의 레그 시그니처 집합 (매칭 판별용) ───
+        file_leg_sigs = set()
+        for saved in saved_by_oid.values():
+            for l in saved.get("legs", []):
+                if l.get("strike"):
+                    file_leg_sigs.add(
+                        f"{l['cp'].upper()}{int(float(l['strike']))}")
+
+        # ── 기존: 파일 포지션 qty 보정 ─────────────────────────
         updated = 0
         for oid, saved in saved_by_oid.items():
             legs     = saved.get("legs", [])
@@ -301,9 +321,36 @@ def restore_on_reconnect(self) -> None:
                         p['qty'] = matched[0]["qty"]
                         updated += 1
 
+        # ── [FIX-Q] IB 서버에만 있는 포지션 → 패널/파일 추가 ──
+        added = 0
+        for ib_pos in ib_buf:
+            sig = _ib_sig_simple(ib_pos)
+            # 파일 포지션에 매칭 레그 없으면 → 누락 포지션
+            if sig and sig not in file_leg_sigs:
+                enriched = dict(ib_pos)
+                enriched.setdefault("status", "보유")
+                enriched.setdefault(
+                    "oid", int(datetime.now().timestamp() * 1000) % 100000)
+                enriched["strategy"] = (
+                    f"[서버복원] {enriched.get('strategy', sig)}")
+                # 패널 추가
+                if panel and hasattr(panel, 'add_position'):
+                    panel.add_position(enriched)
+                # 파일에도 저장 (다음 재연결 때 정상 복원)
+                try:
+                    save_one_position(enriched)
+                except Exception:
+                    pass
+                self._log(
+                    f"⚠ [FIX-Q] 파일 미저장 포지션 복원: "
+                    f"{enriched['strategy']}")
+                added += 1
+
         if hasattr(panel, '_refresh_pos_table'):
             panel._refresh_pos_table()
-        self._log(f"✅ IB 서버 qty 보정: {updated}건")
+        self._log(
+            f"✅ IB 서버 qty 보정: {updated}건"
+            + (f"  / 누락 포지션 추가: {added}건" if added else ""))
 
     ib.position    = _on_pos
     ib.positionEnd = _on_pos_end
@@ -323,6 +370,16 @@ def restore_on_reconnect(self) -> None:
     except Exception as e:
         _restore_done()
         self._log(f"⚠ reqPositions 오류: {e} — 파일 복원 유지")
+
+    # [FIX-R] 장외 시간 포함 delayed quote 허용 + 복원 포지션 conId 직접 확보
+    # 체인 동기화 없이도 실시간 손익 스트림이 시작될 수 있도록
+    try:
+        ib.reqMarketDataType(3)   # 3=delayed → 장외에도 시세 수신
+    except Exception:
+        pass
+
+    # 저장된 legs 의 conId 를 캐시에서 보완 후 스트림 시작
+    QTimer.singleShot(500, lambda: _ensure_restored_streams(self, saved_by_oid))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -500,3 +557,152 @@ def _write_atomic_path(path: Path, text: str) -> None:
             raise
     except Exception:
         pass
+
+
+# ══════════════════════════════════════════════════════════════
+# 복원 포지션 스트림 확보 (장외 대응)
+# ══════════════════════════════════════════════════════════════
+
+def _ensure_restored_streams(self, saved_by_oid: dict) -> None:
+    """
+    [FIX-R] 재연결 후 복원 포지션의 실시간 스트림을 보장.
+
+    문제: 장외 시간에는 체인 동기화(_bulk_fetch_conids)가 실행되지 않아
+          conId 조회 → 스트림 시작 훅이 트리거되지 않는다.
+    해결: restore_on_reconnect 완료 500ms 후 이 함수를 직접 호출해
+          캐시에 conId 가 있는 레그는 즉시 스트림 시작.
+          없는 레그는 reqContractDetails 로 개별 조회 후 스트림 시작.
+    """
+    panel = getattr(self, 'synthetic_panel', None)
+    ib    = getattr(getattr(self, 'mw', None), 'ib', None)
+    if panel is None or ib is None or not saved_by_oid:
+        return
+
+    try:
+        from combo_order_callbacks import _start_position_price_stream
+        from combo_order_bag import _CONID_CACHE, _conid_key
+    except ImportError:
+        return
+
+    # 심볼 확인
+    sym_w  = getattr(self, 'edit_sym_combo', None)
+    symbol = sym_w.text().strip().upper() if sym_w else "SPX"
+    symbol = symbol.replace("SPXW", "SPX")
+
+    already = set(getattr(self, '_pos_stream_tids', {}).keys())
+    missing_legs = []   # (oid, leg_idx, pos, leg) — conId 미비 레그
+
+    for oid, pos in saved_by_oid.items():
+        if oid in already:
+            continue
+        if _is_expired(pos):
+            continue
+        legs = pos.get("legs", [])
+        if not legs:
+            continue
+
+        all_have_conid = True
+        for i, leg in enumerate(legs):
+            if leg.get("con_id"):
+                continue
+            key = _conid_key(
+                symbol,
+                str(leg.get("cp", "")),
+                float(leg.get("strike", 0)),
+                str(leg.get("expiry", "")),
+            )
+            cid = _CONID_CACHE.get(key, 0)
+            if cid:
+                leg["con_id"] = cid
+            else:
+                all_have_conid = False
+                missing_legs.append((oid, i, pos, leg))
+
+        if all_have_conid:
+            _start_position_price_stream(self, pos)
+            self._log(f"📡 복원 스트림 시작(캐시): OID={oid}")
+
+    if not missing_legs:
+        return
+
+    # conId 미비 레그 → reqContractDetails 개별 조회
+    self._log(f"🔍 복원 스트림: conId 미비 {len(missing_legs)}레그 개별 조회")
+
+    try:
+        from core_contract import make_opt_contract
+        from core import bridge as _bridge
+    except ImportError:
+        return
+
+    from PyQt5.QtCore import QTimer
+
+    _base_rid = 8800
+    _rid_map  = {}   # rid → (oid, leg_idx, pos, leg)
+    _oid_done = {}   # oid → set of resolved leg indices
+    _oid_total = {}  # oid → total leg count needing resolution
+
+    for seq, (oid, i, pos, leg) in enumerate(missing_legs):
+        rid = _base_rid + seq
+        _rid_map[rid] = (oid, i, pos, leg)
+        _oid_done.setdefault(oid, set())
+        _oid_total[oid] = _oid_total.get(oid, 0) + 1
+
+    _conn = [None, None]
+
+    def _cleanup():
+        try:
+            if _conn[0]: _bridge.contract_details_sig.disconnect(_conn[0])
+        except Exception: pass
+        try:
+            if _conn[1]: _bridge.contract_details_end_sig.disconnect(_conn[1])
+        except Exception: pass
+
+    def _on_cd(req_id, cd):
+        if req_id not in _rid_map: return
+        oid, i, pos, leg = _rid_map[req_id]
+        cid = cd.contract.conId
+        if cid > 0:
+            leg["con_id"] = cid
+            from combo_order_bag import _CONID_CACHE, _conid_key, _save_conid_cache
+            key = _conid_key(symbol, str(leg.get("cp", "")),
+                             float(leg.get("strike", 0)),
+                             str(leg.get("expiry", "")))
+            _CONID_CACHE[key] = cid
+        _oid_done[oid].add(i)
+
+    def _on_cd_end(req_id):
+        if req_id not in _rid_map: return
+        oid, i, pos, leg = _rid_map[req_id]
+        if len(_oid_done.get(oid, set())) >= _oid_total.get(oid, 1):
+            if oid not in getattr(self, '_pos_stream_tids', {}):
+                _start_position_price_stream(self, pos)
+                self._log(f"📡 복원 스트림 시작(조회): OID={oid}")
+        if len(_oid_done) >= len(_oid_total) and \
+                all(len(v) >= _oid_total[k] for k, v in _oid_done.items()):
+            _cleanup()
+
+    _conn[0] = _on_cd
+    _conn[1] = _on_cd_end
+    _bridge.contract_details_sig.connect(_on_cd)
+    _bridge.contract_details_end_sig.connect(_on_cd_end)
+
+    def _send(idx):
+        if idx >= len(missing_legs): return
+        oid, i, pos, leg = missing_legs[idx]
+        rid = _base_rid + idx
+        try:
+            ib.reqContractDetails(
+                rid,
+                make_opt_contract(
+                    symbol=symbol,
+                    strike=float(leg.get("strike", 0)),
+                    right=str(leg.get("cp", "")),
+                    expiry=str(leg.get("expiry", "")),
+                )
+            )
+        except Exception as e:
+            self._log(f"⚠ 복원 conId 조회 실패 레그{i}: {e}")
+        QTimer.singleShot(100, lambda: _send(idx + 1))
+
+    _send(0)
+    QTimer.singleShot(len(missing_legs) * 100 + 8000, _cleanup)

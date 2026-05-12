@@ -157,12 +157,12 @@ class PanelsMixin(PricePanelMixin):
         g6, h6 = _gb_w("조회")
         h6.addWidget(QLabel("행:", styleSheet="color:#aaa;font-size:11px;border:none;"))
         self.spin_n = QSpinBox()
-        # ✅ 콜/풋 각 최대 25개 → 합산 50개 + REQ_UND 1개 = 51개 (한도 100개 이내)
-        self.spin_n.setRange(1, 24); self.spin_n.setValue(24)
+        # ✅ 콜/풋 각 기본 22개 → 합산 44개 + REQ_UND 1개 = 45개 (한도 100개 이내)
+        self.spin_n.setRange(1, 50); self.spin_n.setValue(22)
         self.spin_n.setFixedWidth(50); self.spin_n.setFixedHeight(24)
         self.spin_n.setStyleSheet(
             "background:#0a0a18;color:#ffd700;border:1px solid #2e3060;font-size:12px;")
-        self.spin_n.setToolTip("콜/풋 각 최대 25개 (합산 51개, IBKR 한도 100개 이내)")
+        self.spin_n.setToolTip("콜/풋 각 조회 행 수 (기본값 22개)")
         # ✅ spin_n 변경 시 한도 초과 경고 + 1분 후 강제 다운그레이드
         self.spin_n.valueChanged.connect(self._on_spin_n_changed)
 
@@ -300,8 +300,8 @@ class PanelsMixin(PricePanelMixin):
         return self._bot_splitter
 
     # ── spin_n 한도 초과 경고 + 1분 후 강제 다운그레이드 ──────────
-    _SPIN_N_MAX   = 25   # 콜/풋 각 최대 (합산 51개, IBKR 한도 이내)
-    _SPIN_N_SAFE  = 10   # 1분 후 자동 복원값
+    _SPIN_N_MAX   = 50   # 콜/풋 각 최대 (합산 100개, IBKR 한도 이내)
+    _SPIN_N_SAFE  = 22   # 1분 후 자동 복원값
 
     def _on_spin_n_changed(self, value: int):
         """

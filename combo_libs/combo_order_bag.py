@@ -1,6 +1,12 @@
 """
-combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.4
+combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.5
 ──────────────────────────────────────────────────────
+v3.5 변경:
+  [FIX-R] totalQuantity 하드코딩 1 → legs 실제 수량 반영
+    · 기존: ibord.totalQuantity = 1 (수량 무관 항상 1계약 주문)
+    · 수정: max(leg["qty"] for leg in legs) 로 실제 수량 반영
+    · 영향: 체결 직후 잔고 qty 정확히 표시, 파일 저장값도 정확
+
 v3.4 변경:
   [BUG #TICK] 틱 단위 가격 선택 다이얼로그
     · lmtPrice가 정확히 틱 배수(0.05 / 0.10)이면 → 그냥 주문 (기존 동일)
@@ -495,36 +501,15 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
     from combo_order_logic import _get_session_info
     after_hours, session_label, tif, outside_rth = _get_session_info()
 
-    # ── 확인 다이얼로그 ─────────────────────────────────────
-    leg_lines = "\n".join(
-        f"  {'매도(SELL)' if lg['dir'] == 'SELL' else '매수(BUY) '}  "
-        f"{lg['cp']} {int(lg['strike'])}  ×{lg['qty']}  "
-        f"@${float(lg.get('prem', 0)):.2f}"
-        for lg in legs)
-    expiry_str = legs[0].get("expiry", "") if legs else ""
-    if len(expiry_str) == 8:
-        expiry_str = f"{expiry_str[:4]}/{expiry_str[4:6]}/{expiry_str[6:]}"
-
-    ah_note = (
-        f"\n⚠ 장외 시간({session_label}) — TIF:{tif} / 장외체결 허용"
-        if after_hours else f"\n장중({session_label}) — TIF:{tif}"
+    # ── [v3.4] 확인 다이얼로그 제거 ─────────────────────────────
+    # 틱 선택 다이얼로그에서 이미 사용자가 가격을 직접 선택했으므로
+    # 추가 확인창 없이 바로 주문 전송.
+    # (정확한 틱 배수로 입력된 경우도 동일하게 바로 전송)
+    self._log(
+        f"📤 합성주문 전송 준비: {strat}  "
+        f"${lmt_price:.2f}{price_source}  "
+        f"TIF:{tif}  세션:{session_label}"
     )
-
-    from PyQt5.QtWidgets import QMessageBox as _MB
-    dlg = _MB(self)
-    dlg.setWindowTitle("⚡ 합성 주문 확인")
-    dlg.setText(
-        f"전략:  {strat}\n만기:  {expiry_str}\n"
-        f"─────────────────────────\n{leg_lines}\n"
-        f"─────────────────────────\n"
-        f"순비용({type_label}):  ${lmt_price:.2f}{price_source}"
-        f"{ah_note}")
-    dlg.setStandardButtons(_MB.Ok | _MB.Cancel)
-    dlg.button(_MB.Ok).setText("주문 전송")
-    dlg.button(_MB.Cancel).setText("취소")
-    if dlg.exec_() != _MB.Ok:
-        self._bag_session = None
-        return
 
     # ── OID 발급 ────────────────────────────────────────────
     oid = ib.get_next_id()
@@ -535,10 +520,14 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
 
     # ── 주문 객체 ────────────────────────────────────────────
     from ibapi.order import Order as IbOrder
+    # [FIX-R] totalQuantity: 기존 하드코딩 1 → legs 에서 실제 수량 읽어서 반영
+    # BAG 주문의 totalQuantity = 레그들 중 가장 큰 qty
+    # (스프레드는 모든 레그 qty 동일, 레이쇼 스프레드는 max가 기준)
+    _bag_qty = max((int(float(lg.get("qty", 1))) for lg in legs), default=1)
     ibord = IbOrder()
     ibord.action        = bag_action
     ibord.orderType     = "LMT"
-    ibord.totalQuantity = 1
+    ibord.totalQuantity = _bag_qty
     ibord.lmtPrice      = lmt_price
     ibord.tif           = tif
     ibord.outsideRth    = outside_rth

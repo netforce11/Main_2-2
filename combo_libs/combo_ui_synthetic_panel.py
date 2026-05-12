@@ -163,13 +163,14 @@ class SyntheticStatusPanel(QWidget):
         self._lbl_no_pos.setStyleSheet("color:#333355;padding:14px;")
         lay.addWidget(self._lbl_no_pos)
 
-        self._tbl_pos = QTableWidget(0, 7)
+        self._tbl_pos = QTableWidget(0, 8)
         self._tbl_pos.setHorizontalHeaderLabels(
-            ["전략명", "수량", "진입가", "현재가", "손익", "수익률", "상태"])
+            ["만기", "전략명", "수량", "진입가", "현재가", "손익", "수익률", "상태"])
         self._tbl_pos.setFont(_f(12))
         self._tbl_pos.horizontalHeader().setFont(_f(11, bold=True))
-        self._tbl_pos.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for c in range(1, 7):
+        self._tbl_pos.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)  # 만기
+        self._tbl_pos.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)  # 전략명
+        for c in range(2, 8):
             self._tbl_pos.horizontalHeader().setSectionResizeMode(
                 c, QHeaderView.ResizeToContents)
         self._tbl_pos.verticalHeader().setVisible(False)
@@ -264,10 +265,10 @@ class SyntheticStatusPanel(QWidget):
         status    = pos.get("status", "미체결")
         strat     = pos.get("strategy", "―")
         current   = float(pos.get("current", pos.get("entry", 0)))
-        is_filled = (status == "체결완료")
+        is_filled = status in ("체결완료", "보유")   # [FIX-S]
 
         self._lbl_pos_hint.setText(
-            f"{'✅ 체결' if is_filled else '⏳ 미체결'}: {strat}")
+            f"{'📌 보유' if is_filled else '⏳ 미체결'}: {strat}")
 
         self._btn_cancel_pos.setEnabled(not is_filled)
         self._btn_close_lmt.setEnabled(is_filled)
@@ -344,7 +345,7 @@ class SyntheticStatusPanel(QWidget):
     def mark_position_filled(self, oid: int):
         for pos in self._positions:
             if pos.get("oid") == oid:
-                pos["status"] = "체결완료"
+                pos["status"] = "보유"   # [FIX-S] "체결완료" → "보유"
         self._refresh_pos_table()
 
     def mark_position_cancelled(self, oid: int):
@@ -451,7 +452,7 @@ class SyntheticStatusPanel(QWidget):
             entry     = pos.get("entry", 0.0)
             current   = pos.get("current", entry)
             status    = pos.get("status", "미체결")
-            is_filled = (status == "체결완료")
+            is_filled = status in ("체결완료", "보유")   # [FIX-S] 두 값 모두 체결로 처리
             pnl       = (current - entry) * qty * 100 if is_filled else 0.0
             total_pnl += pnl
             pnl_col   = "#00ff88" if pnl > 0 else "#ff4444" if pnl < 0 else "#888899"
@@ -473,14 +474,18 @@ class SyntheticStatusPanel(QWidget):
                 pnl_rate_col = "#888899"
 
             st_col  = "#00ff88" if is_filled else "#ffaa44"
-            st_text = "✅ 체결" if is_filled else "⏳ 미체결"
-            tbl.setItem(r, 0, _it(pos.get("strategy","―"), "#e0e0ff", Qt.AlignLeft|Qt.AlignVCenter))
-            tbl.setItem(r, 1, _it(str(qty),                  "#aaaaaa"))
-            tbl.setItem(r, 2, _it(f"${entry:.2f}",           "#aaaaaa"))
-            tbl.setItem(r, 3, _it(f"${current:.2f}",         "#e0e0e0"))
-            tbl.setItem(r, 4, _it(f"${pnl:+,.2f}" if is_filled else "―", pnl_col))
-            tbl.setItem(r, 5, _it(pnl_rate_txt,              pnl_rate_col))
-            tbl.setItem(r, 6, _it(st_text,                   st_col))
+            st_text = "📌 보유" if is_filled else "⏳ 미체결"   # [FIX-S] "✅ 체결" → "📌 보유"
+            # 만기 필드 추가
+            expiry_txt, expiry_col = _format_expiry(pos.get("legs", []))
+            tbl.setItem(r, 0, _it(expiry_txt, expiry_col))
+
+            tbl.setItem(r, 1, _it(pos.get("strategy","―"), "#e0e0ff", Qt.AlignLeft|Qt.AlignVCenter))
+            tbl.setItem(r, 2, _it(str(qty),                  "#aaaaaa"))
+            tbl.setItem(r, 3, _it(f"${entry:.2f}",           "#aaaaaa"))
+            tbl.setItem(r, 4, _it(f"${current:.2f}",         "#e0e0e0"))
+            tbl.setItem(r, 5, _it(f"${pnl:+,.2f}" if is_filled else "―", pnl_col))
+            tbl.setItem(r, 6, _it(pnl_rate_txt,              pnl_rate_col))
+            tbl.setItem(r, 7, _it(st_text,                   st_col))
 
         tc = "#00ff88" if total_pnl > 0 else "#ff4444" if total_pnl < 0 else "#888899"
         self._lbl_total_pnl.setText(f"${total_pnl:+,.2f}")
@@ -662,3 +667,68 @@ def _enrich_strategy_name(pos: dict) -> str:
     except Exception:
         pass
     return pos.get("strategy", "")
+
+
+def _format_expiry(legs: list) -> tuple:
+    """
+    [FIX-N] legs 에서 만기일 추출 후 포맷.
+    ET 기준으로 남은 일수 계산 후 색상과 함께 반환.
+    
+    반환: (표시 텍스트, 색상) 튜플
+    
+    예시:
+      - expiry = "20260509" (내일) → ("1일", "#ffaa44")
+      - expiry = "20260510" (3일 후) → ("3일", "#aabbff")
+      - expiry = "20260601" (1개월 후) → ("52일", "#88dd55")
+      - 만기 지난 경우 → ("만료", "#888888")
+    """
+    if not legs:
+        return ("―", "#888899")
+    
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        
+        # 첫 레그의 만기일 사용 (모두 같다고 가정)
+        expiry_str = str(legs[0].get("expiry", "")).strip()
+        if not expiry_str or len(expiry_str) != 8:
+            return ("―", "#888899")
+        
+        try:
+            exp_year  = int(expiry_str[:4])
+            exp_month = int(expiry_str[4:6])
+            exp_day   = int(expiry_str[6:8])
+            exp_date = datetime(exp_year, exp_month, exp_day,
+                               16, 0, 0,  # ET 시간 16:00 (마감)
+                               tzinfo=ZoneInfo("America/New_York")).date()
+        except (ValueError, TypeError):
+            return ("―", "#888899")
+        
+        # 현재 ET 날짜
+        now_et = datetime.now(ZoneInfo("America/New_York")).date()
+        
+        # 만기일 계산
+        if exp_date < now_et:
+            # 만료됨
+            return ("만료", "#888888")
+        elif exp_date == now_et:
+            # 오늘 만기 (긴급)
+            return ("0일", "#ff6666")
+        else:
+            # 남은 일수 계산
+            delta = (exp_date - now_et).days
+            if delta == 1:
+                color = "#ffaa44"  # 황색 경고 (내일 만기)
+            elif delta <= 7:
+                color = "#ff9999"  # 연한 빨강 (1주일 이내)
+            elif delta <= 14:
+                color = "#ffdd88"  # 주황색 (2주 이내)
+            elif delta <= 30:
+                color = "#aabbff"  # 하늘색 (1달 이내)
+            else:
+                color = "#88dd55"  # 녹색 (장기)
+            
+            return (f"{delta}일", color)
+    
+    except Exception:
+        return ("―", "#888899")

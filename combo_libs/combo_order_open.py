@@ -50,6 +50,14 @@ v2.4 버그 수정:
   [BUG-D] _modify_tick: 정정 후 _resync(1.5초)가 _oo_in_progress 락 경합에서
     밀려 재조회가 무시되던 문제 완화.
     → 락이 걸려 있으면 추가 0.5초 지연 후 재시도(최대 1회).
+
+v2.5 수정:
+  [FIX-P] on_open_orders: _finish() 완료 후 reqMktData(delayed) 구독 추가.
+    재접속 후 미체결 조회 시 시세(현재가)가 출력되지 않던 문제 수정.
+    conId 없는 BAG 주문은 스킵, 장외 포함 reqMarketDataType(3) 선 설정.
+  [FIX-Q] _modify_tick: 장외 시간 정정 시 tif 를 GTC 로 강제 변환.
+    장중(DAY) 주문을 장외에서 정정하면 IB 가 거절함.
+    ET 09:30~16:00 외 시간대에는 deepcopy 후 tif="GTC" 로 덮어씀.
 """
 
 from PyQt5.QtCore import Qt, QTimer
@@ -94,6 +102,8 @@ def on_open_orders(self):
             panel._tabs.setCurrentIndex(2)
         if orders:
             self._log(f"📋 미체결 {len(orders)}건 — 하단 미체결 탭 확인")
+            # [FIX-P] 미체결 주문 시세 구독 (장외 포함, delayed 허용)
+            _subscribe_open_order_prices(self, ib, orders)
         else:
             self._log("📋 미체결 주문 없음")
 
@@ -312,6 +322,14 @@ def _modify_tick(self, direction: int):
         # [BUG-C] deepcopy로 원본 order 객체 보존 — 실패해도 캐시 오염 없음
         order = copy.deepcopy(o["order"])
         order.lmtPrice = new_price
+
+        # [FIX-Q] 장외 시간 정정 시 tif 강제 GTC
+        # ET 09:30~16:00 외 시간대에 DAY 주문을 정정하면 IB 가 거절함
+        if not _is_market_hours_et():
+            if getattr(order, 'tif', 'DAY') == 'DAY':
+                order.tif = 'GTC'
+                self._log("ℹ 장외 시간 — tif DAY→GTC 자동 변환")
+
         ib.placeOrder(o["oid"], o["contract"], order)
 
         sign = "+" if direction > 0 else ""
@@ -419,3 +437,97 @@ def _cancel_selected(self):
 
     if panel:
         panel.update_open_orders(orders)
+
+
+# ── 헬퍼 함수 ────────────────────────────────────────────────────
+
+def _is_market_hours_et() -> bool:
+    """
+    [FIX-Q] ET 기준 정규장 시간(09:30~16:00) 여부.
+    장외 판별에 사용 — 장외면 정정 tif 를 GTC 로 강제 변환.
+    """
+    try:
+        from datetime import datetime, time
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/New_York")).time()
+        return time(9, 30) <= now <= time(16, 0)
+    except Exception:
+        return True   # 판별 실패 시 장중으로 간주 (안전 방향)
+
+
+def _subscribe_open_order_prices(self, ib, orders: list) -> None:
+    """
+    [FIX-P] 미체결 주문 목록의 conId 를 이용해 reqMktData 구독.
+    - 장외 포함 delayed quote(type 3) 허용 설정 후 구독.
+    - BAG(combo) 주문은 conId 가 없으므로 스킵.
+    - 이미 구독 중인 tid 는 재구독하지 않음.
+    - tid 대역: 9300번대 (잔고 9200번대와 분리).
+    """
+    if not orders:
+        return
+
+    try:
+        # delayed quote 허용 (장외에도 시세 수신)
+        ib.reqMarketDataType(3)
+    except Exception:
+        pass
+
+    if not hasattr(self, '_oo_stream_tids'):
+        self._oo_stream_tids = {}   # {oid: tid}
+
+    _OO_STREAM_BASE = 9300
+
+    from core import router
+
+    for o in orders:
+        oid = o.get("oid")
+        contract = o.get("contract")
+        if not oid or not contract:
+            continue
+
+        # BAG(combo) 주문은 conId=0 → 스킵
+        con_id = getattr(contract, 'conId', 0)
+        if not con_id:
+            continue
+
+        # 이미 구독 중이면 재구독 생략
+        if oid in self._oo_stream_tids:
+            continue
+
+        tid = _OO_STREAM_BASE + (oid % 900)   # 9300~9199 대역 내 분산
+
+        def _make_handler(o_ref):
+            def _on_tick(req_id: int, tick_type: int, price: float):
+                if price <= 0 or tick_type not in (1, 2, 4, 9):
+                    return
+                # 현재가(mid 또는 last)를 캐시에 반영 후 패널 갱신
+                if tick_type in (1, 2):
+                    ticks = getattr(self, '_oo_price_ticks', {})
+                    if req_id not in ticks:
+                        ticks[req_id] = {}
+                    ticks[req_id][tick_type] = price
+                    self._oo_price_ticks = ticks
+                    bid = ticks[req_id].get(1)
+                    ask = ticks[req_id].get(2)
+                    if bid and ask:
+                        o_ref["current_price"] = round((bid + ask) / 2, 2)
+                else:
+                    o_ref["current_price"] = price
+            return _on_tick
+
+        try:
+            from ibapi.contract import Contract as IbContract
+            c = IbContract()
+            c.conId = con_id
+            c.exchange = "SMART"
+            slot = _make_handler(o)
+            router.register_price(tid, tid, slot)
+            ib.reqMktData(tid, c, "", False, False, [])
+            self._oo_stream_tids[oid] = tid
+            self._log(
+                f"📡 미체결 시세 구독: OID={oid} conId={con_id} tid={tid}")
+        except Exception as e:
+            self._log(f"⚠ 미체결 시세 구독 실패 OID={oid}: {e}")
