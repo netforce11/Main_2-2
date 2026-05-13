@@ -1,15 +1,6 @@
 """
-combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.6
+combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.5
 ──────────────────────────────────────────────────────
-v3.6 변경:
-  [FIX-Q] 청산 주문 oid 불일치 수정
-    · 기존: _close_oid_set 에 진입 oid(원본) 등록 후 새 청산 oid 발급
-            → 콜백에서 is_close 판별 실패 → 청산 체결이 신규 체결로 처리됨
-            → 패널에 청산 포지션이 신규 행으로 추가, 스트림 재시작, 파일 재저장
-    · 수정: placeOrder 직전 _pending_close_oid 확인 → 청산 주문이면
-            새 oid 를 _close_oid_set 에 등록 + 원본 oid 제거
-            + 청산 주문은 _pending_position 세팅 스킵
-
 v3.5 변경:
   [FIX-R] totalQuantity 하드코딩 1 → legs 실제 수량 반영
     · 기존: ibord.totalQuantity = 1 (수량 무관 항상 1계약 주문)
@@ -527,20 +518,6 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         self._log("❌ nextOrderId 없음")
         return
 
-    # [FIX-Q] 청산 주문 여부 판별 → 새 oid 를 _close_oid_set 에 등록
-    # _pending_close_oid 는 combo_order_logic._on_close_position_order 에서
-    # 세팅된 원본(진입) oid. 여기서 발급된 새 청산 oid 와 교체 등록해야
-    # 콜백의 is_close 판별이 올바르게 동작함.
-    _pending_close_src = getattr(self, '_pending_close_oid', None)
-    _is_close_order    = (_pending_close_src is not None)
-    if _is_close_order:
-        if not hasattr(self, '_close_oid_set'):
-            self._close_oid_set = set()
-        self._close_oid_set.add(oid)                    # 새 청산 oid 등록
-        self._close_oid_set.discard(_pending_close_src) # 원본 oid 오염 방지
-        self._log(
-            f"  [FIX-Q] 청산 oid 교체 등록: 원본={_pending_close_src} → 청산주문={oid}")
-
     # ── 주문 객체 ────────────────────────────────────────────
     from ibapi.order import Order as IbOrder
     # [FIX-R] totalQuantity: 기존 하드코딩 1 → legs 에서 실제 수량 읽어서 반영
@@ -576,31 +553,38 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             self._exec_known_oids = set()
         self._exec_known_oids.add(oid)
 
-        # [FIX-Q] 청산 주문은 _pending_position 세팅 스킵
-        # (신규 체결 경로로 잘못 처리되지 않도록)
-        if not _is_close_order:
-            self._pending_position = {
-                "strategy": strat,
-                "qty":      int(ibord.totalQuantity),
-                "entry":    lmt_price,
-                "current":  lmt_price,
-                "side":     bag_action,
-                "oid":      oid,
-                "legs":     legs,
-                "status":   "미체결",
-            }
-        else:
-            self._log(f"  [FIX-Q] 청산 주문 — _pending_position 세팅 스킵 (OID={oid})")
-            # [FIX-Q3] BAG 청산 경로: placeOrder 성공 후 원본 포지션 스트림 해제
-            try:
-                from combo_order_callbacks import stop_position_price_stream
-                stop_position_price_stream(self, _pending_close_src)
-            except Exception:
-                pass
+        self._pending_position = {
+            "strategy": strat,
+            "qty":      int(ibord.totalQuantity),
+            "entry":    lmt_price,
+            "current":  lmt_price,
+            "side":     bag_action,
+            "oid":      oid,
+            "legs":     legs,
+            "status":   "미체결",
+        }
 
         register_chaser(
             self, oid=oid, price=lmt_price,
             action=bag_action, qty=int(ibord.totalQuantity))
+
+        # [FIX-W3] _is_close_order 정의 — 미정의로 NameError 발생하던 버그 수정
+        # _close_oid_set 에 등록된 OID 면 청산 주문, 아니면 신규 주문
+        _is_close_order = (oid in getattr(self, '_close_oid_set', set()))
+
+        # [TG-3] 선주문 감시 등록 — 청산 주문이 아닐 때만
+        # [FIX-W1] bag_contract / qty 직접 전달
+        #   Chaser OFF 기본값 상태에서도 정정주문이 정상 전송되도록
+        #   bag 컨트랙트와 수량을 SpecialFillWatcher 에 직접 저장
+        if not _is_close_order:
+            try:
+                from combo_order_special_condition import SpecialFillWatcher
+                SpecialFillWatcher.get().watch(
+                    self, oid, lmt_price, bag_action, legs, strat,
+                    bag_contract=bag,                  # [FIX-W1]
+                    qty=int(ibord.totalQuantity))      # [FIX-W1]
+            except Exception as _e:
+                self._log(f"⚠ SpecialFillWatcher 등록 실패: {_e}")
 
         def _verify_order(check_oid=oid):
             from combo_order_open import on_open_orders

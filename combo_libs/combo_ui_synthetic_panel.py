@@ -1,19 +1,14 @@
-"""combo_ui_synthetic_panel.py — SyntheticStatusPanel 위젯  v2.6
+"""combo_ui_synthetic_panel.py — SyntheticStatusPanel 위젯  v2.7
 탭1: 📊 증거금 확인  탭2: 📋 합성 잔고  탭3: 📋 미체결
 
 [FIX-J] 지정가 청산 UI 추가
-  가격 스핀박스 + [📌 지정가 청산] / [🔴 MKT 청산] 분리
-  _close_pos_callback(pos, lmt_price=None) 형태로 호출
-
-[FIX-K] update_position_prices — strategy 문자열 → oid 기준으로 변경
-  전략명 동일 포지션 2개일 때 같은 가격 덮어쓰기 버그 수정
-
+[FIX-K] update_position_prices — oid 기준으로 변경
 [FIX-L] remove_position_by_oid 추가
-  청산 Filled 콜백에서 패널 포지션 제거
-
 [FIX-M] add_position 에서 _enrich_strategy_name 적용
-  신규 체결 직후에도 행사가 전략명 자동 보강
-  예) "풋 스프레드 (풋매수+풋매도)" → "풋 스프레드 6700/6705 (풋매수+풋매도)"
+[FIX-BANNER] Wolf System 배너 + 수익률 경고 배너 추가
+  · WolfSystemBanner  — 선주문 ON / 체결·취소 OFF
+  · ProfitAlertBanner — 수익률 400/450/500% 구간 경고 + 테스트 UI
+  · Chaser 자동 모드 기본값 OFF (수동 모드로 시작)
 """
 
 from PyQt5.QtWidgets import (
@@ -23,6 +18,19 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QFont
+
+# [FIX-BANNER] 배너 임포트
+try:
+    from combo_wolf_system_banner import WolfSystemBanner
+    _HAS_WOLF = True
+except ImportError:
+    _HAS_WOLF = False
+
+try:
+    from combo_profit_alert_banner import ProfitAlertBanner
+    _HAS_PROFIT = True
+except ImportError:
+    _HAS_PROFIT = False
 
 
 def _f(pt, bold=False):
@@ -58,8 +66,25 @@ class SyntheticStatusPanel(QWidget):
         self._chaser_mode_callback   = None
         self._manual_modify_callback = None
         self._margin_mode_callback   = None
-        self._selected_pos_row       = -1   # [FIX-J] 버튼 클릭 시 row 유지용
+        self._selected_pos_row       = -1
         self._build_ui()
+
+        # [FIX-BANNER] 배너 생성 후 잔고 탭 레이아웃에 추가
+        self.wolf_banner         = WolfSystemBanner(self)  if _HAS_WOLF   else None
+        self.profit_alert_banner = ProfitAlertBanner(
+            self, wolf_banner=self.wolf_banner)             if _HAS_PROFIT else None
+
+        if self.wolf_banner and hasattr(self, '_banner_layout'):
+            self._banner_layout.addWidget(self.wolf_banner)
+        if self.profit_alert_banner and hasattr(self, '_banner_layout'):
+            self._banner_layout.addWidget(self.profit_alert_banner)
+
+        # [FIX-BANNER] Chaser 자동 모드 기본값 OFF
+        try:
+            from combo_order_chaser import ensure_chaser_auto_off
+            ensure_chaser_auto_off(self)
+        except Exception:
+            pass
 
     # ══════════════════════════════════════════════════════════
     # UI 빌드
@@ -168,8 +193,8 @@ class SyntheticStatusPanel(QWidget):
             ["만기", "전략명", "수량", "진입가", "현재가", "손익", "수익률", "상태"])
         self._tbl_pos.setFont(_f(12))
         self._tbl_pos.horizontalHeader().setFont(_f(11, bold=True))
-        self._tbl_pos.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)  # 만기
-        self._tbl_pos.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)  # 전략명
+        self._tbl_pos.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self._tbl_pos.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         for c in range(2, 8):
             self._tbl_pos.horizontalHeader().setSectionResizeMode(
                 c, QHeaderView.ResizeToContents)
@@ -184,6 +209,11 @@ class SyntheticStatusPanel(QWidget):
 
         # [FIX-J] 청산 컨트롤 행
         lay.addWidget(self._build_close_control_row())
+
+        # [FIX-BANNER] Wolf + 수익률 배너 (탭 내부 하단)
+        # __init__ 에서 생성되므로 여기서는 플레이스홀더 레이아웃만 저장
+        self._banner_layout = lay   # _build_ui 완료 후 __init__ 에서 배너 추가
+
         return w
 
     def _build_close_control_row(self) -> QWidget:
@@ -491,6 +521,27 @@ class SyntheticStatusPanel(QWidget):
         self._lbl_total_pnl.setText(f"${total_pnl:+,.2f}")
         self._lbl_total_pnl.setStyleSheet(f"color:{tc};border:none;")
 
+        # [FIX-BANNER] 수익률 배너 갱신 — 최대 수익률 포지션 기준
+        if self.profit_alert_banner and self._positions:
+            try:
+                best_pct = 0.0
+                for pos in self._positions:
+                    if pos.get("status") not in ("체결완료", "보유"):
+                        continue
+                    entry   = float(pos.get("entry", 0) or 0)
+                    current = float(pos.get("current", entry) or entry)
+                    side    = pos.get("side", "SELL")
+                    if entry <= 0:
+                        continue
+                    pct = ((entry - current) / entry * 100
+                           if side == "SELL"
+                           else (current - entry) / entry * 100)
+                    if pct > best_pct:
+                        best_pct = pct
+                self.profit_alert_banner.update_pct(best_pct)
+            except Exception:
+                pass
+
     # ══════════════════════════════════════════════════════════
     # 증거금 모드 토글
     # ══════════════════════════════════════════════════════════
@@ -518,7 +569,7 @@ class SyntheticStatusPanel(QWidget):
 
         self._rb_chaser_auto   = QRadioButton("🤖 자동")
         self._rb_chaser_manual = QRadioButton("✏ 수동")
-        self._rb_chaser_auto.setChecked(True)
+        self._rb_chaser_manual.setChecked(True)   # [FIX-BANNER] 기본값 수동 모드
         for rb in (self._rb_chaser_auto, self._rb_chaser_manual):
             rb.setStyleSheet("color:#ccc;font-size:11px;border:none;")
         self._chaser_mode_grp = QButtonGroup(w)

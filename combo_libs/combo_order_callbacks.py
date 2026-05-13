@@ -25,15 +25,6 @@ combo_order_callbacks.py — BAG 주문 상태 콜백 연결 / UI 갱신
   수정: _pending_position oid 기반 필터로 변경
         → Chaser 모드 ON/OFF 무관하게 모든 합성주문 체결 처리
         _on_exec_details 도 동일하게 수정
-[FIX-Q4] 청산 체결 시 stop_position_price_stream 호출 추가
-  기존: is_close 블록에서 스트림 해제 누락
-        → 청산 후에도 tid(9200번대) 스트림 좀비 생존
-        → oid 재사용 시 다른 포지션 가격 오염 가능
-  수정: is_close 체결 시 stop_position_price_stream(self, oid) 추가
-[FIX-Q5] 청산 체결 후 _set_panel_filled 호출 방지
-  기존: is_close 분기 후에도 _set_panel_filled 무조건 호출
-        → 이미 제거된 행에 status='보유' 쓰기 시도 + _refresh_pos_table 이중 호출
-  수정: is_close 일 때 _set_panel_filled 스킵
 ──────────────────────────────────────────────────────────────
 """
 
@@ -139,14 +130,8 @@ def _on_order_status(self, oid: int, status: str,
         is_close   = (oid in close_oids)
 
         if is_close:
-            # 청산 체결 → 스트림 해제 후 패널/파일에서 제거
+            # 청산 체결 → 패널/파일에서 제거
             self._log(f"🔴 OID={oid} 청산 체결 완료")
-            # [FIX-Q4] 청산 체결 시 실시간 스트림 해제
-            # 기존: 누락 → 스트림 좀비 생존, oid 재사용 시 가격 오염
-            try:
-                stop_position_price_stream(self, oid)
-            except Exception as _e:
-                self._log(f"⚠ 스트림 해제 실패: {_e}")
             if panel and hasattr(panel, 'remove_position_by_oid'):
                 panel.remove_position_by_oid(oid)
             try:
@@ -163,14 +148,13 @@ def _on_order_status(self, oid: int, status: str,
                 if avg:
                     pending['entry']   = avg
                     pending['current'] = avg
-                pending['status'] = '보유'   # [FIX-S] "체결완료" → "보유"
+                pending['status'] = '보유'
 
                 if panel and hasattr(panel, 'add_position'):
                     panel.add_position(pending)
 
                 _start_position_price_stream(self, pending)
 
-                # [FIX-G] 저장 실패 로그
                 try:
                     from combo_position_store import save_one_position
                     save_one_position(pending)
@@ -179,10 +163,37 @@ def _on_order_status(self, oid: int, status: str,
 
                 self._pending_position = None
 
-        # [FIX-Q5] 청산 체결 시 _set_panel_filled 스킵
-        # 기존: is_close 여부 무관 무조건 호출 → 이미 제거된 행에 쓰기 + 이중 refresh
-        if not is_close:
-            _set_panel_filled(panel, oid, avg)
+        # [FIX-SC2] SpecialFillWatcher 해제 + TG 알림
+        try:
+            from combo_order_special_condition import (
+                SpecialFillWatcher, notify_filled, notify_closed)
+            SpecialFillWatcher.get().unwatch(oid)
+            if is_close:
+                # 청산 체결 TG
+                pos_for_tg = next(
+                    (p for p in getattr(panel, '_positions', [])
+                     if p.get('oid') == oid), None)
+                if pos_for_tg:
+                    if avg:
+                        pos_for_tg['current'] = avg
+                    notify_closed(pos_for_tg)
+            else:
+                # 신규 체결 TG
+                _pend = getattr(self, '_pending_position', None)
+                if _pend and _pend.get('oid') == oid:
+                    notify_filled(_pend, avg or 0.0)
+        except Exception as _e:
+            pass
+
+        # [WOLF-OFF] 체결(신규/청산) 시 Wolf System OFF
+        try:
+            _wolf = getattr(panel, 'wolf_banner', None)
+            if _wolf and hasattr(_wolf, 'set_off'):
+                _wolf.set_off()
+        except Exception:
+            pass
+
+        _set_panel_filled(panel, oid, avg)
         _deactivate_chaser_safe(self, reason="체결 완료")
         self._chaser_current_oid = None
         from PyQt5.QtCore import QTimer as _QT
@@ -194,6 +205,12 @@ def _on_order_status(self, oid: int, status: str,
         self._log(f"✕ OID={oid} 취소 확인됨")
         _set_panel_cancelled(panel, oid)
         _deactivate_chaser_safe(self, reason="취소 확인")
+        # [FIX-SC3] 취소 시 SpecialFillWatcher 해제 — zombie timer 방지
+        try:
+            from combo_order_special_condition import SpecialFillWatcher
+            SpecialFillWatcher.get().unwatch(oid)
+        except Exception:
+            pass
         if getattr(self, '_pending_position', None) and \
                 getattr(self, '_pending_position', {}).get('oid') == oid:
             self._pending_position = None
@@ -207,16 +224,35 @@ def _on_order_status(self, oid: int, status: str,
             remove_position(oid)
         except Exception:
             pass
+        # [WOLF-OFF] 취소 시 Wolf OFF
+        try:
+            _wolf = getattr(panel, 'wolf_banner', None)
+            if _wolf and hasattr(_wolf, 'set_off'):
+                _wolf.set_off()
+        except Exception:
+            pass
 
-    # ── IBKR 거절 ────────────────────────────────────────────
     elif status in _STATUS_INACTIVE:
         self._log(f"❌ OID={oid} 주문 거절/비활성")
         _set_panel_status(panel, oid, "❌ 거절됨")
         _deactivate_chaser_safe(self, reason="주문 거절")
+        # [FIX-SC4] 거절 시 SpecialFillWatcher 해제 — zombie timer 방지
+        try:
+            from combo_order_special_condition import SpecialFillWatcher
+            SpecialFillWatcher.get().unwatch(oid)
+        except Exception:
+            pass
         self._bag_session        = None
         self._chaser_current_oid = None
         if getattr(self, '_cancel_sent_oid', None) == oid:
             self._cancel_sent_oid = None
+        # [WOLF-OFF] 거절 시 Wolf OFF
+        try:
+            _wolf = getattr(panel, 'wolf_banner', None)
+            if _wolf and hasattr(_wolf, 'set_off'):
+                _wolf.set_off()
+        except Exception:
+            pass
 
 
 def _on_exec_details(self, oid: int, sym: str,
@@ -321,9 +357,47 @@ def _start_position_price_stream(self, pending: dict) -> None:
             if net is None:
                 return
 
+            net_rounded = round(net, 2)
+
             # [FIX-O] oid 기준으로 패널 갱신
             if panel and hasattr(panel, 'update_position_prices'):
-                panel.update_position_prices(oid, round(net, 2))
+                panel.update_position_prices(oid, net_rounded)
+
+            # [FIX-ENTRY] 현재가 파일 저장 (재접속 후 수익률 복원용)
+            try:
+                from combo_position_store import update_position_current
+                update_position_current(oid, net_rounded)
+            except Exception:
+                pass
+
+            # [FIX-ENTRY] 수익률 계산 후 배너/Wolf 감시에 전달
+            try:
+                _pos = next(
+                    (p for p in getattr(panel, '_positions', [])
+                     if p.get('oid') == oid), None)
+                if _pos:
+                    entry  = float(_pos.get('entry', net_rounded) or net_rounded)
+                    side   = _pos.get('side', 'SELL')
+                    if entry > 0:
+                        if side == 'SELL':
+                            pct = (entry - net_rounded) / entry * 100
+                        else:
+                            pct = (net_rounded - entry) / entry * 100
+                        # 수익률 배너 갱신
+                        banner = getattr(self, 'profit_alert_banner', None)
+                        if banner and hasattr(banner, 'update_pct'):
+                            banner.update_pct(pct)
+
+                        # [FIX-SC1] SpecialFillWatcher 목표가 감시
+                        # on_net_price_update 미호출 시 10초 타이머가 절대 시작 안 됨
+                        try:
+                            from combo_order_special_condition import SpecialFillWatcher
+                            SpecialFillWatcher.get().on_net_price_update(
+                                oid, net_rounded)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         return _on_tick
 
     for i, leg in enumerate(legs):

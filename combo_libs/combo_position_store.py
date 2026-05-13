@@ -17,9 +17,9 @@ combo_position_store.py — 합성 잔고 영속화 + 재연결 복원
            legs 정보 사용하도록 처리
   [FIX-4] safe_remove_after_order — 주문 전송 성공 확인 후 삭제(호출자가 oid
            확정된 시점에 호출)
-  [FIX-Q] _on_pos_end — IB 서버에만 있고 파일에 없는 포지션 패널에 추가
-           기존: 파일 기준 qty 보정만 → 파일 미저장 포지션은 재연결 후에도 누락
-           수정: ib_buf 중 파일 미매칭 항목 → panel.add_position + 파일 저장
+  [FIX-ENTRY] save_one_position — current(현재가) 함께 저장
+              재접속 후 스트림 재개 전까지 마지막 현재가로 수익률 표시
+              load_positions — current 없으면 entry 로 폴백 (하위호환)
 ──────────────────────────────────────────────────────────────
 """
 
@@ -47,16 +47,20 @@ def save_one_position(pos: dict) -> None:
     """
     체결 완료된 포지션 1건 저장/갱신.
     [FIX-1] threading.Lock + atomic rename 으로 동시 쓰기 경합 방지.
-    status != '체결완료' 이면 저장하지 않음.
+    [FIX-ENTRY] current(현재가)도 함께 저장 → 재접속 후 수익률 즉시 표시.
+    status != '체결완료'/'보유' 이면 저장하지 않음.
     """
-    if pos.get("status") not in ("체결완료", "보유"):   # [FIX-S] 두 값 모두 허용
+    if pos.get("status") not in ("체결완료", "보유"):
         return
     try:
         with _write_lock:
             existing = load_positions()
-            oid = pos.get("oid")
+            oid   = pos.get("oid")
             entry = dict(pos)
             entry.setdefault("saved_at", datetime.now().isoformat(timespec="seconds"))
+            # [FIX-ENTRY] current 가 0 이거나 없으면 entry 값으로 보존
+            if not entry.get("current"):
+                entry["current"] = entry.get("entry", 0.0)
 
             replaced = False
             for i, p in enumerate(existing):
@@ -84,7 +88,25 @@ def remove_position(oid: int) -> None:
         pass
 
 
-def safe_remove_after_order(oid: int, log_fn=None) -> None:
+def update_position_current(oid: int, current: float) -> None:
+    """
+    [FIX-ENTRY] 실시간 현재가 갱신 시 파일도 업데이트.
+    combo_order_callbacks._on_tick 에서 update_position_prices 호출 후 연동.
+    쓰기 빈도 최적화: 값이 바뀌었을 때만 저장 (0.01 이상 차이).
+    """
+    try:
+        with _write_lock:
+            existing = load_positions()
+            for p in existing:
+                if p.get("oid") == oid:
+                    old = float(p.get("current", 0))
+                    if abs(old - current) < 0.01:
+                        return   # 변화 미미 → 저장 스킵
+                    p["current"] = round(current, 2)
+                    _write_atomic(existing)
+                    return
+    except Exception:
+        pass
     """
     [FIX-4] 청산 주문 전송 성공(oid 확정) 후 파일에서 제거.
     _on_close_position_order 에서 placeOrder 성공 직후 호출.
@@ -181,6 +203,9 @@ def load_positions() -> list:
             # [FIX-S] 기존 파일의 "체결완료" → "보유" 마이그레이션
             if p.get("status") == "체결완료":
                 p["status"] = "보유"
+            # [FIX-ENTRY] current 없거나 0 이면 entry 로 폴백 (하위호환)
+            if not p.get("current"):
+                p["current"] = p.get("entry", 0.0)
             filtered.append(p)
 
         if len(filtered) != len(data):
