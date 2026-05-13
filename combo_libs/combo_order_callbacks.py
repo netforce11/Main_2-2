@@ -140,6 +140,11 @@ def _on_order_status(self, oid: int, status: str,
             except Exception:
                 pass
             close_oids.discard(oid)
+            # [FIX-ST1] 청산 체결 시 실시간 가격 구독 해제 — 미해제 시 레그 tick 계속 수신
+            try:
+                stop_position_price_stream(self, oid)
+            except Exception:
+                pass
 
         else:
             # 신규 체결 → 패널 추가 + 파일 저장
@@ -211,6 +216,11 @@ def _on_order_status(self, oid: int, status: str,
             SpecialFillWatcher.get().unwatch(oid)
         except Exception:
             pass
+        # [FIX-ST2] 취소 시 실시간 가격 구독 해제
+        try:
+            stop_position_price_stream(self, oid)
+        except Exception:
+            pass
         if getattr(self, '_pending_position', None) and \
                 getattr(self, '_pending_position', {}).get('oid') == oid:
             self._pending_position = None
@@ -240,6 +250,11 @@ def _on_order_status(self, oid: int, status: str,
         try:
             from combo_order_special_condition import SpecialFillWatcher
             SpecialFillWatcher.get().unwatch(oid)
+        except Exception:
+            pass
+        # [FIX-ST3] 거절 시 실시간 가격 구독 해제
+        try:
+            stop_position_price_stream(self, oid)
         except Exception:
             pass
         self._bag_session        = None

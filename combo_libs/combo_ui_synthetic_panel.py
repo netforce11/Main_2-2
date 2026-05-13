@@ -621,12 +621,16 @@ class SyntheticStatusPanel(QWidget):
         self._btn_modify_p1.setStyleSheet(
             "background:#1a2a0a;color:#aaffaa;font-size:11px;"
             "font-weight:bold;border:1px solid #3a6a2a;border-radius:3px;padding:2px 8px;")
+        # [FIX-MB1] clicked.connect 추가 — 기존 누락으로 버튼 동작 안 하던 버그 수정
+        self._btn_modify_p1.clicked.connect(lambda: self._on_modify_tick(+1))
         btn_row.addWidget(self._btn_modify_p1)
         self._btn_modify_m1 = QPushButton("-1호가 정정")
         self._btn_modify_m1.setFixedHeight(24)
         self._btn_modify_m1.setStyleSheet(
             "background:#2a1a0a;color:#ffaa44;font-size:11px;"
             "font-weight:bold;border:1px solid #6a3a0a;border-radius:3px;padding:2px 8px;")
+        # [FIX-MB1] clicked.connect 추가
+        self._btn_modify_m1.clicked.connect(lambda: self._on_modify_tick(-1))
         btn_row.addWidget(self._btn_modify_m1)
         self._btn_cancel_all = QPushButton("✖ 전체 취소")
         self._btn_cancel_all.setFixedHeight(24)
@@ -685,6 +689,49 @@ class SyntheticStatusPanel(QWidget):
             oid = int(oid_item.text())
         except ValueError:
             return
+        if callable(getattr(self, '_manual_modify_callback', None)):
+            self._manual_modify_callback(oid, new_price)
+
+    def _on_modify_tick(self, direction: int) -> None:
+        """
+        [FIX-MB1] +1호가 / -1호가 정정 버튼 핸들러.
+
+        미체결 주문 탭에서 선택된 행의 OID + 현재 지정가를 읽어
+        direction(+1 또는 -1) 틱만큼 가격을 조정한 뒤 정정 주문 전송.
+
+        direction = +1 : 가격 1틱 올림 (매수 유리 / 매도 불리 방향)
+        direction = -1 : 가격 1틱 내림 (매도 유리 / 매수 불리 방향)
+        """
+        row = self._tbl_open_orders.currentRow()
+        if row < 0:
+            return
+
+        oid_item   = self._tbl_open_orders.item(row, 0)
+        price_item = self._tbl_open_orders.item(row, 4)
+        if not oid_item or not price_item:
+            return
+
+        try:
+            oid = int(oid_item.text())
+        except ValueError:
+            return
+
+        try:
+            current_price = float(price_item.text().replace("$", ""))
+        except ValueError:
+            return
+
+        # 틱 사이즈 계산 후 1틱 조정
+        try:
+            from combo_order_chaser import _get_tick_size, _snap_to_tick
+            tick      = _get_tick_size(current_price)
+            raw_price = current_price + direction * tick
+            snap_dir  = "buy" if direction > 0 else "sell"
+            new_price = _snap_to_tick(raw_price, tick, snap_dir)
+            new_price = max(round(new_price, 2), tick)
+        except Exception:
+            new_price = round(max(current_price + direction * 0.05, 0.05), 2)
+
         if callable(getattr(self, '_manual_modify_callback', None)):
             self._manual_modify_callback(oid, new_price)
 

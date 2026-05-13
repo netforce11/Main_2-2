@@ -8,6 +8,16 @@ combo_ui_left.py — 복합 전략 탭: 좌측 패널 (LeftPanelMixin)
 
 v2.9  — BUG-1/3/7 수정
 v3.1  — 파일 분리 (200줄 이내)
+v3.2  — 기능 추가
+  [ADD-1] 폴더열기 버튼: 캡쳐 버튼 오른쪽에 📁 버튼 추가
+          클릭 시 캡쳐 저장 폴더를 파일 관리자로 열기
+  [ADD-2] 만기일 고정 표시: 헤더 행2에 lbl_expiry 추가
+          체인 동기화 시 _current_expiry 와 함께 항상 갱신
+          → 조회 후 만기일이 사라지지 않음
+  [ADD-3] 델타 체크박스: 헤더 행2에 체크박스 추가
+          체크 시 CALL/PUT 체인 테이블에 델타 컬럼 표시
+          델타 컬럼: 인덱스2 (행사가=0, 현재가=1, 델타=2, IV=3, 거리%=4)
+          동기화 시 call_data/put_data["delta"] 값 자동 반영
 ────────────────────────────────────────────────────────────
 """
 
@@ -16,13 +26,21 @@ from PyQt5.QtWidgets import (
     QLabel, QPushButton, QLineEdit,
     QGroupBox, QMessageBox,
     QTableWidget, QHeaderView, QAbstractItemView,
-    QSplitter, QSpinBox,
+    QSplitter, QSpinBox, QCheckBox,
 )
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtGui import QFont, QColor
+from PyQt5.QtGui import QDesktopServices
 
 from combo_constants import SPLITTER_STYLE, mk_item
 from core import REQ_CALL, REQ_PUT
+
+# 델타 컬럼 인덱스 상수
+_COL_STRIKE = 0
+_COL_PRICE  = 1
+_COL_DELTA  = 2
+_COL_IV     = 3
+_COL_DIST   = 4
 
 
 class LeftPanelMixin:
@@ -37,7 +55,7 @@ class LeftPanelMixin:
         v  = QVBoxLayout(gb)
         v.setSpacing(3); v.setContentsMargins(4, 6, 4, 4)
 
-        # 헤더 행 1: 자동 캡쳐 컨트롤
+        # ── 헤더 행 1: 캡쳐 컨트롤 ────────────────────────────
         sym_row = QHBoxLayout(); sym_row.setSpacing(6)
 
         # 종목/현재가 조회 위젯 (내부 참조용 — 화면 비표시)
@@ -49,7 +67,7 @@ class LeftPanelMixin:
         self.edit_expiry_combo.setReadOnly(True)
         self.edit_expiry_combo.setVisible(False)
 
-        # ── 캡쳐 간격 ──────────────────────────────────────
+        # 캡쳐 간격
         lbl_interval = QLabel("캡쳐 간격(초):")
         lbl_interval.setStyleSheet("color:#888;font-size:11px;border:none;")
         sym_row.addWidget(lbl_interval)
@@ -65,7 +83,7 @@ class LeftPanelMixin:
             "border-radius:3px;font-size:11px;font-weight:bold;")
         sym_row.addWidget(self._capture_spin)
 
-        # ── 토글 버튼 ──────────────────────────────────────
+        # 캡쳐 토글 버튼
         self._btn_capture_toggle = QPushButton("📷 캡쳐 시작")
         self._btn_capture_toggle.setFixedHeight(26)
         self._btn_capture_toggle.setCheckable(True)
@@ -77,29 +95,64 @@ class LeftPanelMixin:
         self._btn_capture_toggle.clicked.connect(self._on_capture_toggle)
         sym_row.addWidget(self._btn_capture_toggle)
 
-        # ── 상태 라벨 ──────────────────────────────────────
+        # [ADD-1] 폴더열기 버튼 ─────────────────────────────
+        self._btn_open_folder = QPushButton("📁")
+        self._btn_open_folder.setFixedHeight(26)
+        self._btn_open_folder.setFixedWidth(32)
+        self._btn_open_folder.setToolTip("캡쳐 저장 폴더 열기")
+        self._btn_open_folder.setStyleSheet(
+            "QPushButton{background:#1a1a2a;color:#aaaaff;font-weight:bold;"
+            "border:1px solid #3a3a6a;border-radius:3px;}"
+            "QPushButton:hover{background:#2a2a4a;color:#ccccff;}")
+        self._btn_open_folder.clicked.connect(self._on_open_capture_folder)
+        sym_row.addWidget(self._btn_open_folder)
+
+        # 상태 라벨
         self._lbl_capture_status = QLabel("대기 중")
         self._lbl_capture_status.setStyleSheet(
             "color:#445566;font-size:11px;border:none;")
         sym_row.addWidget(self._lbl_capture_status)
         sym_row.addStretch()
 
-        # ── 내부 캡쳐 타이머 초기화 ────────────────────────
+        # 내부 캡쳐 타이머 초기화
         self._capture_timer  = QTimer()
         self._capture_active = False
         self._capture_timer.timeout.connect(self._do_capture)
 
         v.addLayout(sym_row)
 
-        # 헤더 행 2: 심볼 표시 + 즉시 동기화
-        hdr = QHBoxLayout()
+        # ── 헤더 행 2: 심볼·만기·델타체크박스·동기화 버튼 ────
+        hdr = QHBoxLayout(); hdr.setSpacing(8)
+
         self.lbl_chain_sym = QLabel("종목: ―  |  현재가: ―")
         self.lbl_chain_sym.setStyleSheet(
             "color:#ffd700;font-weight:bold;font-size:11px;border:none;")
+        hdr.addWidget(self.lbl_chain_sym)
+
+        # [ADD-2] 만기일 고정 표시 라벨 ─────────────────────
+        self._lbl_expiry = QLabel("만기: ―")
+        self._lbl_expiry.setStyleSheet(
+            "color:#88ddff;font-size:11px;font-weight:bold;"
+            "border:1px solid #2a4a6a;border-radius:3px;"
+            "padding:1px 6px;background:#051525;")
+        hdr.addWidget(self._lbl_expiry)
+
+        hdr.addStretch()
+
+        # [ADD-3] 델타 표시 체크박스 ─────────────────────────
+        self._chk_delta = QCheckBox("Δ 델타")
+        self._chk_delta.setChecked(False)
+        self._chk_delta.setStyleSheet(
+            "color:#aaffaa;font-size:11px;border:none;"
+            "QCheckBox::indicator{width:13px;height:13px;}")
+        self._chk_delta.stateChanged.connect(self._on_delta_toggle)
+        hdr.addWidget(self._chk_delta)
+
         btn_sync = QPushButton("↺ 즉시 동기화")
         btn_sync.setFixedHeight(22)
         btn_sync.clicked.connect(self._sync_chain)
-        hdr.addWidget(self.lbl_chain_sym); hdr.addStretch(); hdr.addWidget(btn_sync)
+        hdr.addWidget(btn_sync)
+
         v.addLayout(hdr)
 
         # 콜/풋 체인 테이블
@@ -119,9 +172,13 @@ class LeftPanelMixin:
         lbl = QLabel("▲ CALL")
         lbl.setStyleSheet("color:#33aaff;font-weight:bold;border:none;")
         lbl.setAlignment(Qt.AlignCenter)
-        self.tbl_chain_call = QTableWidget(0, 4)
-        self.tbl_chain_call.setHorizontalHeaderLabels(["행사가", "현재가", "IV", "거리%"])
+        # [ADD-3] 컬럼 4→5개: 델타 컬럼 추가
+        self.tbl_chain_call = QTableWidget(0, 5)
+        self.tbl_chain_call.setHorizontalHeaderLabels(
+            ["행사가", "현재가", "델타", "IV", "거리%"])
         self._apply_chain_style(self.tbl_chain_call, "#90caf9")
+        # 델타 컬럼 기본값: 숨김
+        self.tbl_chain_call.setColumnHidden(_COL_DELTA, True)
         self.tbl_chain_call.cellClicked.connect(
             lambda r, c: self._on_chain_click(r, c, "C"))
         lv.addWidget(lbl); lv.addWidget(self.tbl_chain_call)
@@ -133,9 +190,13 @@ class LeftPanelMixin:
         lbl = QLabel("▼ PUT")
         lbl.setStyleSheet("color:#ff6666;font-weight:bold;border:none;")
         lbl.setAlignment(Qt.AlignCenter)
-        self.tbl_chain_put = QTableWidget(0, 4)
-        self.tbl_chain_put.setHorizontalHeaderLabels(["행사가", "현재가", "IV", "거리%"])
+        # [ADD-3] 컬럼 4→5개: 델타 컬럼 추가
+        self.tbl_chain_put = QTableWidget(0, 5)
+        self.tbl_chain_put.setHorizontalHeaderLabels(
+            ["행사가", "현재가", "델타", "IV", "거리%"])
         self._apply_chain_style(self.tbl_chain_put, "#ff9999")
+        # 델타 컬럼 기본값: 숨김
+        self.tbl_chain_put.setColumnHidden(_COL_DELTA, True)
         self.tbl_chain_put.cellClicked.connect(
             lambda r, c: self._on_chain_click(r, c, "P"))
         lv.addWidget(lbl); lv.addWidget(self.tbl_chain_put)
@@ -153,6 +214,26 @@ class LeftPanelMixin:
             "color:#ccc;gridline-color:#1a1a3a;}"
             f"QHeaderView::section{{background:#0a0a1e;color:{hdr_color};"
             "border:1px solid #1a1a3a;font-weight:bold;}")
+
+    # ── [ADD-1] 폴더열기 ──────────────────────────────────────
+    def _on_open_capture_folder(self):
+        """캡쳐 저장 폴더를 파일 관리자로 열기."""
+        import os
+        save_dir = "/home/netforce/US_Data/Data/Account_pic"
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except Exception:
+            pass
+        url = QUrl.fromLocalFile(save_dir)
+        if not QDesktopServices.openUrl(url):
+            self._log(f"⚠ 폴더 열기 실패: {save_dir}")
+
+    # ── [ADD-3] 델타 토글 ─────────────────────────────────────
+    def _on_delta_toggle(self, state: int):
+        """델타 체크박스 토글 → CALL/PUT 테이블 델타 컬럼 show/hide."""
+        show = (state == Qt.Checked)
+        self.tbl_chain_call.setColumnHidden(_COL_DELTA, not show)
+        self.tbl_chain_put.setColumnHidden(_COL_DELTA, not show)
 
     # ── 위임 메서드: combo_ui_left_price.py ───────────────────
     def _req_sym_price(self):
@@ -189,8 +270,7 @@ class LeftPanelMixin:
         sym       = cp.edit_sym.text().strip().upper()
         und_price = cp.und_price
 
-        # ★ FIX: 왼쪽 패널 종목 입력 필드를 콜-풋 탭 종목과 동기화
-        #        (XSP 등 종목 변경 시 edit_sym_combo가 갱신되지 않던 버그 수정)
+        # 왼쪽 패널 종목 입력 필드를 콜-풋 탭 종목과 동기화
         if hasattr(self, 'edit_sym_combo'):
             current_sym = self.edit_sym_combo.text().strip().upper()
             if current_sym != sym:
@@ -206,35 +286,57 @@ class LeftPanelMixin:
             if hasattr(self, 'edit_stock_price') and not self.edit_stock_price.text().strip():
                 self.edit_stock_price.setText(f"{und_price:.2f}")
 
-        # CALL 갱신
+        # ── CALL 갱신 ─────────────────────────────────────────
         self._call_strikes = list(cp.call_strikes)
         self._chain_call   = {}
         self.tbl_chain_call.setRowCount(0)
         for i, st in enumerate(cp.call_strikes):
-            lp = cp.call_data.get(REQ_CALL + i, {}).get("last")
+            d    = cp.call_data.get(REQ_CALL + i, {})
+            lp   = d.get("last")
+            # [ADD-3] 델타: call_data 의 "delta" 키 (없으면 None)
+            delta = d.get("delta")
             self._chain_call[st] = lp
             r = self.tbl_chain_call.rowCount()
             self.tbl_chain_call.insertRow(r)
-            self.tbl_chain_call.setItem(r, 0, mk_item(f"{int(st)}", "#ffd700"))
-            self.tbl_chain_call.setItem(r, 1, mk_item(f"{lp:.2f}" if lp else "―", "#33aaff"))
-            self.tbl_chain_call.setItem(r, 2, mk_item("―"))
-            self.tbl_chain_call.setItem(r, 3, _make_dist_item(st, und_price, "C"))
+            self.tbl_chain_call.setItem(r, _COL_STRIKE, mk_item(f"{int(st)}", "#ffd700"))
+            self.tbl_chain_call.setItem(r, _COL_PRICE,  mk_item(f"{lp:.2f}" if lp else "―", "#33aaff"))
+            # 델타 셀: 값 있으면 표시, 콜 델타는 양수(0~1)
+            if delta is not None:
+                delta_txt   = f"{delta:+.3f}"
+                delta_color = "#88ff88" if delta >= 0 else "#ff8888"
+            else:
+                delta_txt   = "―"
+                delta_color = "#555577"
+            self.tbl_chain_call.setItem(r, _COL_DELTA, mk_item(delta_txt, delta_color))
+            self.tbl_chain_call.setItem(r, _COL_IV,   mk_item("―"))
+            self.tbl_chain_call.setItem(r, _COL_DIST, _make_dist_item(st, und_price, "C"))
 
-        # PUT 갱신
+        # ── PUT 갱신 ──────────────────────────────────────────
         self._put_strikes = list(cp.put_strikes)
         self._chain_put   = {}
         self.tbl_chain_put.setRowCount(0)
         for i, st in enumerate(cp.put_strikes):
-            lp = cp.put_data.get(REQ_PUT + i, {}).get("last")
+            d    = cp.put_data.get(REQ_PUT + i, {})
+            lp   = d.get("last")
+            # [ADD-3] 델타: put_data 의 "delta" 키
+            delta = d.get("delta")
             self._chain_put[st] = lp
             r = self.tbl_chain_put.rowCount()
             self.tbl_chain_put.insertRow(r)
-            self.tbl_chain_put.setItem(r, 0, mk_item(f"{int(st)}", "#ffd700"))
-            self.tbl_chain_put.setItem(r, 1, mk_item(f"{lp:.2f}" if lp else "―", "#ff6666"))
-            self.tbl_chain_put.setItem(r, 2, mk_item("―"))
-            self.tbl_chain_put.setItem(r, 3, _make_dist_item(st, und_price, "P"))
+            self.tbl_chain_put.setItem(r, _COL_STRIKE, mk_item(f"{int(st)}", "#ffd700"))
+            self.tbl_chain_put.setItem(r, _COL_PRICE,  mk_item(f"{lp:.2f}" if lp else "―", "#ff6666"))
+            # 델타 셀: 풋 델타는 음수(-1~0)
+            if delta is not None:
+                delta_txt   = f"{delta:+.3f}"
+                delta_color = "#ff8888" if delta < 0 else "#88ff88"
+            else:
+                delta_txt   = "―"
+                delta_color = "#555577"
+            self.tbl_chain_put.setItem(r, _COL_DELTA, mk_item(delta_txt, delta_color))
+            self.tbl_chain_put.setItem(r, _COL_IV,   mk_item("―"))
+            self.tbl_chain_put.setItem(r, _COL_DIST, _make_dist_item(st, und_price, "P"))
 
-        # 만기 파싱
+        # ── 만기 파싱 + [ADD-2] lbl_expiry 갱신 ──────────────
         try:
             expiry_code = ""
             if hasattr(cp, '_expiry_list') and cp._expiry_list:
@@ -248,6 +350,7 @@ class LeftPanelMixin:
                             expiry_code = ew.text().strip() if ew else ""
             elif hasattr(cp, 'date_edit'):
                 expiry_code = cp.date_edit.date().toString("yyyyMMdd")
+
             if expiry_code and len(expiry_code) == 8:
                 ed = getattr(self, 'edit_expiry_combo', None)
                 if ed:
@@ -255,6 +358,22 @@ class LeftPanelMixin:
                     ed.setToolTip(
                         f"만기: {expiry_code[:4]}-{expiry_code[4:6]}-{expiry_code[6:8]}")
                 self._current_expiry = expiry_code
+
+                # [ADD-2] 만기 라벨 항상 갱신
+                mm = expiry_code[4:6]
+                dd = expiry_code[6:8]
+                self._lbl_expiry.setText(f"만기: {mm}/{dd}")
+                self._lbl_expiry.setStyleSheet(
+                    "color:#00ffcc;font-size:11px;font-weight:bold;"
+                    "border:1px solid #2a6a5a;border-radius:3px;"
+                    "padding:1px 6px;background:#051a15;")
+            else:
+                # 만기 미확인 시 회색 표시
+                self._lbl_expiry.setText("만기: ―")
+                self._lbl_expiry.setStyleSheet(
+                    "color:#88ddff;font-size:11px;font-weight:bold;"
+                    "border:1px solid #2a4a6a;border-radius:3px;"
+                    "padding:1px 6px;background:#051525;")
         except Exception:
             pass
 
@@ -270,10 +389,9 @@ class LeftPanelMixin:
     # ── 위임 메서드: combo_ui_left_chain.py ───────────────────
     def _on_chain_click(self, row: int, col: int, side: str):
         from combo_ui_left_chain import _on_chain_click as _f; _f(self, row, col, side)
-    # ── 자동 캡쳐 ─────────────────────────────────────────────
 
+    # ── 자동 캡쳐 ─────────────────────────────────────────────
     def _on_capture_toggle(self, checked: bool):
-        """토글 버튼: 1번(ON) / 2번(OFF)."""
         if checked:
             interval_ms = self._capture_spin.value() * 1000
             self._capture_timer.start(interval_ms)
@@ -284,7 +402,7 @@ class LeftPanelMixin:
             self._lbl_capture_status.setText(
                 f"●  {self._capture_spin.value()}초마다 저장 중")
             self._log(f"📷 자동 캡쳐 시작: {self._capture_spin.value()}초 간격")
-            self._do_capture()          # 시작 즉시 1회 캡쳐
+            self._do_capture()
         else:
             self._capture_timer.stop()
             self._capture_active = False
@@ -312,13 +430,11 @@ class LeftPanelMixin:
         filepath = os.path.join(save_dir, filename)
 
         try:
-            # 메인 윈도우 전체 화면 캡쳐
             target = self.mw if hasattr(self, 'mw') else self
             screen  = QApplication.primaryScreen()
             pixmap  = screen.grabWindow(target.winId())
             if pixmap.save(filepath, "JPG", 92):
-                self._lbl_capture_status.setText(
-                    f"●  저장: {filename}")
+                self._lbl_capture_status.setText(f"●  저장: {filename}")
                 self._log(f"📸 캡쳐 저장: {filepath}")
             else:
                 self._log(f"❌ 캡쳐 저장 실패: {filepath}")

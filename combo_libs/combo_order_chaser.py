@@ -291,7 +291,8 @@ def on_chase_click(self) -> None:
 
 def _start_auto_timer(self) -> None:
     _stop_auto_timer(self)
-    t = QTimer()
+    # [FIX-C5] QTimer 부모(self) 지정 — 부모 없으면 GC가 수집해 타이머 즉시 중단됨
+    t = QTimer(self)
     t.setSingleShot(False)
     t.setInterval(CHASE_INTERVAL_MS)
     t.timeout.connect(lambda: _auto_chase_tick(self))
