@@ -25,6 +25,15 @@ combo_order_callbacks.py — BAG 주문 상태 콜백 연결 / UI 갱신
   수정: _pending_position oid 기반 필터로 변경
         → Chaser 모드 ON/OFF 무관하게 모든 합성주문 체결 처리
         _on_exec_details 도 동일하게 수정
+[FIX-Q4] 청산 체결 시 stop_position_price_stream 호출 추가
+  기존: is_close 블록에서 스트림 해제 누락
+        → 청산 후에도 tid(9200번대) 스트림 좀비 생존
+        → oid 재사용 시 다른 포지션 가격 오염 가능
+  수정: is_close 체결 시 stop_position_price_stream(self, oid) 추가
+[FIX-Q5] 청산 체결 후 _set_panel_filled 호출 방지
+  기존: is_close 분기 후에도 _set_panel_filled 무조건 호출
+        → 이미 제거된 행에 status='보유' 쓰기 시도 + _refresh_pos_table 이중 호출
+  수정: is_close 일 때 _set_panel_filled 스킵
 ──────────────────────────────────────────────────────────────
 """
 
@@ -130,8 +139,14 @@ def _on_order_status(self, oid: int, status: str,
         is_close   = (oid in close_oids)
 
         if is_close:
-            # 청산 체결 → 패널/파일에서 제거
+            # 청산 체결 → 스트림 해제 후 패널/파일에서 제거
             self._log(f"🔴 OID={oid} 청산 체결 완료")
+            # [FIX-Q4] 청산 체결 시 실시간 스트림 해제
+            # 기존: 누락 → 스트림 좀비 생존, oid 재사용 시 가격 오염
+            try:
+                stop_position_price_stream(self, oid)
+            except Exception as _e:
+                self._log(f"⚠ 스트림 해제 실패: {_e}")
             if panel and hasattr(panel, 'remove_position_by_oid'):
                 panel.remove_position_by_oid(oid)
             try:
@@ -164,7 +179,10 @@ def _on_order_status(self, oid: int, status: str,
 
                 self._pending_position = None
 
-        _set_panel_filled(panel, oid, avg)
+        # [FIX-Q5] 청산 체결 시 _set_panel_filled 스킵
+        # 기존: is_close 여부 무관 무조건 호출 → 이미 제거된 행에 쓰기 + 이중 refresh
+        if not is_close:
+            _set_panel_filled(panel, oid, avg)
         _deactivate_chaser_safe(self, reason="체결 완료")
         self._chaser_current_oid = None
         from PyQt5.QtCore import QTimer as _QT

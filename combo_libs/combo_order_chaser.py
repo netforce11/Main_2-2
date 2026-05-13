@@ -1,5 +1,30 @@
 """
-combo_order_chaser.py — Smart Chaser (체결 추격 주문) + 취소 주문 로직  v2.5
+combo_order_chaser.py — Smart Chaser (체결 추격 주문) + 취소 주문 로직  v2.6
+──────────────────────────────────────────────────────────────────────────────
+변경 (v2.6):
+  [FIX-C1] 자동 모드 기본값 OFF
+    · init_chaser_state(): _chaser_auto_mode = False 추가
+    · _is_auto_mode(): _rb_chaser_auto / panel 모두 없을 때 False 반환 (기존과 동일하나 명시)
+    · _rb_chaser_auto 가 있으면 최초 1회 setChecked(False) 보장
+      → ensure_chaser_auto_off(self) 함수 추가
+      → 이 함수를 UI 빌드 완료 시점(combo_ui_chaser_row 등)에서 호출하면 됨
+    · register_chaser() 로그에 현재 모드(수동/자동) 표시 추가
+
+  [FIX-C2] 매도 Chaser cap 방향 수정
+    · 기존: action 무관 price + max_slippage (위쪽 cap) → 매도 정정 시 절대 안 걸림
+    · 수정: SELL → price - max_slippage (아래쪽 cap)
+            BUY  → price + max_slippage (위쪽 cap, 기존 동일)
+
+  [FIX-C3] _do_chase_with_price() cap 체크 방향 수정
+    · 기존: new_price > cap (매수/매도 구분 없이 동일 비교 → 매도 cap 무의미)
+    · 수정: SELL → new_price < cap 이면 중지
+            BUY  → new_price > cap 이면 중지
+
+  [FIX-C4] _do_chase_with_price() 매도 정정 방향 수정
+    · 기존: mid + tick (매수/매도 동일 → 매도인데 가격이 올라감)
+    · 수정: SELL → mid - tick (체결 유리하게 낮춤)
+            BUY  → mid + tick (체결 유리하게 높임, 기존 동일)
+
 ──────────────────────────────────────────────────────────────────────────────
 변경 (v2.5):
   [L-A] tickPrice 직접 덮어쓰기 제거 — 중앙 라우터 구독 방식으로 전환
@@ -120,6 +145,8 @@ def init_chaser_state(self) -> None:
     self._chaser_timer     = None
     self._chaser_active    = False
     self._chaser_max_price = 0.0
+    # [FIX-C1] 자동 모드 기본값 OFF — 사용자가 명시적으로 켤 때만 동작
+    self._chaser_auto_mode = False
 
 
 # ══════════════════════════════════════════════════════════════
@@ -140,17 +167,30 @@ def register_chaser(self, oid: int, price: float, action: str,
     self._chaser_qty       = max(1, int(qty))   # ★ v2.1
     self._chaser_attempts  = 0
     self._chaser_active    = True
-    # [v2.4] max_price도 틱 단위로 정렬 (매수=올림, 매도=내림)
-    _direction             = "sell" if action.upper() == "SELL" else "buy"
-    _tick_for_cap          = _get_tick_size(price + max_slippage)
-    self._chaser_max_price = _snap_to_tick(price + max_slippage, _tick_for_cap, _direction)
+
+    # [FIX-C2] cap 방향을 action 에 맞게 설정
+    # SELL: 가격이 낮아지는 방향 → price - max_slippage (아래쪽 캡)
+    # BUY : 가격이 높아지는 방향 → price + max_slippage (위쪽 캡, 기존 동일)
+    _direction = "sell" if action.upper() == "SELL" else "buy"
+    if action.upper() == "SELL":
+        _cap_raw           = price - max_slippage
+        _tick_for_cap      = _get_tick_size(_cap_raw)
+        self._chaser_max_price = _snap_to_tick(_cap_raw, _tick_for_cap, "sell")
+    else:
+        _cap_raw           = price + max_slippage
+        _tick_for_cap      = _get_tick_size(_cap_raw)
+        self._chaser_max_price = _snap_to_tick(_cap_raw, _tick_for_cap, "buy")
+
     self._last_bag_oid     = oid
 
     _update_chaser_ui(self, active=True)
     _update_cancel_ui(self, active=True)
+
+    _mode_label = "자동" if _is_auto_mode(self) else "수동(OFF)"
     self._log(
         f"🎯 Chaser 등록: OID={oid}  가격=${price:.2f}"
-        f"  qty={self._chaser_qty}  캡=${self._chaser_max_price:.2f}"
+        f"  action={action}  qty={self._chaser_qty}"
+        f"  캡=${self._chaser_max_price:.2f}  모드={_mode_label}"
     )
 
     if _is_auto_mode(self):
@@ -393,26 +433,43 @@ def _do_chase(self, reason: str = "") -> None:
 
 def _do_chase_with_price(self, mid: Optional[float], reason: str) -> None:
     """Mid price(또는 None)를 받아 실제 정정 주문 수행."""
-    # ★ FIX: _chaser_bag_contract.symbol에서 종목 읽기 (XSP=$0.01 / SPX=$0.05 분기)
     _bag       = getattr(self, '_chaser_bag_contract', None)
     _sym       = _bag.symbol if _bag is not None else ""
-    _direction = "sell" if self._chaser_action.upper() == "SELL" else "buy"
+    _action    = self._chaser_action.upper()
+    _direction = "sell" if _action == "SELL" else "buy"
     tick       = _get_tick_size(self._chaser_price, _sym)
 
     if mid is not None and mid > 0:
-        # [v2.4] round(mid+tick, 2) → _snap_to_tick으로 틱 배수 정렬
-        new_price = _snap_to_tick(mid + tick, tick, _direction)
-        self._log(f"   ↳ Mid=${mid:.2f} + 1틱(${tick}) = ${new_price:.2f}  [틱스냅 적용]")
+        # [FIX-C4] 방향에 따라 가격 조정
+        # SELL: mid - tick (낮춰서 체결 유리하게)
+        # BUY : mid + tick (높여서 체결 유리하게)
+        if _action == "SELL":
+            new_price = _snap_to_tick(mid - tick, tick, "sell")
+        else:
+            new_price = _snap_to_tick(mid + tick, tick, "buy")
+        self._log(
+            f"   ↳ Mid=${mid:.2f} {'−' if _action == 'SELL' else '+'} "
+            f"1틱(${tick}) = ${new_price:.2f}  [틱스냅 적용]")
     else:
-        # [v2.4] fallback도 동일하게 틱 스냅 적용
-        new_price = _snap_to_tick(self._chaser_price + tick, tick, _direction)
+        # fallback: 현재 chaser_price 에서 1틱 개선
+        if _action == "SELL":
+            new_price = _snap_to_tick(self._chaser_price - tick, tick, "sell")
+        else:
+            new_price = _snap_to_tick(self._chaser_price + tick, tick, "buy")
         self._log(
             f"   ↳ Mid unavailable → fallback: ${self._chaser_price:.2f}"
-            f" + tick ${tick} = ${new_price:.2f}  [틱스냅 적용]")
+            f" {'−' if _action == 'SELL' else '+'} tick ${tick}"
+            f" = ${new_price:.2f}  [틱스냅 적용]")
 
-    if new_price > self._chaser_max_price:
+    # [FIX-C3] cap 체크 방향 수정
+    # SELL: new_price 가 cap(아래쪽) 보다 낮아지면 중지
+    # BUY : new_price 가 cap(위쪽) 보다 높아지면 중지
+    cap = self._chaser_max_price
+    cap_hit = (new_price < cap) if _action == "SELL" else (new_price > cap)
+    if cap_hit:
         self._log(
-            f"⚠ Chaser 가격 캡 도달 ${self._chaser_max_price:.2f} → 추격 중지")
+            f"⚠ Chaser 가격 캡 도달 ${cap:.2f} → 추격 중지"
+            f"  (요청가=${new_price:.2f}  방향={_action})")
         deactivate_chaser(self, reason="가격 캡 도달")
         return
 
@@ -420,7 +477,7 @@ def _do_chase_with_price(self, mid: Optional[float], reason: str) -> None:
     self._chaser_attempts += 1
     self._log(
         f"🎯 Chaser [{reason}] #{self._chaser_attempts}: "
-        f"OID={self._chaser_oid}  가격 → ${new_price:.2f}  (틱+{tick})")
+        f"OID={self._chaser_oid}  가격 → ${new_price:.2f}  ({_action} 1틱{tick})")
     _modify_order(self, self._chaser_oid, new_price)
     _update_chaser_ui(self, active=True)
 
@@ -494,14 +551,43 @@ def _modify_order(self, oid: int, new_price: float) -> None:
 # ══════════════════════════════════════════════════════════════
 
 def _is_auto_mode(self) -> bool:
+    # [FIX-C1] 우선순위: UI 라디오버튼 → panel → _chaser_auto_mode(기본 False)
     rb = getattr(self, '_rb_chaser_auto', None)
     if rb is not None:
         return rb.isChecked()
-    # synthetic_panel 에서 조회 (fallback)
     panel = getattr(self, 'synthetic_panel', None)
     if panel and hasattr(panel, 'is_auto_chaser'):
         return panel.is_auto_chaser()
-    return False
+    # UI가 없을 때 내부 상태값 사용 (기본 False)
+    return getattr(self, '_chaser_auto_mode', False)
+
+
+def ensure_chaser_auto_off(self) -> None:
+    """
+    [FIX-C1] 프로그램 시작 / UI 빌드 완료 후 호출.
+    자동 모드 라디오버튼을 강제로 OFF 상태로 초기화.
+    combo_ui_chaser_row.py 또는 SyntheticStatusPanel.__init__ 에서
+    UI 위젯 생성 직후 호출하면 됨:
+        from combo_order_chaser import ensure_chaser_auto_off
+        ensure_chaser_auto_off(self)
+    """
+    rb = getattr(self, '_rb_chaser_auto', None)
+    if rb is not None:
+        rb.setChecked(False)
+    rb_manual = getattr(self, '_rb_chaser_manual', None)
+    if rb_manual is not None:
+        rb_manual.setChecked(True)
+    # panel 경로
+    panel = getattr(self, 'synthetic_panel', None)
+    if panel:
+        rb2 = getattr(panel, '_rb_chaser_auto', None)
+        if rb2 is not None:
+            rb2.setChecked(False)
+        rb2_m = getattr(panel, '_rb_chaser_manual', None)
+        if rb2_m is not None:
+            rb2_m.setChecked(True)
+    # 내부 상태도 초기화
+    self._chaser_auto_mode = False
 
 
 def _update_chaser_ui(self, active: bool) -> None:

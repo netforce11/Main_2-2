@@ -11,6 +11,16 @@ combo_order_logic.py — 합성 주문 버튼 핸들러
   - _init_synthetic_panel_callbacks 람다 수정
   - _place_combo_legs_lmt() 신설
   - _close_ib_position LMT/MKT 분기
+[FIX-Q2] _close_ib_position — _close_oid_set 등록 추가
+  기존: legs 없는 단건 청산 경로에서 _close_oid_set 미등록
+        → 콜백 is_close_match=False → 체결 콜백 전체 무시
+        → 패널 행 미삭제, 스트림 미해제
+  수정: oid 발급 후 _close_oid_set.add(oid) 추가
+[FIX-Q3] stop_position_price_stream 타이밍 수정
+  기존: _on_close_position_order 진입 직후(주문 전송 전) 스트림 해제
+        → 주문 실패/거절 시에도 스트림 끊겨 가격 표시 멈춤
+  수정: BAG 경로는 주문 전송 성공 후(_do_send_body) 해제
+        _close_ib_position 경로는 placeOrder 성공 후 해제
 ──────────────────────────────────────────────
 """
 
@@ -207,13 +217,10 @@ def _on_close_position_order(self, pos: dict, lmt_price: float = None):
     price_label = f"${lmt_price:.2f} [LMT]" if lmt_price is not None else "[MKT]"
     self._log(f"🔴 청산 요청: OID={oid}  가격={price_label}  전략={pos.get('strategy','')}")
 
-    # 실시간 손익 구독 해제
-    if oid:
-        try:
-            from combo_order_callbacks import stop_position_price_stream
-            stop_position_price_stream(self, oid)
-        except Exception:
-            pass
+    # [FIX-Q3] 스트림 해제를 여기서 하지 않음
+    # 주문 전송 실패/거절 시에도 스트림이 끊기는 문제 방지
+    # → BAG 경로: combo_order_bag._do_send_body 의 placeOrder 성공 후 해제
+    # → IB 단건 경로: _close_ib_position 의 placeOrder 성공 후 해제
 
     legs = pos.get("legs", [])
     if not legs:
@@ -314,6 +321,13 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None):
     if oid is None:
         return self._log("❌ nextOrderId 없음")
 
+    # [FIX-Q2] 단건 청산 oid 를 _close_oid_set 에 등록
+    # 기존: 등록 없음 → 콜백 is_close_match=False → 체결 후 패널 미삭제
+    if not hasattr(self, '_close_oid_set'):
+        self._close_oid_set = set()
+    self._close_oid_set.add(oid)
+    self._log(f"  [FIX-Q2] 단건 청산 oid 등록: {oid}")
+
     after_hours, session_label, tif, outside_rth = _get_session_info()
 
     ord_ = IbOrder()
@@ -335,8 +349,16 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None):
             f"🔴 청산 주문({order_type}): OID={oid}  {close_action} {qty}계약  "
             f"{strategy}{price_log}  TIF:{tif}  세션:{session_label}")
 
-        # [FIX-A] 주문 성공 후 파일 제거
+        # [FIX-Q3] placeOrder 성공 후 스트림 해제 (주문 전 해제 → 실패 시 가격 멈춤 방지)
         src_oid = pos.get("oid")
+        if src_oid:
+            try:
+                from combo_order_callbacks import stop_position_price_stream
+                stop_position_price_stream(self, src_oid)
+            except Exception:
+                pass
+
+        # [FIX-A] 주문 성공 후 파일 제거
         if src_oid:
             try:
                 from combo_position_store import safe_remove_after_order
@@ -344,6 +366,8 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None):
             except Exception:
                 pass
     except Exception as e:
+        # 주문 실패 시 _close_oid_set 에서 제거 (오염 방지)
+        self._close_oid_set.discard(oid)
         self._log(f"❌ 청산 오류: {e}")
 
 
