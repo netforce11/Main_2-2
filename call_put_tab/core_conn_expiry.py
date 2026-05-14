@@ -12,10 +12,14 @@ from core import build_expiry_list
 class ConnExpiryMixin:
     """만기 목록·Zone·행사가 계산. CoreConnMixin에 통합된다."""
 
-    _REQ_EXPIRY = 8870
+    _REQ_EXPIRY     = 8870
+    _REQ_SECDEF     = 8871   # ✅ 추가: reqSecDefOptParams용 reqId
 
-    # CL/VIX: IBKR에서 실시간 조회 / 나머지: 로컬 달력 계산
+    # CL/VIX: reqContractDetails(FOP/OPT)로 실제 만기 조회
     _IBKR_EXPIRY_SYMS = {"CL", "VIX"}
+
+    # ✅ 추가: SPX 등 지수는 로컬 달력 계산으로 충분
+    _LOCAL_EXPIRY_SYMS = {"SPX", "SPXW", "NDX", "RUT", "XSP", "DJX"}
 
     def _refresh_expiry_list(self):
         sym = self.edit_sym.text().strip().upper().replace("SPXW", "SPX")
@@ -25,9 +29,97 @@ class ConnExpiryMixin:
             self._fetch_expiry_from_ibkr(sym)
             return   # 콜백(_apply_ibkr_expiry)에서 combo_exp 갱신
 
-        # ── SPX 등 기존 로컬 계산 경로 ───────────────────────────
-        self._expiry_list = build_expiry_list(sym)
-        self._apply_expiry_combo()
+        # ── SPX 등 지수: 기존 로컬 달력 계산 ────────────────────
+        if sym in self._LOCAL_EXPIRY_SYMS:
+            self._expiry_list = build_expiry_list(sym)
+            self._apply_expiry_combo()
+            return
+
+        # ✅ 추가: 개별 종목(AAPL, TSLA 등) → reqSecDefOptParams 조회
+        # 위클리/월간 만기를 IBKR에서 실제로 가져옴
+        if self.mw.connected and self.mw.ib:
+            self._fetch_expiry_secdef(sym)
+        else:
+            # TWS 미연결 시 로컬 달력 fallback
+            self._expiry_list = build_expiry_list(sym)
+            self._apply_expiry_combo()
+
+    def _fetch_expiry_secdef(self, sym: str):
+        """
+        ✅ 신규: reqSecDefOptParams 로 개별 종목(STK) 옵션 만기 목록 조회.
+
+        - reqContractDetails 와 달리 파생상품 파라미터(만기 목록, 행사가 목록)를
+          한 번에 반환하므로 STK 옵션에 훨씬 빠르고 정확함.
+        - 위클리/월간 구분 없이 IBKR이 실제 거래 가능한 모든 만기를 반환.
+        - secDefOptParams 콜백: (reqId, underlyingSymbol, futFopExchange,
+                                 underlyingSecType, underlyingConId,
+                                 expirations, strikes)
+          expirations: frozenset of "YYYYMMDD" strings
+        """
+        self._log(f"🔍 {sym} 옵션 만기 조회 중… (STK)")
+
+        ib     = self.mw.ib
+        req_id = self._REQ_SECDEF
+        collected_exps = []
+
+        _orig_sdop    = getattr(ib, 'securityDefinitionOptionParameter',    lambda *a: None)
+        _orig_sdop_end = getattr(ib, 'securityDefinitionOptionParameterEnd', lambda *a: None)
+
+        def _on_sdop(rid, underlyingSym, futFopExchange, underlyingSecType,
+                     underlyingConId, expirations, strikes):
+            try: _orig_sdop(rid, underlyingSym, futFopExchange,
+                            underlyingSecType, underlyingConId, expirations, strikes)
+            except Exception: pass
+            if rid != req_id:
+                return
+            # expirations은 frozenset 또는 set
+            for exp in expirations:
+                if exp and exp not in collected_exps:
+                    collected_exps.append(exp)
+
+        def _on_sdop_end(rid):
+            try: _orig_sdop_end(rid)
+            except Exception: pass
+            if rid != req_id:
+                return
+            ib.securityDefinitionOptionParameter    = _orig_sdop
+            ib.securityDefinitionOptionParameterEnd = _orig_sdop_end
+            if _t_out and _t_out.isActive():
+                _t_out.stop()
+            from PyQt5.QtCore import QTimer as _QT
+            _QT.singleShot(0, lambda: self._apply_ibkr_expiry(sym, collected_exps))
+
+        ib.securityDefinitionOptionParameter    = _on_sdop
+        ib.securityDefinitionOptionParameterEnd = _on_sdop_end
+
+        # 10초 타임아웃
+        _t_out = QTimer(self)
+        _t_out.setSingleShot(True)
+        def _on_timeout():
+            ib.securityDefinitionOptionParameter    = _orig_sdop
+            ib.securityDefinitionOptionParameterEnd = _orig_sdop_end
+            if collected_exps:
+                self._log(f"⚠ {sym} 만기 조회 타임아웃 — 수신 {len(collected_exps)}건으로 진행")
+                from PyQt5.QtCore import QTimer as _QT
+                _QT.singleShot(0, lambda: self._apply_ibkr_expiry(sym, collected_exps))
+            else:
+                self._log(f"⚠ {sym} 만기 조회 실패 — 로컬 계산으로 대체")
+                from PyQt5.QtCore import QTimer as _QT
+                _QT.singleShot(0, lambda: self._apply_local_expiry_fallback(sym))
+        _t_out.timeout.connect(_on_timeout)
+        _t_out.start(10_000)
+
+        try:
+            # conId=0, exchange="", includeExpired=False
+            ib.reqSecDefOptParams(req_id, sym, "", "STK", 0)
+        except Exception as e:
+            self._log(f"⚠ reqSecDefOptParams 오류: {e}")
+            ib.securityDefinitionOptionParameter    = _orig_sdop
+            ib.securityDefinitionOptionParameterEnd = _orig_sdop_end
+            _t_out.stop()
+            # fallback: 로컬 달력 계산
+            self._expiry_list = build_expiry_list(sym)
+            self._apply_expiry_combo()
 
     def _fetch_expiry_from_ibkr(self, sym: str):
         """

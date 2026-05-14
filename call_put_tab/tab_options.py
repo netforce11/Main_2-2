@@ -116,6 +116,10 @@ class CallPutGrid(
         self._build()
         self._connect_signals()
         self._load_watch_rules_from_file()
+        # ✅ 수정: _build() 안에서 단순 파싱으로 읽은 관심종목을
+        #    v6.5 포맷(dict)을 포함한 완전한 파싱으로 100ms 후 재복원.
+        #    TabWrapper 설정 파일이 없거나 최초 실행 시에도 반드시 복원.
+        QTimer.singleShot(200, self._w_load)
 
     # ── Splitter style ────────────────────────────────────────
     def _spl_style(self) -> str:

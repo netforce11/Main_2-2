@@ -46,7 +46,7 @@ class RightPanelMixin:
         self._mid_hsplit.setChildrenCollapsible(False)
         self._mid_hsplit.addWidget(self._build_result_panel())
         self._mid_hsplit.addWidget(self._build_spread_chart_panel())
-        self._mid_hsplit.setSizes([1, 1])
+        self._mid_hsplit.setSizes([500, 500])
         cv.addWidget(self._mid_hsplit, 1)
 
         return container
@@ -163,7 +163,7 @@ class RightPanelMixin:
         v.addWidget(self._build_chaser_row())
 
         self.synthetic_panel = SyntheticStatusPanel()
-        v.addWidget(self.synthetic_panel, 1)
+        v.addWidget(self.synthetic_panel, 0)
 
         # ── synthetic_panel 콜백 연결 (생성 직후 1회) ──────────
         # _init_synthetic_panel_callbacks가 외부에서 호출되지 않을 경우 대비

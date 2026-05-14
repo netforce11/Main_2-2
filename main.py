@@ -573,6 +573,13 @@ class TradingDashboard(QMainWindow):
 
     def closeEvent(self, event):
         TelegramClient.get().stop_polling()   # 텔레그램 수신 루프 종료
+        # ✅ 수정: 종료 시 관심종목 명시적 저장
+        # _w_save()는 CoreFetchWatchlistMixin에 정의됨
+        try:
+            if self.tab_callput and hasattr(self.tab_callput, '_w_save'):
+                self.tab_callput._w_save()
+        except Exception as e:
+            print(f"[closeEvent] 관심종목 저장 실패 (무시): {e}")
         self.disconnect_ibkr()
         event.accept()
 

@@ -68,7 +68,10 @@ def _build_result_panel(self) -> QGroupBox:
         ("cost","순 비용","#90caf9"),         ("rr","R:R","#ff8844"),
     ]:
         box = QWidget(); bv = QVBoxLayout(box); bv.setContentsMargins(6,4,6,4)
-        box.setStyleSheet("border:1px solid #2a2a4a;border-radius:5px;background:#0a0a1e;")
+        box.setStyleSheet(
+            "QWidget{border:1px solid #2a2a4a;border-radius:5px;background:#0a0a1e;}"
+            "QLabel{border:none;background:transparent;}"
+        )
         lk = QLabel(label)
         lk.setStyleSheet(f"color:{col};font-size:13px;font-weight:bold;border:none;")
         lv = QLabel("―"); lv.setFont(_QFont("Arial", 16, _QFont.Bold))
@@ -114,7 +117,7 @@ def _build_result_panel(self) -> QGroupBox:
 def _build_spread_chart_panel(self) -> QGroupBox:
     gb = QGroupBox("📉 손익 곡선")
     v  = QVBoxLayout(gb); v.setContentsMargins(4, 6, 4, 4)
-    self._spread_labels = getattr(self, "_spread_labels", {})
+    # _spread_labels 는 _build_result_panel() 에서 이미 생성됨 — 덮어쓰지 않음
 
     if PG:
         # ── 차트 옵션 행: 색상 + 굵기 ──────────────────────────

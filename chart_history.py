@@ -539,6 +539,9 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
                 pass
 
     def _redraw_intraday_cache(self):
+        # ✅ 버그 수정: 옵션 차트가 표시 중인 경우 기초자산 캐시로 덮어쓰지 않음
+        if getattr(self, '_opt_chart_active', False):
+            return
         bars = getattr(self, '_intra_cache_bars', None)
         if not bars:
             return
@@ -554,6 +557,10 @@ class HistoryMixin(VlineMixin, IbkrHistMixin):
         - 캐시 데이터가 있으면 강제 redraw (matplotlib 숨김 억제 해소)
         - live_render_timer 재시작 보장
         """
+        # ✅ 버그 수정: 옵션 차트 표시 중이면 기초자산 캐시로 덮어쓰지 않음
+        if getattr(self, '_opt_chart_active', False):
+            return
+
         # ① 실시간 스트림 중 → dirty 강제 설정 후 즉시 렌더
         if getattr(self, '_live_render_timer', None):
             self._live_dirty = True

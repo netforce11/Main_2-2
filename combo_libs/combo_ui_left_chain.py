@@ -84,6 +84,8 @@ def _write_single(self, leg_row: int, side: str, strike: float, price):
     gamma_src = getattr(self, '_chain_gamma_call' if side == "C" else '_chain_gamma_put', {})
     theta_src = getattr(self, '_chain_theta_call' if side == "C" else '_chain_theta_put', {})
     vega_src  = getattr(self, '_chain_vega_call'  if side == "C" else '_chain_vega_put',  {})
+    # [FIX-BS] IV 조회
+    iv_src    = getattr(self, '_chain_iv_call'    if side == "C" else '_chain_iv_put',    {})
 
     def _set(col, text, _r=leg_row):
         it = self.tbl_legs.item(_r, col)
@@ -111,6 +113,7 @@ def _write_single(self, leg_row: int, side: str, strike: float, price):
         'gamma':  gamma_src.get(strike),
         'theta':  theta_src.get(strike),
         'vega':   vega_src.get(strike),
+        'iv':     iv_src.get(strike),    # [FIX-BS]
         'expiry': expiry,
     }
 
@@ -160,6 +163,8 @@ def _write_and_fetch_plan(self, plan: list, prices: dict):
             gamma_src = getattr(self, '_chain_gamma_call' if side == "C" else '_chain_gamma_put', {})
             theta_src = getattr(self, '_chain_theta_call' if side == "C" else '_chain_theta_put', {})
             vega_src  = getattr(self, '_chain_vega_call'  if side == "C" else '_chain_vega_put',  {})
+            # [FIX-BS] IV 조회
+            iv_src    = getattr(self, '_chain_iv_call'    if side == "C" else '_chain_iv_put',    {})
 
             _set(2, side)
             _set(3, str(int(strike)))
@@ -177,6 +182,7 @@ def _write_and_fetch_plan(self, plan: list, prices: dict):
                 'gamma':  gamma_src.get(strike),
                 'theta':  theta_src.get(strike),
                 'vega':   vega_src.get(strike),
+                'iv':     iv_src.get(strike),    # [FIX-BS]
                 'expiry': expiry,
             }
 
@@ -476,11 +482,12 @@ def _update_display_delta(self) -> None:
     # [FIX-SCENARIO] 시나리오 탭도 함께 갱신
     panel = getattr(self, 'synthetic_panel', None)
     if panel and hasattr(panel, 'update_scenario_greeks'):
-        # legs에 gamma/theta/vega 추가 (저장된 _leg_data에서)
+        # legs에 gamma/theta/vega/iv/cp/expiry 추가 (저장된 _leg_data에서)
         full_legs = []
         for i in sorted(leg_data.keys()):
             ld = leg_data[i]
-            if ld.get('delta') is None:
+            # IV 또는 delta 중 하나라도 있으면 포함
+            if ld.get('delta') is None and ld.get('iv') is None:
                 continue
             try:
                 tbl     = self.tbl_legs
@@ -498,7 +505,39 @@ def _update_display_delta(self) -> None:
                 'gamma':  float(ld.get('gamma')  or 0.0),
                 'theta':  float(ld.get('theta')  or 0.0),
                 'vega':   float(ld.get('vega')   or 0.0),
+                'iv':     ld.get('iv'),          # [FIX-BS] BS용 IV
+                'cp':     ld.get('side', 'C'),   # [FIX-BS] C/P
                 'strike': float(ld.get('strike') or 0.0),
+                'expiry': ld.get('expiry', ''),
             })
+
+        # [FIX-BS] 현재 지수 가격 (und_price) 전달
+        # self._und_price (LeftPanelMixin 에 저장) 우선 읽기
+        und_price = getattr(self, '_und_price', 0.0)
+
+        # 없으면 콜-풋 탭에서 읽기
+        if und_price <= 0:
+            try:
+                cp_tab = getattr(getattr(self, 'mw', None), 'tab_callput', None)
+                if cp_tab:
+                    und_price = float(getattr(cp_tab, 'und_price', 0) or 0)
+            except Exception:
+                pass
+
+        # 없으면 lbl_sym_price / edit_stock_price 위젯에서 읽기
+        if und_price <= 0:
+            try:
+                for attr in ('lbl_sym_price', 'edit_stock_price', 'lbl_und_price'):
+                    w = getattr(self, attr, None)
+                    if w:
+                        txt = w.text() if hasattr(w, 'text') else ''
+                        val = float(txt.replace(',', '').replace('현재가:', '')
+                                       .strip() or 0)
+                        if val > 0:
+                            und_price = val
+                            break
+            except Exception:
+                pass
+
         if full_legs:
-            panel.update_scenario_greeks(full_legs, entry)
+            panel.update_scenario_greeks(full_legs, entry, und_price)

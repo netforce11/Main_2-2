@@ -299,6 +299,7 @@ class LeftPanelMixin:
         self._chain_gamma_call  = {}   # [FIX-SCENARIO]
         self._chain_theta_call  = {}   # [FIX-SCENARIO]
         self._chain_vega_call   = {}   # [FIX-SCENARIO]
+        self._chain_iv_call     = {}   # [FIX-BS]
 
         # [FIX-DELTA] chain_store 참조 (폴백용)
         _chain_store = getattr(getattr(self, 'mw', None), 'chain_store', None)
@@ -313,6 +314,7 @@ class LeftPanelMixin:
             gamma = d.get("gamma")   # [FIX-SCENARIO]
             theta = d.get("theta")   # [FIX-SCENARIO]
             vega  = d.get("vega")    # [FIX-SCENARIO]
+            iv    = d.get("iv")      # [FIX-BS]
 
             # [FIX-DELTA] call_data에 delta 없으면 chain_store 에서 폴백
             if delta is None and _chain_store is not None and _cur_expiry:
@@ -322,6 +324,7 @@ class LeftPanelMixin:
                     if gamma is None: gamma = cs_entry.get("gamma")
                     if theta is None: theta = cs_entry.get("theta")
                     if vega  is None: vega  = cs_entry.get("vega")
+                    if iv    is None: iv    = cs_entry.get("iv")   # [FIX-BS]
                 except Exception:
                     pass
 
@@ -334,6 +337,8 @@ class LeftPanelMixin:
             if gamma is not None: self._chain_gamma_call[st] = gamma
             if theta is not None: self._chain_theta_call[st] = theta
             if vega  is not None: self._chain_vega_call[st]  = vega
+            # [FIX-BS] IV 저장
+            if iv    is not None: self._chain_iv_call[st]    = iv
             r = self.tbl_chain_call.rowCount()
             self.tbl_chain_call.insertRow(r)
             self.tbl_chain_call.setItem(r, _COL_STRIKE, mk_item(f"{int(st)}", "#ffd700"))
@@ -361,6 +366,7 @@ class LeftPanelMixin:
         self._chain_gamma_put   = {}   # [FIX-SCENARIO]
         self._chain_theta_put   = {}   # [FIX-SCENARIO]
         self._chain_vega_put    = {}   # [FIX-SCENARIO]
+        self._chain_iv_put      = {}   # [FIX-BS]
         self.tbl_chain_put.setRowCount(0)
         _delta_put_loaded = 0   # [FIX-DELTA] 로그용 카운터
         for i, st in enumerate(cp.put_strikes):
@@ -370,6 +376,7 @@ class LeftPanelMixin:
             gamma = d.get("gamma")   # [FIX-SCENARIO]
             theta = d.get("theta")   # [FIX-SCENARIO]
             vega  = d.get("vega")    # [FIX-SCENARIO]
+            iv    = d.get("iv")      # [FIX-BS]
 
             # [FIX-DELTA] put_data에 delta 없으면 chain_store 에서 폴백
             if delta is None and _chain_store is not None and _cur_expiry:
@@ -379,6 +386,7 @@ class LeftPanelMixin:
                     if gamma is None: gamma = cs_entry.get("gamma")
                     if theta is None: theta = cs_entry.get("theta")
                     if vega  is None: vega  = cs_entry.get("vega")
+                    if iv    is None: iv    = cs_entry.get("iv")   # [FIX-BS]
                 except Exception:
                     pass
 
@@ -391,6 +399,8 @@ class LeftPanelMixin:
             if gamma is not None: self._chain_gamma_put[st] = gamma
             if theta is not None: self._chain_theta_put[st] = theta
             if vega  is not None: self._chain_vega_put[st]  = vega
+            # [FIX-BS] IV 저장
+            if iv    is not None: self._chain_iv_put[st]    = iv
             r = self.tbl_chain_put.rowCount()
             self.tbl_chain_put.insertRow(r)
             self.tbl_chain_put.setItem(r, _COL_STRIKE, mk_item(f"{int(st)}", "#ffd700"))

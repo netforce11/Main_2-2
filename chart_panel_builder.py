@@ -149,11 +149,31 @@ def _build_daily_tab(host):
     btn_daily.setStyleSheet(_QUERY_BTN_STYLE)
     btn_daily.clicked.connect(host._fetch_daily)
 
+    # ✅ 옵션 시간봉 버튼 3개 (IBKR 옵션은 1 day 봉 미지원 → 시간봉으로 대체)
+    _OPT_BTN_STYLE = (
+        "QPushButton{background:#1a3a2a;color:#00ff88;font-size:11px;"
+        "font-weight:bold;border:1px solid #00aa55;border-radius:3px;padding:1px 6px;}"
+        "QPushButton:hover{background:#2a4a3a;}"
+        "QPushButton:pressed{background:#0a2a1a;}"
+    )
+    btn_opt_1d = QPushButton("옵션 1D")
+    btn_opt_3d = QPushButton("옵션 3D")
+    btn_opt_5d = QPushButton("옵션 5D")
+    for btn, n in ((btn_opt_1d, 1), (btn_opt_3d, 3), (btn_opt_5d, 5)):
+        btn.setFixedHeight(22)
+        btn.setFixedWidth(58)
+        btn.setStyleSheet(_OPT_BTN_STYLE)
+        btn.setToolTip(
+            f"선택된 행사가 옵션 {n}일치 시간봉 조회\n"
+            "(행사가를 먼저 클릭하세요)")
+        btn.clicked.connect(lambda _, d=n: host._fetch_option_daily(d))
+
     host.lbl_daily_status = QLabel("기초자산 클릭 시 자동 조회")
     host.lbl_daily_status.setStyleSheet("color:#666;font-size:10px;border:none;")
 
     for w in (_lbl("기간:"), host.combo_daily_period,
-              btn_daily, host.lbl_daily_status):
+              btn_daily, _lbl("│"), btn_opt_1d, btn_opt_3d, btn_opt_5d,
+              host.lbl_daily_status):
         d_ctrl.addWidget(w)
     d_ctrl.addStretch()
     daily_v.addLayout(d_ctrl)

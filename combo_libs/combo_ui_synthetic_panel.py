@@ -1,4 +1,4 @@
-"""combo_ui_synthetic_panel.py — SyntheticStatusPanel 위젯  v2.9
+"""combo_ui_synthetic_panel.py — SyntheticStatusPanel 위젯  v3.0
 탭1: 📊 증거금 확인  탭2: 📋 합성 잔고  탭3: 📋 미체결  탭4: 📈 시나리오
 
 [FIX-J] 지정가 청산 UI 추가
@@ -20,8 +20,13 @@
   · 시나리오 매트릭스 (지수 이동 × 만기까지 남은 시간)
   · update_scenario_greeks(legs, entry) 외부 API
   · 만기까지 남은 시간 ET 기준 자동 계산 + 슬라이더 기본값 설정
+[FIX-BS] Black-Scholes 재계산 방식으로 정확도 향상
+  · _bs_price() — 순수 Python BS 공식 (외부 라이브러리 불필요)
+  · _bs_spread_price() — 스프레드 포지션 BS 재계산
+  · IV 있으면 BS 사용, 없으면 Δ+½Γ 폴백 (자동 전환)
+  · 상한 클램프 유지 (스프레드 최대 수익 한계)
+  · 계산 모드 표시 (BS / 근사)
 """
-
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QTabWidget, QTableWidget, QHeaderView, QAbstractItemView,
@@ -30,6 +35,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QColor, QFont
+import math
 
 # [FIX-BANNER] 배너 임포트
 try:
@@ -71,7 +77,7 @@ class SyntheticStatusPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setStyleSheet("background:#07070f;")
         self._positions              = []
         self._close_pos_callback     = None
@@ -139,7 +145,8 @@ class SyntheticStatusPanel(QWidget):
         root.addWidget(mode_widget)
 
         sep = QFrame(); sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color:#1a1a3a;max-height:1px;"); root.addWidget(sep)
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color:#1a1a3a;border:none;"); root.addWidget(sep)
 
         self._tabs = QTabWidget()
         self._tabs.setStyleSheet(_TAB_STYLE)
@@ -172,10 +179,12 @@ class SyntheticStatusPanel(QWidget):
 
         for row in (row_s, row_c): lay.addLayout(row)
         sep1 = QFrame(); sep1.setFrameShape(QFrame.HLine)
-        sep1.setStyleSheet("color:#1a1a3a; max-height:1px;"); lay.addWidget(sep1)
+        sep1.setFixedHeight(1)
+        sep1.setStyleSheet("background-color:#1a1a3a;border:none;"); lay.addWidget(sep1)
         for row in (row_a, row_r): lay.addLayout(row)
         sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine)
-        sep2.setStyleSheet("color:#1a1a3a; max-height:1px;"); lay.addWidget(sep2)
+        sep2.setFixedHeight(1)
+        sep2.setStyleSheet("background-color:#1a1a3a;border:none;"); lay.addWidget(sep2)
 
         self._lbl_margin_status = QLabel("―")
         self._lbl_margin_status.setAlignment(Qt.AlignCenter)
@@ -228,8 +237,12 @@ class SyntheticStatusPanel(QWidget):
         lay.addWidget(self._build_close_control_row())
 
         # [FIX-BANNER] Wolf + 수익률 배너 (탭 내부 하단)
-        # __init__ 에서 생성되므로 여기서는 플레이스홀더 레이아웃만 저장
-        self._banner_layout = lay   # _build_ui 완료 후 __init__ 에서 배너 추가
+        # 메인 레이아웃(lay)을 직접 재사용하면 여백/경계가 틀어지므로
+        # 전용 서브 레이아웃을 만들어 lay 에 추가하고 저장
+        self._banner_layout = QVBoxLayout()
+        self._banner_layout.setContentsMargins(0, 0, 0, 0)
+        self._banner_layout.setSpacing(2)
+        lay.addLayout(self._banner_layout)
 
         return w
 
@@ -367,23 +380,11 @@ class SyntheticStatusPanel(QWidget):
     # [FIX-SCENARIO] 시나리오 탭 외부 API
     # ══════════════════════════════════════════════════════════
 
-    def update_scenario_greeks(self, legs: list, entry: float = 0.0) -> None:
-        """
-        [FIX-SCENARIO] 레그 설정 완료 시 호출 → 시나리오 탭 Greeks 갱신.
-
-        Args:
-            legs  : 레그 딕셔너리 리스트.
-                    각 원소에 'delta', 'gamma', 'theta', 'vega', 'iv',
-                    'dir', 'qty', 'strike' 키 사용.
-            entry : DEBIT/CREDIT 가격 (달러). 0이면 탭 내부에서 유지.
-
-        호출 위치 예시 (combo_ui_left_chain.py _update_display_delta 끝):
-            panel = getattr(self, 'synthetic_panel', None)
-            if panel:
-                panel.update_scenario_greeks(legs, entry)
-        """
+    def update_scenario_greeks(self, legs: list, entry: float = 0.0,
+                               und_price: float = 0.0) -> None:
+        """[FIX-SCENARIO] 레그 설정 완료 시 호출 → 시나리오 탭 Greeks 갱신."""
         if hasattr(self, '_scenario_tab'):
-            self._scenario_tab.set_greeks(legs, entry)
+            self._scenario_tab.set_greeks(legs, entry, und_price)
 
     def set_cancel_order_callback(self, fn):
         self._cancel_order_callback = fn
@@ -958,12 +959,14 @@ class ScenarioTab(QWidget):
     """
 
     # 시나리오 매트릭스 행/열 고정
-    _MOVES = [-20, -15, -10, -5, 0, 5, 10, 15, 20]
+    _MOVES = [-50, -40, -30, -20, -15, -10, -5, 0, 5, 10, 15, 20, 30, 40, 50]
     _TIMES = [4.0, 3.0, 2.0, 1.0, 0.5]   # 만기까지 남은 시간 (많은→적은)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background:#07070f;")
+        from PyQt5.QtWidgets import QSizePolicy
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         # Greeks 초기값 (데이터 수신 전)
         self._entry        = 0.0
@@ -974,6 +977,10 @@ class ScenarioTab(QWidget):
         self._max_val      = 5.0   # 스프레드 상한 (행사가 차이)
         self._expiry_str   = ""    # [FIX-SCENARIO] 만기일 (YYYYMMDD)
         self._hours_left   = 4.0   # [FIX-SCENARIO] 만기까지 남은 시간 (기본 4h)
+
+        # [FIX-BS] Black-Scholes 계산용 원본 데이터
+        self._legs_raw     = []    # 레그 원본 리스트 (strike, iv, dir, qty, cp)
+        self._und_price    = 0.0   # 현재 지수 가격 (BS 기준가)
 
         self._build_ui()
 
@@ -989,7 +996,10 @@ class ScenarioTab(QWidget):
         self._lbl_entry  = self._mk_info("DEBIT: ―")
         self._lbl_greeks = self._mk_info("δ ―  γ ―  θ ―  ν ―")
         self._lbl_cap    = self._mk_info("상한: ―")
+        self._lbl_und    = self._mk_info("지수: ―")   # [FIX-BS] und_price
         info_row.addWidget(self._lbl_entry)
+        info_row.addStretch()
+        info_row.addWidget(self._lbl_und)
         info_row.addStretch()
         info_row.addWidget(self._lbl_greeks)
         info_row.addStretch()
@@ -997,7 +1007,8 @@ class ScenarioTab(QWidget):
         root.addLayout(info_row)
 
         sep = QFrame(); sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color:#1a1a3a;max-height:1px;")
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color:#1a1a3a;border:none;")
         root.addWidget(sep)
 
         # ── 슬라이더 3개 ──────────────────────────────────────
@@ -1025,7 +1036,8 @@ class ScenarioTab(QWidget):
         self._auto_update_time()   # 즉시 1회 실행
 
         sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine)
-        sep2.setStyleSheet("color:#1a1a3a;max-height:1px;")
+        sep2.setFixedHeight(1)
+        sep2.setStyleSheet("background-color:#1a1a3a;border:none;")
         root.addWidget(sep2)
 
         # ── 결과 카드 4개 ──────────────────────────────────────
@@ -1060,7 +1072,8 @@ class ScenarioTab(QWidget):
         root.addLayout(detail)
 
         sep3 = QFrame(); sep3.setFrameShape(QFrame.HLine)
-        sep3.setStyleSheet("color:#1a1a3a;max-height:1px;")
+        sep3.setFixedHeight(1)
+        sep3.setStyleSheet("background-color:#1a1a3a;border:none;")
         root.addWidget(sep3)
 
         # ── 시나리오 매트릭스 ─────────────────────────────────
@@ -1081,7 +1094,10 @@ class ScenarioTab(QWidget):
         self._matrix_tbl.verticalHeader().setFont(_f(9))
         self._matrix_tbl.verticalHeader().setDefaultSectionSize(20)
         self._matrix_tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._matrix_tbl.setFixedHeight(220)
+        # 4~5행만 보이도록 고정 (헤더 26px + 행 22px × 5)
+        self._matrix_tbl.setFixedHeight(136)
+        self._matrix_tbl.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self._matrix_tbl.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._matrix_tbl.setStyleSheet(_TBL_STYLE)
         root.addWidget(self._matrix_tbl)
 
@@ -1092,7 +1108,6 @@ class ScenarioTab(QWidget):
         lbl_note.setStyleSheet("color:#333355;font-size:9px;border:none;")
         root.addWidget(lbl_note)
 
-        root.addStretch()
 
         # 초기 렌더
         self._refresh()
@@ -1146,16 +1161,24 @@ class ScenarioTab(QWidget):
 
     # ── 외부 API ──────────────────────────────────────────────
 
-    def set_greeks(self, legs: list, entry: float = 0.0) -> None:
+    def set_greeks(self, legs: list, entry: float = 0.0,
+                   und_price: float = 0.0) -> None:
         """
         레그 Greeks 주입 → 탭 갱신.
-        legs 각 원소: {'dir','qty','delta','gamma','theta','vega','strike'}
+        legs 각 원소: {'dir','qty','delta','gamma','theta','vega',
+                       'strike','iv','cp','expiry'}
+        und_price: 현재 지수 가격 (BS 계산 기준가)
         """
         if not legs:
             return
 
         if entry > 0:
             self._entry = entry
+
+        # [FIX-BS] 원본 레그 저장 (BS 계산용)
+        self._legs_raw = legs
+        if und_price > 0:
+            self._und_price = und_price
 
         # [FIX-SCENARIO] 만기일 저장 (첫 레그에서)
         for leg in legs:
@@ -1193,8 +1216,11 @@ class ScenarioTab(QWidget):
             except Exception:
                 pass
 
+        # IV 없어도 strike는 있으면 진행
         if not has_data:
-            return
+            iv_check = any(leg.get("iv") for leg in legs)
+            if not iv_check:
+                return
 
         self._pos_delta = pos_delta
         self._pos_gamma = pos_gamma
@@ -1210,6 +1236,8 @@ class ScenarioTab(QWidget):
         # 헤더 라벨 갱신
         self._lbl_entry.setText(
             f"DEBIT: ${self._entry:.2f}" if self._entry > 0 else "DEBIT: ―")
+        self._lbl_und.setText(
+            f"지수: {self._und_price:.1f}" if self._und_price > 0 else "지수: ―")
         self._lbl_greeks.setText(
             f"δ {pos_delta:+.3f}  γ {pos_gamma:+.4f}  "
             f"θ {pos_theta:+.4f}  ν {pos_vega:+.4f}")
@@ -1217,54 +1245,189 @@ class ScenarioTab(QWidget):
 
         self._refresh()
 
+    # ── [FIX-BS] Black-Scholes 계산 엔진 ────────────────────────
+
+    @staticmethod
+    def _bs_price(S: float, K: float, T: float,
+                  sigma: float, cp: str = 'C') -> float:
+        """
+        순수 Python Black-Scholes 옵션 가격 계산.
+        외부 라이브러리 불필요 (math 표준 라이브러리만 사용).
+
+        Args:
+            S     : 현재 지수 가격
+            K     : 행사가
+            T     : 만기까지 남은 시간 (연 단위)
+                    예) 2시간 = 2 / (252 * 6.5)  ← 거래일 기준
+            sigma : IV (소수. 예: 0.15 = 15%)
+            cp    : 'C' (콜) / 'P' (풋)
+
+        Returns:
+            float: 옵션 가격 (달러)
+        """
+        if S <= 0 or K <= 0 or sigma <= 0:
+            return 0.0
+
+        # 만기 도달 → 내재가치만
+        if T <= 1e-6:
+            if cp == 'C':
+                return max(S - K, 0.0)
+            else:
+                return max(K - S, 0.0)
+
+        try:
+            sqrtT = math.sqrt(T)
+            d1 = (math.log(S / K) + 0.5 * sigma * sigma * T) / (sigma * sqrtT)
+            d2 = d1 - sigma * sqrtT
+
+            def _N(x: float) -> float:
+                return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+            if cp == 'C':
+                return S * _N(d1) - K * _N(d2)
+            else:
+                return K * _N(-d2) - S * _N(-d1)
+        except Exception:
+            return 0.0
+
+    def _bs_spread_price(self, S_new: float, T_new: float,
+                         div: float) -> tuple:
+        """
+        [FIX-BS] 스프레드 포지션 전체 BS 재계산.
+
+        지수가 S_new 로 이동하고 남은 시간이 T_new 일 때
+        각 레그를 BS로 재계산해 포지션 가격 반환.
+
+        IV 조정: 현재 IV + div(%) 반영 (베가 효과 내재)
+        IV 없는 레그: 폴백 → Δ+½Γ 근사 사용
+
+        Args:
+            S_new  : 이동 후 지수 가격
+            T_new  : 남은 시간 (연 단위)
+            div    : IV 변화 (%. 예: +2 = IV 2%p 상승)
+
+        Returns:
+            (포지션 가격, 계산 모드 str)
+            계산 모드: 'BS' | '근사' | 'BS+근사'
+        """
+        if not self._legs_raw or self._und_price <= 0:
+            return (None, '근사')
+
+        total_price = 0.0
+        bs_count    = 0
+        approx_count = 0
+
+        for leg in self._legs_raw:
+            try:
+                strike = float(leg.get('strike', 0) or 0)
+                iv_raw = leg.get('iv')
+                qty    = float(leg.get('qty', 1) or 1)
+                cp     = str(leg.get('cp', 'C')).upper()
+                direction = str(leg.get('dir', 'BUY')).upper()
+                coeff  = 1.0 if direction == 'BUY' else -1.0
+
+                if strike <= 0:
+                    continue
+
+                if iv_raw is not None and float(iv_raw) > 0:
+                    # ── BS 계산 ──────────────────────────────
+                    sigma = float(iv_raw) + div / 100.0
+                    sigma = max(sigma, 0.001)   # 음수 방지
+                    leg_price = self._bs_price(S_new, strike, T_new,
+                                               sigma, cp)
+                    total_price += leg_price * qty * coeff * 100.0
+                    bs_count += 1
+                else:
+                    # ── Δ+½Γ 폴백 ────────────────────────────
+                    d   = float(leg.get('delta', 0) or 0)
+                    g   = float(leg.get('gamma', 0) or 0)
+                    ds  = S_new - self._und_price
+                    leg_change = (d * ds + 0.5 * g * ds * ds) * qty * coeff * 100.0
+                    total_price += leg_change
+                    approx_count += 1
+
+            except Exception:
+                continue
+
+        # 폴백 케이스: BS 레그 없음
+        if bs_count == 0:
+            return (None, '근사')
+
+        # 포지션 가격 = entry 기준 + BS 변화분
+        # BS 결과가 달러 단위이므로 /100 해서 옵션 가격 환산
+        pos_price = total_price / 100.0
+
+        mode = 'BS' if approx_count == 0 else 'BS+근사'
+        return (pos_price, mode)
+
     # ── 계산 엔진 ─────────────────────────────────────────────
 
     def _calc(self, move: float, hours_left: float, div: float) -> dict:
         """
-        단일 시나리오 계산.
-        move       : 지수 이동 (포인트)
-        hours_left : 만기까지 남은 시간 (시간)
-                     세타는 남은 시간이 적을수록 누적 손실이 큼
-                     총 세타 손실 = theta × (현재 남은시간 - hours_left) / 24
-        div        : IV 변화 (%)
+        [FIX-BS] 단일 시나리오 계산 — BS 우선, 폴백 Δ+½Γ.
+
+        Args:
+            move       : 지수 이동 (포인트)
+            hours_left : 만기까지 남은 시간 (시간, 슬라이더 값)
+            div        : IV 변화 (%)
+
+        BS 계산:
+            IV 있는 레그 → Black-Scholes 재계산
+            IV 없는 레그 → Δ+½Γ 근사 폴백
+            세타는 BS 안에 내재되어 별도 계산 불필요
+            베가는 IV+div 로 BS에 반영
+
+        폴백(Δ+½Γ):
+            IV 전혀 없을 때 → 기존 Greeks 근사 공식 사용
         """
         entry = self._entry if self._entry > 0 else 0.01
 
-        # 현재 남은 시간 기준 경과 시간 계산
-        # ex) 지금 3h 남았고, 슬라이더 1h → 2h 경과
-        current_left = self._hours_left
-        elapsed = max(current_left - hours_left, 0.0)
+        # 경과 시간 (세타용, 폴백에서만 사용)
+        elapsed = max(self._hours_left - hours_left, 0.0)
 
-        # 1. 델타+감마 (Convexity 반영)
-        dg = (self._pos_delta * move) + (0.5 * self._pos_gamma * move * move)
-        dg_dollars = dg * 100.0          # SPX 승수 100
+        # ── BS 시도 ───────────────────────────────────────────
+        S_new = self._und_price + move   # 이동 후 지수 가격
+        # 남은 시간 연 환산 (1거래일 = 6.5h, 연 252거래일)
+        T_new = max(hours_left / (252.0 * 6.5), 1e-6)
 
-        # 2. 세타 (일 기준 → 경과 시간으로 환산)
-        th_dollars = self._pos_theta * (elapsed / 24.0) * 100.0
+        bs_result, mode = self._bs_spread_price(S_new, T_new, div)
 
-        # 3. 베가 (IV 1% 단위)
-        vg_dollars = self._pos_vega * div * 100.0
+        if bs_result is not None:
+            # ── BS 성공 ───────────────────────────────────────
+            expected_price = bs_result
 
-        # 4. 예상 가격 (달러)
-        expected_dollars = entry * 100.0 + dg_dollars + th_dollars + vg_dollars
+            # 세타/감마 분해값 (참고용 — BS에 내재됨)
+            dg_dollars = (self._pos_delta * move +
+                          0.5 * self._pos_gamma * move * move) * 100.0
+            th_dollars = self._pos_theta * (elapsed / 24.0) * 100.0
+            vg_dollars = self._pos_vega * div * 100.0
 
-        # 5. 스프레드 상한 처리
-        max_dollars = self._max_val * 100.0
-        capped = expected_dollars > max_dollars
-        expected_dollars = min(max(expected_dollars, 0.0), max_dollars)
-        expected_price   = expected_dollars / 100.0
+        else:
+            # ── Δ+½Γ 폴백 ─────────────────────────────────────
+            mode = '근사'
+            dg_dollars = (self._pos_delta * move +
+                          0.5 * self._pos_gamma * move * move) * 100.0
+            th_dollars = self._pos_theta * (elapsed / 24.0) * 100.0
+            vg_dollars = self._pos_vega * div * 100.0
+            expected_price = entry + (dg_dollars + th_dollars + vg_dollars) / 100.0
 
-        # 6. 수익률
+        # 스프레드 상한 처리
+        max_price = self._max_val
+        capped    = expected_price > max_price
+        expected_price = min(max(expected_price, 0.0), max_price)
+
+        # 수익률
         pnl_pct = ((expected_price - entry) / entry * 100.0) if entry > 0 else 0.0
 
         return {
-            "dg":       dg_dollars,
-            "th":       th_dollars,
-            "vg":       vg_dollars,
-            "price":    expected_price,
-            "pct":      pnl_pct,
-            "capped":   capped,
-            "elapsed":  elapsed,
+            "dg":      dg_dollars,
+            "th":      th_dollars,
+            "vg":      vg_dollars,
+            "price":   expected_price,
+            "pct":     pnl_pct,
+            "capped":  capped,
+            "elapsed": elapsed,
+            "mode":    mode,        # 'BS' | '근사' | 'BS+근사'
         }
 
     def _auto_update_time(self) -> None:
@@ -1391,10 +1554,21 @@ class ScenarioTab(QWidget):
             f"color:{pct_col};font-size:10px;border:none;font-weight:bold;")
 
         elapsed = r.get("elapsed", 0.0)
-        self._lbl_cap_warn.setText(
-            f"⚠ 예상가 상한 ${self._max_val:.2f} 초과 → MAX 고정"
+        mode    = r.get("mode", "근사")
+        mode_color = "#44aaff" if mode == "BS" else \
+                     "#44ccaa" if mode == "BS+근사" else "#886644"
+
+        cap_txt = ""
+        if r["capped"]:
+            cap_txt = f"⚠ 예상가 상한 ${self._max_val:.2f} 초과 → MAX 고정  "
+        cap_txt += (f"경과 {elapsed:.1f}h  "
+                    f"({self._hours_left:.1f}h → {hours_left:.1f}h 남음)  ")
+
+        self._lbl_cap_warn.setText(cap_txt)
+        self._lbl_cap_warn.setStyleSheet(
+            f"color:#ffaa44;font-size:10px;border:none;"
             if r["capped"] else
-            f"경과 {elapsed:.1f}h (현재 {self._hours_left:.1f}h → {hours_left:.1f}h 남음)")
+            f"color:#445566;font-size:10px;border:none;")
 
         # 매트릭스 갱신 (남은 시간 기준)
         for ri, m in enumerate(self._MOVES):
