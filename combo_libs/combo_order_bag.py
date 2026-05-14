@@ -1,6 +1,12 @@
 """
-combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.5
+combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.6
 ──────────────────────────────────────────────────────
+v3.6 변경:
+  [FIX-DELTA] _pending_position 생성 직후 _leg_data 델타 주입
+    · placeOrder 성공 시 self._leg_data 에 저장된 각 레그 delta 를
+      legs[i]['delta'] 에 복사 → combo_ui_synthetic_panel._calc_delta_pnl_pct() 작동
+    · _leg_data 없거나 delta None 이면 0.0 으로 폴백 (기존 동작 유지)
+
 v3.5 변경:
   [FIX-R] totalQuantity 하드코딩 1 → legs 실제 수량 반영
     · 기존: ibord.totalQuantity = 1 (수량 무관 항상 1계약 주문)
@@ -563,6 +569,16 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             "legs":     legs,
             "status":   "미체결",
         }
+
+        # [FIX-DELTA] _leg_data 델타값 → legs[i]['delta'] 주입
+        # 체인 클릭 시 combo_ui_left_chain.py 가 self._leg_data[i]['delta'] 에 저장해 둔 값을
+        # 이 시점에 legs 에 반영 → _calc_delta_pnl_pct() 가 정상 계산
+        _leg_data = getattr(self, '_leg_data', {})
+        for _i, _leg in enumerate(legs):
+            if 'delta' not in _leg:
+                _leg['delta'] = float(
+                    (_leg_data.get(_i) or {}).get('delta') or 0.0
+                )
 
         register_chaser(
             self, oid=oid, price=lmt_price,

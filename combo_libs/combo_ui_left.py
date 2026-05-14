@@ -18,6 +18,12 @@ v3.2  — 기능 추가
           체크 시 CALL/PUT 체인 테이블에 델타 컬럼 표시
           델타 컬럼: 인덱스2 (행사가=0, 현재가=1, 델타=2, IV=3, 거리%=4)
           동기화 시 call_data/put_data["delta"] 값 자동 반영
+v3.3  — FIX-DELTA
+  [FIX-DELTA] _sync_chain_from_cp() 에서 델타값을
+              self._chain_delta_call / self._chain_delta_put 딕셔너리에 저장.
+              combo_ui_left_chain.py 의 _write_single / _write_and_fetch_plan 에서
+              이 딕셔너리를 참조해 각 레그에 delta 주입 →
+              combo_ui_synthetic_panel.py 의 _calc_delta_pnl_pct() 로 5P 손익률 계산.
 ────────────────────────────────────────────────────────────
 """
 
@@ -287,15 +293,47 @@ class LeftPanelMixin:
                 self.edit_stock_price.setText(f"{und_price:.2f}")
 
         # ── CALL 갱신 ─────────────────────────────────────────
-        self._call_strikes = list(cp.call_strikes)
-        self._chain_call   = {}
+        self._call_strikes      = list(cp.call_strikes)
+        self._chain_call        = {}
+        self._chain_delta_call  = {}   # [FIX-DELTA] 델타 저장소 초기화
+        self._chain_gamma_call  = {}   # [FIX-SCENARIO]
+        self._chain_theta_call  = {}   # [FIX-SCENARIO]
+        self._chain_vega_call   = {}   # [FIX-SCENARIO]
+
+        # [FIX-DELTA] chain_store 참조 (폴백용)
+        _chain_store = getattr(getattr(self, 'mw', None), 'chain_store', None)
+        _cur_expiry  = getattr(self, '_current_expiry', '') or ''
+
         self.tbl_chain_call.setRowCount(0)
+        _delta_call_loaded = 0   # [FIX-DELTA] 로그용 카운터
         for i, st in enumerate(cp.call_strikes):
-            d    = cp.call_data.get(REQ_CALL + i, {})
-            lp   = d.get("last")
-            # [ADD-3] 델타: call_data 의 "delta" 키 (없으면 None)
+            d     = cp.call_data.get(REQ_CALL + i, {})
+            lp    = d.get("last")
             delta = d.get("delta")
+            gamma = d.get("gamma")   # [FIX-SCENARIO]
+            theta = d.get("theta")   # [FIX-SCENARIO]
+            vega  = d.get("vega")    # [FIX-SCENARIO]
+
+            # [FIX-DELTA] call_data에 delta 없으면 chain_store 에서 폴백
+            if delta is None and _chain_store is not None and _cur_expiry:
+                try:
+                    cs_entry = _chain_store.get(_cur_expiry, st, "C")
+                    delta = cs_entry.get("delta")
+                    if gamma is None: gamma = cs_entry.get("gamma")
+                    if theta is None: theta = cs_entry.get("theta")
+                    if vega  is None: vega  = cs_entry.get("vega")
+                except Exception:
+                    pass
+
             self._chain_call[st] = lp
+            # [FIX-DELTA] 델타값 저장 (None 이 아닐 때만)
+            if delta is not None:
+                self._chain_delta_call[st] = delta
+                _delta_call_loaded += 1
+            # [FIX-SCENARIO] Greeks 저장
+            if gamma is not None: self._chain_gamma_call[st] = gamma
+            if theta is not None: self._chain_theta_call[st] = theta
+            if vega  is not None: self._chain_vega_call[st]  = vega
             r = self.tbl_chain_call.rowCount()
             self.tbl_chain_call.insertRow(r)
             self.tbl_chain_call.setItem(r, _COL_STRIKE, mk_item(f"{int(st)}", "#ffd700"))
@@ -311,16 +349,48 @@ class LeftPanelMixin:
             self.tbl_chain_call.setItem(r, _COL_IV,   mk_item("―"))
             self.tbl_chain_call.setItem(r, _COL_DIST, _make_dist_item(st, und_price, "C"))
 
+        # [FIX-DELTA] 콜 델타 로드 결과 로그
+        self._log(f"🔺 콜 체인 동기화: {len(self._call_strikes)}행 | "
+                  f"델타 수신 {_delta_call_loaded}개 "
+                  f"{'✅' if _delta_call_loaded > 0 else '⚠ 0개 — tickOptionComputation 미수신'}")
+
         # ── PUT 갱신 ──────────────────────────────────────────
-        self._put_strikes = list(cp.put_strikes)
-        self._chain_put   = {}
+        self._put_strikes       = list(cp.put_strikes)
+        self._chain_put         = {}
+        self._chain_delta_put   = {}   # [FIX-DELTA] 델타 저장소 초기화
+        self._chain_gamma_put   = {}   # [FIX-SCENARIO]
+        self._chain_theta_put   = {}   # [FIX-SCENARIO]
+        self._chain_vega_put    = {}   # [FIX-SCENARIO]
         self.tbl_chain_put.setRowCount(0)
+        _delta_put_loaded = 0   # [FIX-DELTA] 로그용 카운터
         for i, st in enumerate(cp.put_strikes):
-            d    = cp.put_data.get(REQ_PUT + i, {})
-            lp   = d.get("last")
-            # [ADD-3] 델타: put_data 의 "delta" 키
+            d     = cp.put_data.get(REQ_PUT + i, {})
+            lp    = d.get("last")
             delta = d.get("delta")
+            gamma = d.get("gamma")   # [FIX-SCENARIO]
+            theta = d.get("theta")   # [FIX-SCENARIO]
+            vega  = d.get("vega")    # [FIX-SCENARIO]
+
+            # [FIX-DELTA] put_data에 delta 없으면 chain_store 에서 폴백
+            if delta is None and _chain_store is not None and _cur_expiry:
+                try:
+                    cs_entry = _chain_store.get(_cur_expiry, st, "P")
+                    delta = cs_entry.get("delta")
+                    if gamma is None: gamma = cs_entry.get("gamma")
+                    if theta is None: theta = cs_entry.get("theta")
+                    if vega  is None: vega  = cs_entry.get("vega")
+                except Exception:
+                    pass
+
             self._chain_put[st] = lp
+            # [FIX-DELTA] 델타값 저장 (None 이 아닐 때만)
+            if delta is not None:
+                self._chain_delta_put[st] = delta
+                _delta_put_loaded += 1
+            # [FIX-SCENARIO] Greeks 저장
+            if gamma is not None: self._chain_gamma_put[st] = gamma
+            if theta is not None: self._chain_theta_put[st] = theta
+            if vega  is not None: self._chain_vega_put[st]  = vega
             r = self.tbl_chain_put.rowCount()
             self.tbl_chain_put.insertRow(r)
             self.tbl_chain_put.setItem(r, _COL_STRIKE, mk_item(f"{int(st)}", "#ffd700"))
@@ -335,6 +405,11 @@ class LeftPanelMixin:
             self.tbl_chain_put.setItem(r, _COL_DELTA, mk_item(delta_txt, delta_color))
             self.tbl_chain_put.setItem(r, _COL_IV,   mk_item("―"))
             self.tbl_chain_put.setItem(r, _COL_DIST, _make_dist_item(st, und_price, "P"))
+
+        # [FIX-DELTA] 풋 델타 로드 결과 로그
+        self._log(f"🔻 풋 체인 동기화: {len(self._put_strikes)}행 | "
+                  f"델타 수신 {_delta_put_loaded}개 "
+                  f"{'✅' if _delta_put_loaded > 0 else '⚠ 0개 — tickOptionComputation 미수신'}")
 
         # ── 만기 파싱 + [ADD-2] lbl_expiry 갱신 ──────────────
         try:

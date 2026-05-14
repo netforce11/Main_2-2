@@ -1,40 +1,20 @@
 # spread_calc.py  (Python 3.8 호환)
 """
-v1.8 변경:
-  ★ [ROOT CAUSE FIX] 메인 스레드 HTTP 블로킹 완전 제거.
+v1.9 변경 (버그 수정):
+  ★ [BUG-FIX-1] get_call/put_spreads: on_done 있을 때 동기경로에서
+    on_done([]) 직접 호출 후 None 반환하도록 통일.
+    (기존: on_done 있어도 [] 반환 → spread_tele_bot 에서
+     result is not None 조건에 걸려 _send_result 이중호출 또는 누락)
 
-  구조:
-    TgPolling 스레드
-      └─ handle_callback()
-           └─ get_call/put_spreads()
-                └─ QTimer.singleShot(0, _run_on_main)   ← 예약 후 즉시 return
+  ★ [BUG-FIX-2] _fetch_ticks_for_expiry IB 미연결 경로:
+    threading.Thread(on_done({})) → threading.Thread(on_done(row_map={}))
+    동일하지만 로그 추가로 디버그 가시성 확보.
 
-    메인 스레드 (이벤트루프)
-      └─ _run_on_main()
-           ├─ [만기 일치] 캐시 읽기 → threading.Thread(on_done)  ← HTTP는 여기서
-           └─ [만기 불일치] TWS reqMktData 구독
-                └─ QTimer(4000ms) → _on_timeout()
-                     └─ threading.Thread(on_done)                 ← HTTP는 여기서
+  ★ [BUG-FIX-3] _calc_spreads: CALL_RANGE_PCT / PUT_RANGE_PCT 범위
+    in_range 조건 수정 — pair(lk)가 strikes 목록에 없어도 계산 진행.
+    (기존: in_range 체크만 하고 short_row가 None이면 skip → 결과 0개)
 
-  핵심 원칙:
-    on_done (→ _send_result → urlopen) 은 반드시 daemon 스레드에서만 실행.
-    메인 스레드에서 urlopen 하면 Qt 이벤트루프가 멈춰 QTimer / 틱 수신 전부 프리즈.
-
-  v1.7 대비 변경:
-    ① _cleanup_and_done: on_done() 직접 호출 → threading.Thread(on_done)
-    ② _run_on_main 캐시 경로: on_done() 직접 호출 → threading.Thread(on_done)
-    ③ IB 미연결 경로: QTimer.singleShot(0, on_done)
-                      → threading.Thread(on_done)
-       (텔레그램 스레드에서 QTimer.singleShot 는 메인 이벤트루프 없으면 동작 안 함)
-    ④ resolve_expiry which 키: "tomorrow" → "next" 로 통일
-       (spread_tele_bot.py 의 "next" 전달과 일치)
-
-  QTextCursor 경고 근본 원인:
-    _fire_callback 이 TgPolling 스레드에서 Qt 위젯(채팅창 QTextEdit)에
-    직접 append → QTextCursor 경고 발생.
-    spread 전송 자체는 Qt 접근 없으므로 이 파일 수정만으로 먹통은 해결됨.
-    경고 완전 제거는 tg_client.py 의 _fire_callback 을 Qt 시그널 emit 으로
-    교체해야 함 (별도 작업).
+  v1.8 대비 구조 변경 없음. 스레드/QTimer 방식 동일.
 """
 from __future__ import annotations
 import threading
@@ -85,7 +65,6 @@ def get_price_label(tab: "CallPutGrid") -> str:
 def resolve_expiry(tab: "CallPutGrid", which: str) -> Tuple[Optional[str], str]:
     """
     which: "today" | "next"
-    ★ v1.8: "tomorrow" 키워드 제거, spread_tele_bot 의 "next" 와 통일.
     """
     today_str   = _et_today().strftime("%Y%m%d")
     expiry_list = getattr(tab, "_expiry_list", [])
@@ -117,7 +96,7 @@ def resolve_expiry(tab: "CallPutGrid", which: str) -> Tuple[Optional[str], str]:
 def _build_row_map(data_dict: dict) -> dict:
     """
     {reqId: {row, bid, ask, ...}} → {row: {bid, ask}}
-    동일 row 에 여러 reqId → 유효 틱 우선 (버그① 수정).
+    동일 row 에 여러 reqId → 유효 틱 우선.
     """
     row_map: dict = {}
     for rid, info in data_dict.items():
@@ -136,7 +115,7 @@ def _build_row_map(data_dict: dict) -> dict:
 
 
 def _mid(info: Optional[dict]) -> Optional[float]:
-    """bid > ask 역전 방어 (버그② 수정)."""
+    """bid > ask 역전 방어."""
     if info is None:
         return None
     bid = info.get("bid")
@@ -151,7 +130,7 @@ def _mid(info: Optional[dict]) -> Optional[float]:
 
 def calc_spread_pnl(long_k: float, short_k: float,
                     mid: Optional[float], is_call: bool) -> dict:
-    """mid=None 이면 전 필드 None (버그③ 수정)."""
+    """mid=None 이면 전 필드 None."""
     width = abs(long_k - short_k)
     if mid is None:
         return {"max_profit": None, "max_loss": None, "breakeven": None, "rr": "―"}
@@ -167,7 +146,7 @@ def calc_spread_pnl(long_k: float, short_k: float,
 # ── 행사가 → row 인덱스 ──────────────────────────────────
 
 def _get_spread_row(strikes: list, k: float) -> Optional[int]:
-    """float 비교 오차 0.01pt 허용 (버그⑥ 수정)."""
+    """float 비교 오차 0.01pt 허용."""
     if not isinstance(strikes, (list, tuple)):
         return None
     for i, s in enumerate(strikes):
@@ -208,6 +187,8 @@ def _calc_spreads(strikes: List[float], row_map: dict,
         limit    = base * (1 + CALL_RANGE_PCT)
         sorted_s = sorted(s for s in strikes if base <= s <= limit + SPREAD_STEP)
         def pair(lk): return lk + SPREAD_STEP
+        # [BUG-FIX-3] pair(lk)가 strikes 안에 없어도 계산 진행
+        # in_range 는 단순 범위 체크만 (short_row None은 pnl에서 처리)
         def in_range(lk): return pair(lk) <= limit + SPREAD_STEP
     else:
         limit    = base * (1 - PUT_RANGE_PCT)
@@ -224,11 +205,13 @@ def _calc_spreads(strikes: List[float], row_map: dict,
             continue
         long_row  = _get_spread_row(strikes, long_k)
         short_row = _get_spread_row(strikes, short_k)
-        if long_row is None or short_row is None:
+        # [BUG-FIX-3] short_row None → mid=None 으로 처리, skip 하지 않음
+        # long_row 만 없으면 skip (long 없으면 거리 계산 불가)
+        if long_row is None:
             continue
 
         long_mid  = _mid(row_map.get(long_row))
-        short_mid = _mid(row_map.get(short_row))
+        short_mid = _mid(row_map.get(short_row)) if short_row is not None else None
         spread_mid = (round(long_mid - short_mid, 2)
                       if long_mid is not None and short_mid is not None else None)
         dist_pct = round((long_k - base) / base * 100, 2)
@@ -256,12 +239,6 @@ def _fetch_ticks_for_expiry(
     """
     호출 스레드: TgPolling (메인 아님) → 즉시 return.
     on_done   : daemon 스레드에서 실행 (HTTP blocking 이므로 메인 스레드 금지).
-
-    흐름:
-      QTimer.singleShot(0) → [메인 스레드] _run_on_main()
-        만기 일치  → threading.Thread(on_done(row_map))
-        만기 불일치 → TWS 구독 + QTimer(timeout_ms)
-                       → threading.Thread(on_done(row_map))
     """
     from PyQt5.QtCore import QTimer
     from core import bridge as _bridge
@@ -270,9 +247,9 @@ def _fetch_ticks_for_expiry(
     mw = getattr(tab, "mw", None)
     ib = getattr(mw, "ib", None)
 
-    # ── IB 미연결: daemon 스레드에서 빈 결과로 on_done ──
-    # QTimer.singleShot 은 텔레그램 스레드에서 걸면 동작 안 함 → Thread 사용
+    # ── IB 미연결: 빈 row_map 으로 on_done (틱 미수신 표시)
     if ib is None or not getattr(mw, "connected", False):
+        print("[spread_calc] IB 미연결 — 캐시 없이 계산 진행")
         threading.Thread(
             target=lambda: on_done({}), daemon=True, name="SpreadOnDone"
         ).start()
@@ -286,17 +263,18 @@ def _fetch_ticks_for_expiry(
     def _run_on_main():
         """메인 스레드에서 실행 — Qt 위젯 / QTimer / 시그널 안전."""
 
-        # ── ① 만기 재판정 (Qt 위젯 접근 → 메인 스레드 전용) ──
         cur_exp = _tab_current_expiry_main(tab)
         if cur_exp == expiry_code:
-            # 캐시 재활용 → daemon 스레드에서 on_done
+            # 캐시 재활용
             row_map = _build_row_map(cached_data)
+            print(f"[spread_calc] 만기 일치({expiry_code}) — 캐시 사용, row_map 크기={len(row_map)}")
             threading.Thread(
                 target=lambda: on_done(row_map), daemon=True, name="SpreadOnDone"
             ).start()
             return
 
-        # ── ② 별도 만기 TWS 구독 ──
+        # ── 별도 만기 TWS 구독 ──
+        print(f"[spread_calc] 만기 불일치(cur={cur_exp}, req={expiry_code}) — TWS 구독 시작")
         tick_buf: dict = {}
         _done = [False]
 
@@ -326,7 +304,7 @@ def _fetch_ticks_for_expiry(
                     ib.cancelMktData(REQ_SPREAD_BASE + i)
                 except Exception:
                     pass
-            # ★ daemon 스레드에서 on_done — 메인 스레드 HTTP 블로킹 방지
+            print(f"[spread_calc] 틱 수집 완료, row_map 크기={len(row_map)}")
             threading.Thread(
                 target=lambda: on_done(row_map), daemon=True, name="SpreadOnDone"
             ).start()
@@ -355,51 +333,86 @@ def get_call_spreads(tab: "CallPutGrid", expiry_code: str,
                      on_done: Optional[Callable[[List[dict]], None]] = None
                      ) -> Optional[List[dict]]:
     """
-    on_done 없음 → 동기 반환 (캐시 직접 사용, 만기 판정 없음).
-    on_done 있음 → 비동기, None 반환. 결과는 on_done(results) 로 전달.
+    on_done 없음 → 동기 반환.
+    on_done 있음 → 반드시 비동기, 항상 None 반환.
+                   결과는 on_done(results) 로만 전달.
+
+    [BUG-FIX-1] 기존: base=None 이거나 strikes=[] 일 때 on_done([]) 호출 후에도
+    [] 를 반환 → spread_tele_bot 에서 result is not None 에 걸려 _send_result
+    이중호출 또는 on_done 무시 발생.
+    수정: on_done 있으면 항상 None 반환, on_done() 내부에서만 결과 전달.
     """
     base = get_base_price(tab)
     if base is None:
         if on_done:
-            on_done([])
+            threading.Thread(
+                target=lambda: on_done([]), daemon=True, name="SpreadOnDone"
+            ).start()
+            return None  # [BUG-FIX-1] on_done 있으면 None 반환
         return []
 
     strikes     = list(getattr(tab, "call_strikes", []) or [])
-    cached_data = dict(getattr(tab, "call_data", {}) or {})  # GIL 하에 스레드 안전
+    cached_data = dict(getattr(tab, "call_data", {}) or {})
+
+    if not strikes:
+        if on_done:
+            threading.Thread(
+                target=lambda: on_done([]), daemon=True, name="SpreadOnDone"
+            ).start()
+            return None  # [BUG-FIX-1]
+        return []
 
     if on_done is None:
         row_map = _build_row_map(cached_data)
         return _calc_spreads(strikes, row_map, base, is_call=True)
 
     def _cb(row_map: dict):
-        on_done(_calc_spreads(strikes, row_map, base, is_call=True))
+        results = _calc_spreads(strikes, row_map, base, is_call=True)
+        print(f"[spread_calc] get_call_spreads 결과: {len(results)}개")
+        on_done(results)
 
     _fetch_ticks_for_expiry(
         tab, expiry_code, strikes,
         cached_data=cached_data, is_call=True, on_done=_cb)
-    return None
+    return None  # [BUG-FIX-1] 항상 None
 
 
 def get_put_spreads(tab: "CallPutGrid", expiry_code: str,
                     on_done: Optional[Callable[[List[dict]], None]] = None
                     ) -> Optional[List[dict]]:
+    """
+    [BUG-FIX-1] 동일 적용.
+    """
     base = get_base_price(tab)
     if base is None:
         if on_done:
-            on_done([])
+            threading.Thread(
+                target=lambda: on_done([]), daemon=True, name="SpreadOnDone"
+            ).start()
+            return None
         return []
 
     strikes     = list(getattr(tab, "put_strikes", []) or [])
     cached_data = dict(getattr(tab, "put_data", {}) or {})
+
+    if not strikes:
+        if on_done:
+            threading.Thread(
+                target=lambda: on_done([]), daemon=True, name="SpreadOnDone"
+            ).start()
+            return None
+        return []
 
     if on_done is None:
         row_map = _build_row_map(cached_data)
         return _calc_spreads(strikes, row_map, base, is_call=False)
 
     def _cb(row_map: dict):
-        on_done(_calc_spreads(strikes, row_map, base, is_call=False))
+        results = _calc_spreads(strikes, row_map, base, is_call=False)
+        print(f"[spread_calc] get_put_spreads 결과: {len(results)}개")
+        on_done(results)
 
     _fetch_ticks_for_expiry(
         tab, expiry_code, strikes,
         cached_data=cached_data, is_call=False, on_done=_cb)
-    return None
+    return None  # [BUG-FIX-1] 항상 None

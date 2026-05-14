@@ -1,11 +1,17 @@
 """
 combo_ui_left_chain.py — 체인 클릭 · 거리% 셀 · conId 일괄 조회
-combo_ui_left.py 에서 분리. v3.2
+combo_ui_left.py 에서 분리. v3.3
 
 [FIX-I] _start_restored_position_streams 추가
   conId 일괄 조회 완료(_bulk_fetch_conids 끝) 시점에
   복원된 포지션의 실시간 스트림을 시작.
   이미 스트림 중인 oid 는 스킵.
+
+[FIX-DELTA] 델타값 저장 및 레그 주입
+  _write_single / _write_and_fetch_plan 에서
+  self._leg_data[leg_row]['delta'] 로 저장.
+  부모 위젯에 _chain_delta_call / _chain_delta_put 딕셔너리 필요.
+  (옵션 체인 틱 수신 함수에서 채워야 함 — combo_ui_left.py 참고)
 """
 
 from PyQt5.QtWidgets import QTableWidgetItem
@@ -63,9 +69,21 @@ def _on_chain_click(self, row: int, col: int, side: str):
 
 
 def _write_single(self, leg_row: int, side: str, strike: float, price):
-    """단일 레그 행 기록."""
+    """단일 레그 행 기록.
+    [FIX-DELTA] 체인 델타값을 self._leg_data[leg_row]['delta'] 에 저장.
+    """
     from PyQt5.QtWidgets import QTableWidgetItem
     expiry = getattr(self, '_current_expiry', '')
+
+    # [FIX-DELTA] 델타값 조회 (부모에 _chain_delta_call/put 딕셔너리 필요)
+    delta_call = getattr(self, '_chain_delta_call', {})
+    delta_put  = getattr(self, '_chain_delta_put',  {})
+    delta = (delta_call if side == "C" else delta_put).get(strike)
+
+    # [FIX-SCENARIO] gamma/theta/vega도 조회
+    gamma_src = getattr(self, '_chain_gamma_call' if side == "C" else '_chain_gamma_put', {})
+    theta_src = getattr(self, '_chain_theta_call' if side == "C" else '_chain_theta_put', {})
+    vega_src  = getattr(self, '_chain_vega_call'  if side == "C" else '_chain_vega_put',  {})
 
     def _set(col, text, _r=leg_row):
         it = self.tbl_legs.item(_r, col)
@@ -81,16 +99,42 @@ def _write_single(self, leg_row: int, side: str, strike: float, price):
         _set(4, f"{price:.2f}")
     if expiry:
         _set(6, expiry)
+
+    # [FIX-DELTA] 레그 데이터 저장 (delta 포함)
+    if not hasattr(self, '_leg_data'):
+        self._leg_data = {}
+    self._leg_data[leg_row] = {
+        'side':   side,
+        'strike': strike,
+        'price':  price,
+        'delta':  delta,
+        'gamma':  gamma_src.get(strike),
+        'theta':  theta_src.get(strike),
+        'vega':   vega_src.get(strike),
+        'expiry': expiry,
+    }
+
     price_str = f"{price:.2f}" if price else "0.00"
-    self._log(f"레그{leg_row+1} 자동 입력: {side} {int(strike)}  ${price_str}")
+    delta_str = f"{delta:.3f}" if delta is not None else "―"
+    self._log(f"레그{leg_row+1} 자동 입력: {side} {int(strike)}  ${price_str}  δ={delta_str}")
 
 
 def _write_and_fetch_plan(self, plan: list, prices: dict):
-    """스프레드 전략용: 레그 플랜 전체 기록 + Mid-price 일괄 조회."""
+    """스프레드 전략용: 레그 플랜 전체 기록 + Mid-price 일괄 조회.
+    [FIX-DELTA] 각 레그에 delta 포함하여 self._leg_data 에 저장.
+    """
     from tab_combo_shortcut import _trigger_premium
     from PyQt5.QtWidgets import QTableWidgetItem
 
     expiry = getattr(self, '_current_expiry', '')
+
+    # [FIX-DELTA] 델타 저장소 참조
+    delta_call = getattr(self, '_chain_delta_call', {})
+    delta_put  = getattr(self, '_chain_delta_put',  {})
+
+    # [FIX-DELTA] 레그 데이터 초기화
+    if not hasattr(self, '_leg_data'):
+        self._leg_data = {}
 
     self._leg_item_changing = True
     try:
@@ -108,14 +152,37 @@ def _write_and_fetch_plan(self, plan: list, prices: dict):
                 it.setText(text)
 
             price = prices.get(strike)
+
+            # [FIX-DELTA] 델타값 조회
+            delta = (delta_call if side == "C" else delta_put).get(strike)
+
+            # [FIX-SCENARIO] gamma/theta/vega 조회
+            gamma_src = getattr(self, '_chain_gamma_call' if side == "C" else '_chain_gamma_put', {})
+            theta_src = getattr(self, '_chain_theta_call' if side == "C" else '_chain_theta_put', {})
+            vega_src  = getattr(self, '_chain_vega_call'  if side == "C" else '_chain_vega_put',  {})
+
             _set(2, side)
             _set(3, str(int(strike)))
             if price:
                 _set(4, f"{price:.2f}")
             if expiry:
                 _set(6, expiry)
+
+            # [FIX-DELTA] 레그 데이터 저장 (delta 포함)
+            self._leg_data[leg_row] = {
+                'side':   side,
+                'strike': strike,
+                'price':  price,
+                'delta':  delta,
+                'gamma':  gamma_src.get(strike),
+                'theta':  theta_src.get(strike),
+                'vega':   vega_src.get(strike),
+                'expiry': expiry,
+            }
+
             price_str = f"{price:.2f}" if price else "0.00"
-            self._log(f"레그{leg_row+1} 자동 입력: {side} {int(strike)}  ${price_str}")
+            delta_str = f"{delta:.3f}" if delta is not None else "―"
+            self._log(f"레그{leg_row+1} 자동 입력: {side} {int(strike)}  ${price_str}  δ={delta_str}")
     finally:
         self._leg_item_changing = False
 
@@ -127,6 +194,10 @@ def _write_and_fetch_plan(self, plan: list, prices: dict):
         if fn:
             self._log("📊 손익 계산 자동 실행")
             fn()
+
+        # [FIX-DELTA] DEBIT 가격 확정 후 5P 손익률 갱신
+        _update_display_delta(self)
+
     QTimer.singleShot(1500, _auto_calc)
 
 
@@ -347,3 +418,87 @@ def _inject_conids_to_legs(self, legs: list, pos: dict) -> None:
                 leg['con_id'] = cid
         except Exception:
             pass
+
+
+# ── [FIX-DELTA] DEBIT 디스플레이에 5P 손익률 갱신 ──────────────
+
+def _update_display_delta(self) -> None:
+    """
+    [FIX-DELTA] _leg_data 의 delta 값과 현재 DEBIT 가격을 읽어
+    NetPriceDisplay 의 5P 손익률 라벨을 갱신.
+
+    호출 시점:
+      - 체인 클릭 후 _trigger_premium 완료 (1.5초 뒤)
+      - _write_and_fetch_plan 의 _auto_calc 콜백 안
+
+    조건:
+      - net_price_display 가 있어야 함
+      - _leg_data 에 delta 가 1개 이상 있어야 함
+      - DEBIT 가격 > 0 이어야 함
+    """
+    display = getattr(self, 'net_price_display', None)
+    if display is None:
+        return
+
+    leg_data = getattr(self, '_leg_data', {})
+    if not leg_data:
+        return
+
+    # _leg_data + tbl_legs → legs 리스트 구성
+    # tbl_legs 컬럼: 0=레그번호, 1=방향, 2=C/P, 3=행사가, 4=프리미엄, 5=수량, 6=만기
+    legs = []
+    for i in sorted(leg_data.keys()):
+        ld    = leg_data[i]
+        delta = ld.get('delta')
+        if delta is None:
+            continue
+
+        # 방향/수량은 테이블에서 읽기 (가장 최신 값)
+        try:
+            tbl     = self.tbl_legs
+            dir_it  = tbl.item(i, 1)
+            qty_it  = tbl.item(i, 5)
+            leg_dir = dir_it.text().strip().upper() if dir_it else "BUY"
+            leg_qty = int(qty_it.text()) if qty_it and qty_it.text().isdigit() else 1
+        except Exception:
+            leg_dir = "BUY"
+            leg_qty = 1
+
+        legs.append({'dir': leg_dir, 'qty': leg_qty, 'delta': float(delta)})
+
+    if not legs:
+        return
+
+    # 현재 DEBIT 가격 (refresh()로 이미 세팅된 값)
+    entry = abs(display._net_price) if display._net_price != 0.0 else 0.0
+    display.update_delta_pnl(legs, entry)
+
+    # [FIX-SCENARIO] 시나리오 탭도 함께 갱신
+    panel = getattr(self, 'synthetic_panel', None)
+    if panel and hasattr(panel, 'update_scenario_greeks'):
+        # legs에 gamma/theta/vega 추가 (저장된 _leg_data에서)
+        full_legs = []
+        for i in sorted(leg_data.keys()):
+            ld = leg_data[i]
+            if ld.get('delta') is None:
+                continue
+            try:
+                tbl     = self.tbl_legs
+                dir_it  = tbl.item(i, 1)
+                qty_it  = tbl.item(i, 5)
+                leg_dir = dir_it.text().strip().upper() if dir_it else "BUY"
+                leg_qty = int(qty_it.text()) if qty_it and qty_it.text().isdigit() else 1
+            except Exception:
+                leg_dir = "BUY"
+                leg_qty = 1
+            full_legs.append({
+                'dir':    leg_dir,
+                'qty':    leg_qty,
+                'delta':  float(ld.get('delta')  or 0.0),
+                'gamma':  float(ld.get('gamma')  or 0.0),
+                'theta':  float(ld.get('theta')  or 0.0),
+                'vega':   float(ld.get('vega')   or 0.0),
+                'strike': float(ld.get('strike') or 0.0),
+            })
+        if full_legs:
+            panel.update_scenario_greeks(full_legs, entry)

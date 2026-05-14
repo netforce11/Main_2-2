@@ -10,6 +10,12 @@ combo_ui_net_price_display.py  (파트 1/2 — UI 구조 + 자동모드)
       • [-0.01] [가격입력창] [+0.01] 조절 버튼
       • get_bag_params() 가 직접입력 가격 우선 반환
   파트 2: combo_ui_net_price_input.py (직접입력 모드 UI + 로직)
+
+변경사항 (v2.1):
+  [FIX-DELTA] 지수 5P 당 예상 손익률 라벨 추가
+    - DEBIT 가격 우측 끝에 형광색(#ffff44) 14pt 로 표시
+    - update_delta_pnl(legs, entry) 외부 호출로 갱신
+    - refresh() 호출 시 entry 자동 반영
 """
 
 from PyQt5.QtWidgets import (
@@ -49,6 +55,7 @@ class NetPriceDisplay(QWidget):
         self._sell_total: float = 0.0
         self._is_live: bool = False
         self._manual_mode: bool = False   # False=자동, True=직접입력
+        self._delta_legs: list = []       # [FIX-DELTA] 레그 리스트 캐시
 
         self._build_ui()
 
@@ -98,10 +105,18 @@ class NetPriceDisplay(QWidget):
         self._lbl_price.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._lbl_price.setStyleSheet("color:#ffffff; letter-spacing:1px;")
 
+        # [FIX-DELTA] 5P 손익률 라벨
+        self._lbl_delta_pnl = QLabel("")
+        self._lbl_delta_pnl.setFont(QFont("Consolas", 14, QFont.Bold))
+        self._lbl_delta_pnl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._lbl_delta_pnl.setStyleSheet("color:#ffff44; border:none;")
+        self._lbl_delta_pnl.setVisible(False)   # 데이터 있을 때만 표시
+
         price_row.addWidget(self._lbl_direction)
         price_row.addWidget(self._lbl_dollar)
         price_row.addWidget(self._lbl_price)
         price_row.addStretch()
+        price_row.addWidget(self._lbl_delta_pnl)   # [FIX-DELTA] 우측 끝
         root.addLayout(price_row)
 
         # ── 상세 행 ──────────────────────────────
@@ -228,6 +243,10 @@ class NetPriceDisplay(QWidget):
 
         self.price_updated.emit(net)
 
+        # [FIX-DELTA] 저장된 레그가 있으면 새 entry 기준으로 재계산
+        if self._delta_legs:
+            self._recalc_delta_pnl(abs_net)
+
     def get_net_price(self) -> float:
         """주문 모듈에서 lmtPrice 로 사용 (직접입력 우선)."""
         if self._manual_mode:
@@ -265,14 +284,88 @@ class NetPriceDisplay(QWidget):
         self._buy_total  = 0.0
         self._sell_total = 0.0
         self._is_live    = False
+        self._delta_legs = []                          # [FIX-DELTA]
         self._lbl_price.setText("—")
         self._lbl_buy.setText("BUY 합계  $—")
         self._lbl_sell.setText("SELL 합계  $—")
         self._lbl_hint.setText("(지불)")
         self._lbl_live.setStyleSheet("color:#555; font-size:11px;")
+        self._lbl_delta_pnl.setText("")                # [FIX-DELTA]
+        self._lbl_delta_pnl.setVisible(False)          # [FIX-DELTA]
         self._blink_timer.stop()
         # 직접입력도 초기화
         self._manual_row.set_price(0.0)
+
+    # ──────────────────────────────────────────────
+    # [FIX-DELTA] 5P 손익률 외부 갱신 API
+    # ──────────────────────────────────────────────
+    def update_delta_pnl(self, legs: list, entry: float = 0.0) -> None:
+        """
+        [FIX-DELTA] 레그 설정 완료 시 호출 → DEBIT 우측에 5P 손익률 표시.
+
+        Args:
+            legs  : 레그 딕셔너리 리스트. 각 원소에 'delta', 'dir', 'qty' 필요.
+                    예) [{'dir':'BUY','qty':1,'delta':0.38}, {'dir':'SELL','qty':1,'delta':0.33}]
+            entry : DEBIT 가격 (달러). 0이면 self._net_price 의 절대값 사용.
+
+        호출 시점 예시 (tab_combo_shortcut.py 또는 _trigger_premium 완료 후):
+            display = getattr(self, 'net_price_display', None)
+            if display:
+                display.update_delta_pnl(legs)
+        """
+        self._delta_legs = legs or []
+        use_entry = entry if entry > 0 else abs(self._net_price)
+        self._recalc_delta_pnl(use_entry)
+
+    def _recalc_delta_pnl(self, entry: float) -> None:
+        """
+        [FIX-DELTA] 내부 계산 함수.
+        포지션 델타 = Σ(leg_delta × leg_qty × 방향계수)
+        5P 손익률(%) = (포지션 델타 × 5 × 100) / (entry × 100) × 100
+        """
+        legs = self._delta_legs
+        if not legs or entry <= 0:
+            self._lbl_delta_pnl.setVisible(False)
+            return
+
+        try:
+            pos_delta = 0.0
+            has_delta = False
+            for leg in legs:
+                raw = leg.get("delta")
+                if raw is None:
+                    continue
+                leg_delta = float(raw)
+                leg_qty   = float(leg.get("qty", 1) or 1)
+                leg_dir   = str(leg.get("dir", "BUY")).upper()
+                if leg_dir == "SELL":
+                    leg_delta = -leg_delta
+                pos_delta += leg_delta * leg_qty
+                has_delta = True
+
+            if not has_delta:
+                self._lbl_delta_pnl.setVisible(False)
+                return
+
+            # 5P 손익률
+            five_p_pnl    = pos_delta * 5.0 * 100.0   # 달러
+            debit_dollars = entry * 100.0              # $1.80 → $180
+            pnl_pct       = (five_p_pnl / debit_dollars) * 100.0
+
+            if pnl_pct >= 0:
+                txt   = f"5P ▲ +{pnl_pct:.0f}%"
+                color = "#ffff44"   # 형광 노랑
+            else:
+                txt   = f"5P ▼ {pnl_pct:.0f}%"
+                color = "#ff6666"   # 연한 빨강
+
+            self._lbl_delta_pnl.setText(txt)
+            self._lbl_delta_pnl.setStyleSheet(
+                f"color:{color}; border:none; font-weight:bold;")
+            self._lbl_delta_pnl.setVisible(True)
+
+        except Exception:
+            self._lbl_delta_pnl.setVisible(False)
 
     # ──────────────────────────────────────────────
     # 내부
