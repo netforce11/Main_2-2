@@ -1,0 +1,357 @@
+"""
+sleep_order_mixin.py — SleepOrder 연동 메서드  v1.1
+════════════════════════════════════════════════════════
+combo_ui_left.py 의 LeftPanelMixin 에 상속 추가.
+
+v1.1 수정:
+  · _build_bag_contract() 없음 확인 → BAG 컨트랙트 직접 조립
+  · OID 발급: ib.get_next_id() 사용 (combo_order_bag.py 와 동일)
+  · _place_combo_legs 경로 재사용 대신 직접 placeOrder
+    (수면 주문은 UI 다이얼로그/틱 선택창 없이 바로 전송)
+  · connect_order_callbacks() 호출 포함
+  · _sleep_modify_order: _chaser_bag_contract 재사용
+════════════════════════════════════════════════════════
+"""
+from __future__ import annotations
+from typing import Optional
+
+
+class SleepOrderMixin:
+    """
+    LeftPanelMixin 에 추가할 Sleep Order 연동 메서드 묶음.
+    단독으로 사용하거나 Mixin 으로 상속.
+    """
+
+    # ── 1. 지수 현재가 ──────────────────────────────────────────
+
+    def _sleep_get_underlying_price(self) -> float:
+        """현재 지수 가격. _und_price 우선, 없으면 콜-풋탭 참조."""
+        price = float(getattr(self, '_und_price', 0.0) or 0.0)
+        if price > 0:
+            return price
+        try:
+            cp = getattr(getattr(self, 'mw', None), 'tab_callput', None)
+            if cp:
+                price = float(getattr(cp, 'und_price', 0) or 0)
+        except Exception:
+            pass
+        return float(price)
+
+    # ── 2. 체인 스캔 ────────────────────────────────────────────
+
+    def _sleep_get_chain(self, expiry_offset: int) -> list:
+        """
+        D+expiry_offset 만기 기준 풋 스프레드 체인 반환.
+
+        반환 형식:
+        [
+          {
+            "strike":  5800.0,
+            "put_net": 0.50,
+            "put_ask": 0.55,
+            "legs": [
+              {"cp":"P","strike":5800,"expiry":"20260520",
+               "dir":"BUY","qty":1,"prem":0.80,"con_id":123456},
+              {"cp":"P","strike":5780,"expiry":"20260520",
+               "dir":"SELL","qty":1,"prem":0.30,"con_id":789012},
+            ]
+          },
+          ...
+        ]
+        """
+        from Sleep_Order.sleep_order_config import sleep_cfg
+
+        put_strikes: list = getattr(self, '_put_strikes', [])
+        chain_put: dict   = getattr(self, '_chain_put', {})
+        expiry: str       = getattr(self, '_current_expiry', '') or ''
+
+        if not put_strikes or not expiry:
+            return []
+
+        target_expiry = _offset_expiry(expiry, expiry_offset)
+        if not target_expiry:
+            target_expiry = expiry
+
+        step         = _detect_strike_step(put_strikes)
+        width        = sleep_cfg.spread_width
+        n_step       = max(1, round(width / step)) if step > 0 else 1
+        actual_width = n_step * step
+
+        try:
+            from combo_order_bag import _CONID_CACHE, _conid_key
+            sym_w  = getattr(self, 'edit_sym_combo', None)
+            symbol = sym_w.text().strip().upper() if sym_w else "SPX"
+            symbol = symbol.replace("SPXW", "SPX")
+            _has_cache = True
+        except ImportError:
+            _has_cache = False
+            symbol = "SPX"
+
+        def _cid(strike: float) -> int:
+            if not _has_cache:
+                return 0
+            try:
+                return int(_CONID_CACHE.get(
+                    _conid_key(symbol, "P", strike, target_expiry), 0))
+            except Exception:
+                return 0
+
+        strike_set = set(put_strikes)
+        results    = []
+
+        for upper in put_strikes:
+            lower = upper - actual_width
+            if lower not in strike_set:
+                candidates = [s for s in put_strikes if s < upper]
+                if not candidates:
+                    continue
+                lower  = max(candidates)
+                real_w = upper - lower
+                if real_w < step or real_w > actual_width * 1.5:
+                    continue
+
+            upper_last = chain_put.get(upper)
+            lower_last = chain_put.get(lower)
+            if upper_last is None or lower_last is None:
+                continue
+
+            net = round(upper_last - lower_last, 2)
+            if net <= 0:
+                continue
+
+            tick = 0.10 if net >= 3.0 else 0.05
+            ask  = round(net + tick, 2)
+
+            results.append({
+                "strike":  upper,
+                "put_net": net,
+                "put_ask": ask,
+                "legs": [
+                    {
+                        "cp": "P", "strike": upper, "expiry": target_expiry,
+                        "dir": "BUY",  "qty": 1,
+                        "prem": upper_last, "con_id": _cid(upper),
+                    },
+                    {
+                        "cp": "P", "strike": lower, "expiry": target_expiry,
+                        "dir": "SELL", "qty": 1,
+                        "prem": lower_last, "con_id": _cid(lower),
+                    },
+                ],
+            })
+
+        return results
+
+    # ── 3. BAG 주문 실행 ────────────────────────────────────────
+
+    def _sleep_place_order(self, legs: list, lmt_price: float,
+                           qty: int, strat: str,
+                           tag: str = "") -> Optional[int]:
+        """
+        풋 스프레드 BAG 주문 전송 → OID 반환.
+
+        · UI 다이얼로그/틱 선택창 없이 직접 placeOrder
+          (새벽 자동 주문이므로 대화창 불필요)
+        · conId 는 legs[i]['con_id'] 에서 읽음
+        · OID 발급: ib.get_next_id() (combo_order_bag 과 동일)
+        · connect_order_callbacks() 로 콜백 연결 보장
+        """
+        try:
+            from ibapi.contract import Contract, ComboLeg
+            from ibapi.order   import Order as IbOrder
+            from combo_order_callbacks import connect_order_callbacks
+        except ImportError as e:
+            self._log(f"[SleepOrder] ❌ import 실패: {e}")
+            return None
+
+        ib = getattr(getattr(self, 'mw', None), 'ib', None)
+        if ib is None:
+            self._log("[SleepOrder] ❌ IB 미연결")
+            return None
+
+        connect_order_callbacks(self)
+
+        # OID 발급
+        oid = ib.get_next_id()
+        if oid is None:
+            self._log("[SleepOrder] ❌ OID 발급 실패")
+            return None
+
+        # BAG 컨트랙트 조립
+        sym_w  = getattr(self, 'edit_sym_combo', None)
+        symbol = sym_w.text().strip().upper() if sym_w else "SPX"
+
+        bag          = Contract()
+        bag.symbol   = symbol.replace("SPXW", "SPX")
+        bag.secType  = "BAG"
+        bag.currency = "USD"
+        bag.exchange = "SMART"
+
+        combo_legs_list = []
+        for leg in legs:
+            con_id = int(leg.get("con_id") or 0)
+            if con_id == 0:
+                try:
+                    from combo_order_bag import _CONID_CACHE, _conid_key
+                    key    = _conid_key(
+                        bag.symbol,
+                        str(leg.get("cp", "P")),
+                        float(leg.get("strike", 0)),
+                        str(leg.get("expiry", "")),
+                    )
+                    con_id = int(_CONID_CACHE.get(key, 0))
+                except Exception:
+                    pass
+
+            if con_id == 0:
+                self._log(
+                    f"[SleepOrder] ❌ conId 없음: "
+                    f"{leg.get('cp')} {leg.get('strike')} {leg.get('expiry')}")
+                return None
+
+            cl          = ComboLeg()
+            cl.conId    = con_id
+            cl.ratio    = int(leg.get("qty", 1))
+            cl.action   = leg["dir"]
+            cl.exchange = "SMART"
+            combo_legs_list.append(cl)
+
+        bag.comboLegs = combo_legs_list
+
+        # tif / outsideRth — 새벽 Pre-Market 시간대
+        try:
+            from combo_order_logic import _get_session_info
+            _, _, tif, outside_rth = _get_session_info()
+        except Exception:
+            tif         = "DAY"
+            outside_rth = True
+
+        # 주문 객체
+        ibord               = IbOrder()
+        ibord.action        = "BUY"
+        ibord.orderType     = "LMT"
+        ibord.totalQuantity = qty
+        ibord.lmtPrice      = lmt_price
+        ibord.tif           = tif
+        ibord.outsideRth    = outside_rth
+        ibord.eTradeOnly    = False
+        ibord.firmQuoteOnly = False
+        ibord.transmit      = True
+
+        # placeOrder
+        try:
+            ib.placeOrder(oid, bag, ibord)
+            self._log(
+                f"[SleepOrder] ✅ BAG 주문 OID={oid}"
+                f"  ${lmt_price:.2f} × {qty}"
+                f"  TIF:{tif}  outsideRth:{outside_rth}  [{tag}]")
+        except Exception as e:
+            self._log(f"[SleepOrder] ❌ placeOrder 실패: {e}")
+            return None
+
+        # 내부 상태 세팅 (combo_order_bag._do_send_body 와 동일 구조)
+        if not hasattr(self, '_exec_known_oids'):
+            self._exec_known_oids = set()
+        self._exec_known_oids.add(oid)
+
+        self._chaser_bag_contract = bag   # 정정 시 재사용
+        self._chaser_current_oid  = oid
+        self._chaser_oid          = oid
+
+        self._pending_position = {
+            "strategy": strat,
+            "qty":      qty,
+            "entry":    lmt_price,
+            "current":  lmt_price,
+            "side":     "BUY",
+            "oid":      oid,
+            "legs":     legs,
+            "status":   "미체결",
+        }
+
+        # SpecialFillWatcher 등록 (기존 TG-3 재사용)
+        try:
+            from combo_order_special_condition import SpecialFillWatcher
+            SpecialFillWatcher.get().watch(
+                self, oid, lmt_price, "BUY", legs, strat,
+                bag_contract=bag, qty=qty)
+        except Exception as _e:
+            self._log(f"[SleepOrder] ⚠ SpecialFillWatcher 등록 실패: {_e}")
+
+        return oid
+
+    # ── 4. 주문 정정 ────────────────────────────────────────────
+
+    def _sleep_modify_order(self, oid: int, new_lmt: float,
+                            legs: list, qty: int,
+                            strat: str = "") -> None:
+        """
+        수면 주문 정정.
+        _chaser_bag_contract 재사용 (_sleep_place_order 에서 저장).
+        """
+        try:
+            from ibapi.order import Order as IbOrder
+
+            ib  = getattr(getattr(self, 'mw', None), 'ib', None)
+            bag = getattr(self, '_chaser_bag_contract', None)
+
+            if ib is None or bag is None:
+                self._log(
+                    f"[SleepOrder] ❌ 정정 실패: "
+                    f"{'IB 미연결' if ib is None else 'bag_contract 없음'}"
+                    f"  OID={oid}")
+                return
+
+            ibord               = IbOrder()
+            ibord.action        = "BUY"
+            ibord.orderType     = "LMT"
+            ibord.totalQuantity = qty
+            ibord.lmtPrice      = new_lmt
+            ibord.tif           = "DAY"
+            ibord.eTradeOnly    = False
+            ibord.firmQuoteOnly = False
+            ibord.transmit      = True
+
+            ib.placeOrder(oid, bag, ibord)
+            self._log(
+                f"[SleepOrder] ✅ 정정 OID={oid}"
+                f"  → ${new_lmt:.2f}  qty={qty}")
+
+        except Exception as e:
+            self._log(f"[SleepOrder] ❌ 정정 실패 OID={oid}: {e}")
+
+
+# ── 유틸 ─────────────────────────────────────────────────────────
+
+def _detect_strike_step(strikes: list) -> float:
+    """행사가 목록에서 기본 간격 자동 감지. 기본 $5."""
+    if len(strikes) < 2:
+        return 5.0
+    diffs = []
+    for i in range(1, min(5, len(strikes))):
+        d = abs(strikes[i] - strikes[i - 1])
+        if d > 0:
+            diffs.append(d)
+    return min(diffs) if diffs else 5.0
+
+
+def _offset_expiry(expiry8: str, offset: int) -> str:
+    """
+    8자리 만기 코드에 영업일 offset 추가.
+    offset=0 → 당일, 1 → 다음 거래일 (주말 건너뜀, 공휴일 미처리).
+    """
+    if not expiry8 or len(expiry8) != 8:
+        return expiry8
+    if offset == 0:
+        return expiry8
+    try:
+        from datetime import datetime, timedelta
+        dt    = datetime.strptime(expiry8, "%Y%m%d")
+        added = 0
+        while added < offset:
+            dt += timedelta(days=1)
+            if dt.weekday() < 5:
+                added += 1
+        return dt.strftime("%Y%m%d")
+    except Exception:
+        return expiry8
