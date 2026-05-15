@@ -1,5 +1,5 @@
 """
-sleep_order_ui.py — 수면 예약 주문 UI  v1.2
+sleep_order_ui.py — 수면 예약 주문 UI  v1.3
 ════════════════════════════════════════════════════════════════
 변경 이력 v1.2:
   - 감시 시간 입력을 KST 기준으로 변경 (내부에서 ET 자동 변환, 서머타임 감지)
@@ -202,6 +202,19 @@ class SleepOrderRightPanel(QWidget):
         )
         vlay.addWidget(hdr)
 
+        # ── 감시 대상 배너 ────────────────────────────────────
+        banner = QLabel(
+            "📌  감시 대상:  PUT Debit Spread  (풋 매수 스프레드)  |  "
+            "방향: BUY  |  전략: 숏 감마 헤지 / 하락 캐치"
+        )
+        banner.setStyleSheet(
+            "color:#00e5ff;font-size:13px;font-weight:bold;border:none;"
+            "background:#050520;padding:6px 10px;"
+            "border-left:3px solid #00e5ff;border-radius:3px;"
+        )
+        banner.setWordWrap(True)
+        vlay.addWidget(banner)
+
         sep = QFrame(); sep.setFrameShape(QFrame.HLine)
         sep.setStyleSheet("border:none;background:#2a2a5a;max-height:1px;margin:4px 0;")
         vlay.addWidget(sep)
@@ -216,7 +229,7 @@ class SleepOrderRightPanel(QWidget):
     # ── 섹션 A: 예약 주문 ────────────────────────────────────────
 
     def _build_section_a(self) -> QGroupBox:
-        gb  = _gb("📅  예약 주문 설정", "#ffd700")
+        gb  = _gb("📅  예약 주문 설정  —  PUT Debit Spread BUY", "#ffd700")
         lay = QGridLayout(gb)
         lay.setContentsMargins(12, 14, 12, 10)
         lay.setSpacing(8)
@@ -271,17 +284,25 @@ class SleepOrderRightPanel(QWidget):
         # 스프레드 폭
         lay.addWidget(_lbl("스프레드 폭:"), r, 0, Qt.AlignRight)
         self._sb_width = _spinbox(5, 100, 20, "$")
-        lay.addWidget(self._sb_width, r, 1); r += 1
+        lay.addWidget(self._sb_width, r, 1)
+        lay.addWidget(_lbl("(매수-매도 행사가 간격)", "#888", 11), r, 2, 1, 2); r += 1
 
-        # ── 목표가 + 현재가 비교 라벨 ─────────────────────────
-        lay.addWidget(_lbl("목표가 1:"), r, 0, Qt.AlignRight)
-        self._dsb_tp1 = _dspinbox(0.01, 9.99, 0.50, 0.05, prefix="$")
+        # ── 목표 진입가 (Debit) + 현재가 비교 라벨 ───────────
+        debit_note = _lbl(
+            "※ 진입가 = Net Debit  (매수 풋 프리미엄 − 매도 풋 프리미엄)",
+            "#556677", 11)
+        lay.addWidget(debit_note, r, 0, 1, 4); r += 1
+
+        lay.addWidget(_lbl("목표 진입가 상한\n(Debit ≤ 이 값이면 매수):"),
+                      r, 0, Qt.AlignRight)
+        self._dsb_tp1 = _dspinbox(0.01, 99.99, 0.50, 0.05, prefix="$")
         lay.addWidget(self._dsb_tp1, r, 1)
         self._lbl_tp1_cmp = _lbl("", "#555577", 13)
         lay.addWidget(self._lbl_tp1_cmp, r, 2, 1, 2); r += 1
 
-        lay.addWidget(_lbl("목표가 2:"), r, 0, Qt.AlignRight)
-        self._dsb_tp2 = _dspinbox(0.01, 9.99, 0.40, 0.05, prefix="$")
+        lay.addWidget(_lbl("목표 진입가 하한\n(Debit ≤ 이 값이면 더 유리):"),
+                      r, 0, Qt.AlignRight)
+        self._dsb_tp2 = _dspinbox(0.01, 99.99, 0.40, 0.05, prefix="$")
         lay.addWidget(self._dsb_tp2, r, 1)
         self._lbl_tp2_cmp = _lbl("", "#555577", 13)
         lay.addWidget(self._lbl_tp2_cmp, r, 2, 1, 2); r += 1
@@ -297,20 +318,43 @@ class SleepOrderRightPanel(QWidget):
         lay.addWidget(sep2, r, 0, 1, 4); r += 1
 
         lay.addWidget(_lbl("최대 수익률 하한:"), r, 0, Qt.AlignRight)
-        self._sb_roi_min = _spinbox(100, 9900, 500, "%")
+        self._sb_roi_min = _spinbox(0, 9900, 500, "%")
         lay.addWidget(self._sb_roi_min, r, 1)
         lay.addWidget(_lbl("이상 (만기 전액ITM 기준)", "#888", 11), r, 2, 1, 2); r += 1
 
         lay.addWidget(_lbl("최대 수익률 상한:"), r, 0, Qt.AlignRight)
-        self._sb_roi_max = _spinbox(100, 9900, 1200, "%")
+        self._sb_roi_max = _spinbox(0, 9900, 1200, "%")
         lay.addWidget(self._sb_roi_max, r, 1)
         lay.addWidget(_lbl("이하", "#888", 11), r, 2, 1, 2); r += 1
 
         roi_note = _lbl("※ ROI = (폭×100 − 진입가×100) ÷ 진입가×100 × 100", "#556677", 11)
         lay.addWidget(roi_note, r, 0, 1, 4); r += 1
 
-        # 드라이런 체크박스
+        # ── Aggressive Entry ──────────────────────────────────
         from PyQt5.QtWidgets import QCheckBox
+        sep3 = QFrame(); sep3.setFrameShape(QFrame.HLine)
+        sep3.setStyleSheet("border:none;background:#2a2a5a;max-height:1px;")
+        lay.addWidget(sep3, r, 0, 1, 4); r += 1
+
+        self._chk_aggressive = QCheckBox("⚡ Aggressive Entry  (슬리피지 보정 — 현재가 + N틱)")
+        self._chk_aggressive.setStyleSheet(
+            "QCheckBox{color:#5dade2;font-size:14px;border:none;font-weight:bold;}"
+            "QCheckBox::indicator{width:16px;height:16px;}"
+            "QCheckBox::indicator:checked{background:#0a1a3a;border:2px solid #5dade2;border-radius:3px;}"
+            "QCheckBox::indicator:unchecked{background:#0a0a18;border:1px solid #3a3a7a;border-radius:3px;}"
+        )
+        lay.addWidget(self._chk_aggressive, r, 0, 1, 2); r += 1
+
+        lay.addWidget(_lbl("보정 틱 수:"), r, 0, Qt.AlignRight)
+        self._sb_agg_ticks = _spinbox(1, 3, 1, "틱")
+        lay.addWidget(self._sb_agg_ticks, r, 1)
+        lay.addWidget(_lbl("($3 미만 $0.05 / 이상 $0.10)", "#888", 11), r, 2, 1, 2); r += 1
+
+        # 체크박스 OFF 시 틱 수 비활성화
+        self._chk_aggressive.toggled.connect(
+            lambda checked: self._sb_agg_ticks.setEnabled(checked))
+
+        # 드라이런 체크박스
         self._chk_dry_run = QCheckBox("🧪 드라이런 (테스트 — 실제 주문 안 함)")
         self._chk_dry_run.setStyleSheet(
             "QCheckBox{color:#ffaa44;font-size:14px;border:none;font-weight:bold;}"
@@ -367,7 +411,7 @@ class SleepOrderRightPanel(QWidget):
     # ── 섹션 B: 급락 캐치 ────────────────────────────────────────
 
     def _build_section_b(self) -> QGroupBox:
-        gb  = _gb("⚡  급락 캐치 설정", "#ff6b6b")
+        gb  = _gb("⚡  급락 캐치 설정  —  PUT Debit Spread 즉시 매수", "#ff6b6b")
         lay = QGridLayout(gb)
         lay.setContentsMargins(12, 14, 12, 10)
         lay.setSpacing(8)
@@ -430,6 +474,14 @@ class SleepOrderRightPanel(QWidget):
         self._sb_spike_budget = _spinbox(10, 9999, 100, "$")
         lay.addWidget(self._sb_spike_budget, r, 1); r += 1
 
+        # ── 취소 후 쿨다운 ────────────────────────────────────
+        lay.addWidget(_lbl("취소 쿨다운:"), r, 0, Qt.AlignRight)
+        self._sb_cooldown = _spinbox(10, 600, 120, "초")
+        lay.addWidget(self._sb_cooldown, r, 1)
+        lay.addWidget(
+            _lbl("수동 취소 후 재주문 차단 대기", "#888", 11),
+            r, 2, 1, 2); r += 1
+
         self._lbl_b_status = _lbl("", "#aaa", 12)
         lay.addWidget(self._lbl_b_status, r, 0, 1, 4); r += 1
 
@@ -488,6 +540,14 @@ class SleepOrderRightPanel(QWidget):
         self._dsb_cap.setValue(sleep_cfg.modify_price_cap)
         self._sb_spike_budget.setValue(sleep_cfg.spike_budget)
 
+        # ── [신규] Aggressive Entry ──────────────────────────
+        self._chk_aggressive.setChecked(sleep_cfg.aggressive_entry)
+        self._sb_agg_ticks.setValue(sleep_cfg.aggressive_ticks)
+        self._sb_agg_ticks.setEnabled(sleep_cfg.aggressive_entry)
+
+        # ── [신규] 취소 쿨다운 ──────────────────────────────
+        self._sb_cooldown.setValue(sleep_cfg.cancel_cooldown_sec)
+
     # ── 저장 ────────────────────────────────────────────────────
 
     def _on_a_apply(self) -> None:
@@ -511,15 +571,21 @@ class SleepOrderRightPanel(QWidget):
         sleep_cfg.set("roi_min",         self._sb_roi_min.value())
         sleep_cfg.set("roi_max",         self._sb_roi_max.value())
         sleep_cfg.set("dry_run",         self._chk_dry_run.isChecked())
+        # ── [신규] Aggressive Entry ──────────────────────────
+        sleep_cfg.set("aggressive_entry", self._chk_aggressive.isChecked())
+        sleep_cfg.set("aggressive_ticks", self._sb_agg_ticks.value())
         sleep_cfg.save()
 
         tz = "EDT" if _is_edt() else "EST"
         dry_tag = "  🧪 드라이런ON" if sleep_cfg.dry_run else ""
+        agg_tag = (f"  ⚡{sleep_cfg.aggressive_ticks}틱"
+                   if sleep_cfg.aggressive_entry else "")
         self._lbl_a_status.setText(
             f"✅ 저장됨  KST {kst_start}~{kst_end}"
             f"  ({tz} {et_start}~{et_end})"
-            f"  D+{sleep_cfg.expiry_offset}{dry_tag}")
-        print(f"[SleepUI] 섹션 A 저장  KST {kst_start}~{kst_end} → {tz} {et_start}~{et_end}")
+            f"  D+{sleep_cfg.expiry_offset}{dry_tag}{agg_tag}")
+        print(f"[SleepUI] 섹션 A 저장  KST {kst_start}~{kst_end} → {tz} {et_start}~{et_end}"
+              f"  aggressive={sleep_cfg.aggressive_entry}({sleep_cfg.aggressive_ticks}틱)")
 
     def _on_b_apply(self) -> None:
         from Sleep_Order.sleep_order_config  import sleep_cfg
@@ -536,46 +602,42 @@ class SleepOrderRightPanel(QWidget):
         sleep_cfg.set("modify_max_count", self._sb_max_mod.value())
         sleep_cfg.set("modify_price_cap", self._dsb_cap.value())
         sleep_cfg.set("spike_budget",     self._sb_spike_budget.value())
+        # ── [신규] 취소 쿨다운 ──────────────────────────────
+        sleep_cfg.set("cancel_cooldown_sec", self._sb_cooldown.value())
         sleep_cfg.save()
 
         SleepSpikeWatcher.get().reconfigure_all()
 
         self._lbl_b_status.setText(
             f"✅ 저장됨  N={sleep_cfg.tick_window}  "
-            f"급락{sleep_cfg.drop_ratio}%  상한${sleep_cfg.abs_floor}")
-        print("[SleepUI] 섹션 B 저장 완료")
+            f"급락{sleep_cfg.drop_ratio}%  상한${sleep_cfg.abs_floor}"
+            f"  쿨다운{sleep_cfg.cancel_cooldown_sec}초")
+        print(f"[SleepUI] 섹션 B 저장 완료  쿨다운={sleep_cfg.cancel_cooldown_sec}초")
 
     # ── ref 탐색 (버그 수정: findChildren(QWidget)) ──────────────
 
     def _get_ref(self):
         """
         ComboTab ref 탐색.
-        1) SleepOrderWatcher._ref
-        2) QApplication 전체 위젯에서 _sleep_get_chain 속성 탐색
-           → findChildren(QWidget) 으로 모든 자식 탐색 (type(w) 버그 수정)
+        SleepOrderWatcher.get() 를 호출하지 않음
+        → 최초 인스턴스 생성 타이밍 문제 방지
+        QApplication 전체 위젯에서 _sleep_get_chain 속성 직접 탐색.
         """
         ref = None
         try:
-            from Sleep_Order.sleep_order_watcher import SleepOrderWatcher
-            ref = SleepOrderWatcher.get()._ref
+            from PyQt5.QtWidgets import QApplication, QWidget as _QW
+            for w in QApplication.topLevelWidgets():
+                if hasattr(w, '_sleep_get_chain'):
+                    ref = w
+                    break
+                for child in w.findChildren(_QW):
+                    if hasattr(child, '_sleep_get_chain'):
+                        ref = child
+                        break
+                if ref:
+                    break
         except Exception:
             pass
-
-        if ref is None:
-            try:
-                from PyQt5.QtWidgets import QApplication, QWidget as _QW
-                for w in QApplication.topLevelWidgets():
-                    if hasattr(w, '_sleep_get_chain'):
-                        ref = w
-                        break
-                    for child in w.findChildren(_QW):
-                        if hasattr(child, '_sleep_get_chain'):
-                            ref = child
-                            break
-                    if ref:
-                        break
-            except Exception:
-                pass
         return ref
 
     def _on_check_chain(self) -> None:
@@ -597,9 +659,21 @@ class SleepOrderRightPanel(QWidget):
 
         put_strikes  = getattr(ref, '_put_strikes', [])
         chain_put    = getattr(ref, '_chain_put', {})
+        live_prices  = getattr(ref, '_sleep_live_prices', {})  # [v1.3] 실시간 mid 우선
         und_price    = getattr(ref, '_und_price', 0.0) or 0.0
         cur_expiry   = getattr(ref, '_current_expiry', '') or ''
         valid_prices = [v for v in chain_put.values() if v and v > 0]
+
+        # [v1.3] 가격 소스 결정 함수 — 실시간 mid 우선, 없으면 chain_put 폴백
+        live_count = len([v for v in live_prices.values() if v and v > 0])
+        price_src_tag = (f"실시간 mid ({live_count}개)"
+                         if live_count > 0 else "캐시 last (구독 전)")
+
+        def _get_price(strike: float):
+            p = live_prices.get(strike)
+            if p and p > 0:
+                return p
+            return chain_put.get(strike)
 
         if not put_strikes:
             self._set_chain_output(
@@ -619,7 +693,7 @@ class SleepOrderRightPanel(QWidget):
                 color="#ffaa44", border="#5a3a00")
             return
 
-        # ── 정상: 범위내 스프레드 상세 출력 ────────────────────
+        # ── 정상: _sleep_get_chain() 호출 → 올바른 스프레드 Net Debit 계산 ──
         dmin    = sleep_cfg.strike_dist_min / 100.0
         dmax    = sleep_cfg.strike_dist_max / 100.0
         tp1     = sleep_cfg.target_price_1
@@ -628,31 +702,59 @@ class SleepOrderRightPanel(QWidget):
         roi_max = sleep_cfg.roi_max
         sw      = sleep_cfg.spread_width
 
+        # [v1.3 FIX] 단독 풋 가격 대신 _sleep_get_chain() 재사용
+        # → BUY풋 mid - SELL풋 mid = 올바른 스프레드 Net Debit
+        try:
+            chain_items = ref._sleep_get_chain(sleep_cfg.expiry_offset)
+        except Exception as e:
+            self._set_chain_output(f"❌ 체인 계산 실패: {e}",
+                                   color="#ff4444", border="#5a1a1a")
+            return
+
+        # 거리 범위 필터 적용 (watcher와 동일 기준)
         in_range_items = [
-            (s, chain_put.get(s, 0))
-            for s in sorted(put_strikes, reverse=True)
-            if dmin <= abs(und_price - s) / und_price <= dmax
+            item for item in chain_items
+            if dmin <= abs(und_price - float(item["strike"])) / und_price <= dmax
         ]
+        # strike 내림차순 정렬
+        in_range_items = sorted(in_range_items,
+                                key=lambda x: x["strike"], reverse=True)
 
         lines = []
-        lines.append(f"✅ 체인 정상  |  만기 {cur_expiry}  |  지수 {und_price:,.0f}")
         lines.append(
-            f"행사가 {len(put_strikes)}개  /  유효가격 {len(valid_prices)}개  "
-            f"/  범위내 {len(in_range_items)}개"
+            f"✅ 체인 정상  |  만기 {cur_expiry}  |  지수 {und_price:,.0f}"
+            f"  |  가격소스: {price_src_tag}"
         )
-        lines.append(f"거리 범위: {sleep_cfg.strike_dist_min}% ~ {sleep_cfg.strike_dist_max}%"
-                     f"  |  ROI 허용: {roi_min}% ~ {roi_max}%")
-        lines.append("─" * 64)
-        lines.append(f"{'행사가':>8}  {'현재가':>7}  {'ROI':>7}  {'목표1':>6}  {'목표2':>6}  상태")
-        lines.append("─" * 64)
+        lines.append(
+            f"행사가 {len(put_strikes)}개  /  유효가격 {len(valid_prices)}개"
+            f"  /  스프레드 {len(chain_items)}개  /  범위내 {len(in_range_items)}개"
+        )
+        lines.append(
+            f"거리 범위: {sleep_cfg.strike_dist_min}% ~ {sleep_cfg.strike_dist_max}%"
+            f"  |  ROI 허용: {roi_min}% ~ {roi_max}%"
+            f"  |  스프레드 폭: ${sw}"
+        )
+        lines.append("─" * 72)
+        lines.append(
+            f"{'행사가':>8}  {'Net Debit':>10}  {'ROI':>7}"
+            f"  {'진입상한(tp1)':>12}  {'진입하한(tp2)':>12}  상태"
+        )
+        lines.append("─" * 72)
 
         best_net = None
-        for strike, net in in_range_items:
-            if net is None or net <= 0:
+        for item in in_range_items:
+            strike = float(item["strike"])
+            net    = float(item["put_net"])   # BUY풋 - SELL풋 올바른 Net Debit
+            legs   = item.get("legs", [])
+
+            # 레그 정보 (BUY/SELL 행사가 표시용)
+            buy_st  = int(legs[0]["strike"]) if len(legs) > 0 else int(strike)
+            sell_st = int(legs[1]["strike"]) if len(legs) > 1 else int(strike - sw)
+
+            if net <= 0:
                 roi_str = "   ─   "
                 status  = "가격없음"
             else:
-                # ROI 계산
                 max_profit = (sw - net) * 100
                 if max_profit > 0:
                     roi_pct = (max_profit / (net * 100)) * 100
@@ -665,24 +767,24 @@ class SleepOrderRightPanel(QWidget):
 
                 net_r = round(net * 20) / 20
                 if not roi_ok:
-                    status = f"🚫 ROI범위외"
+                    status = "🚫 ROI범위외"
                 elif net_r <= tp2:
-                    status = f"✅ ≤목표2"
+                    status = "✅ ≤목표2"
                 elif net_r <= tp1:
-                    status = f"🟡 ≤목표1"
+                    status = "🟡 ≤목표1"
                 else:
-                    status = f"⏳ 대기"
+                    status = "⏳ 대기"
 
                 if best_net is None and roi_ok:
                     best_net = net
 
-            net_str = f"${net:.2f}" if (net and net > 0) else "  ─   "
+            net_str = f"${net:.2f}" if net > 0 else "     ─    "
             lines.append(
-                f"{strike:>8.0f}  {net_str:>7}  {roi_str:>7}  "
-                f"${tp1:>5.2f}  ${tp2:>5.2f}  {status}"
+                f"{buy_st:>4}/{sell_st:<4}  {net_str:>10}  {roi_str:>7}"
+                f"  ${tp1:>11.2f}  ${tp2:>11.2f}  {status}"
             )
 
-        lines.append("─" * 64)
+        lines.append("─" * 72)
 
         self._set_chain_output("\n".join(lines), color="#00ff88", border="#1a5a2a")
         self._update_tp_compare(best_net, tp1, tp2)
@@ -698,32 +800,45 @@ class SleepOrderRightPanel(QWidget):
         )
 
     def _update_tp_compare(self, best_net, tp1: float, tp2: float) -> None:
-        """목표가 옆 현재가 비교 라벨 업데이트."""
+        """목표 진입가(Debit) 옆 현재 Net Debit 비교 라벨 — <= 기준."""
         if best_net is None or best_net <= 0:
             for lbl in (self._lbl_tp1_cmp, self._lbl_tp2_cmp):
-                lbl.setText("─ 가격 없음")
+                lbl.setText("─ Net Debit 없음")
                 lbl.setStyleSheet("color:#555577;font-size:13px;border:none;")
             return
 
         net_r = round(best_net * 20) / 20
 
+        # ── 진입상한(tp1) 비교 ─────────────────────────────────
         if net_r <= tp1:
-            self._lbl_tp1_cmp.setText(f"✅ 현재 ${best_net:.2f} ≤ ${tp1:.2f}")
+            diff = tp1 - best_net
+            mark = "✅✅" if net_r <= tp2 else "✅"
+            self._lbl_tp1_cmp.setText(
+                f"{mark} Net Debit ${best_net:.2f}  "
+                f"(진입상한 ${tp1:.2f} 보다 ${diff:.2f} 낮음 → 매수 조건 충족)")
             self._lbl_tp1_cmp.setStyleSheet(
                 "color:#00ff88;font-size:13px;font-weight:bold;border:none;")
         else:
             diff = best_net - tp1
-            self._lbl_tp1_cmp.setText(f"⏳ 현재 ${best_net:.2f}  (차이 ${diff:+.2f})")
+            self._lbl_tp1_cmp.setText(
+                f"⏳ Net Debit ${best_net:.2f}  "
+                f"(진입상한 ${tp1:.2f} 까지 ${diff:.2f} 남음 → 대기)")
             self._lbl_tp1_cmp.setStyleSheet(
                 "color:#ffaa44;font-size:13px;border:none;")
 
+        # ── 진입하한(tp2) 비교 ─────────────────────────────────
         if net_r <= tp2:
-            self._lbl_tp2_cmp.setText(f"✅ 현재 ${best_net:.2f} ≤ ${tp2:.2f}")
+            diff = tp2 - best_net
+            self._lbl_tp2_cmp.setText(
+                f"✅✅ Net Debit ${best_net:.2f}  "
+                f"(진입하한 ${tp2:.2f} 보다 ${diff:.2f} 낮음 → 더 유리한 조건)")
             self._lbl_tp2_cmp.setStyleSheet(
                 "color:#00ff88;font-size:13px;font-weight:bold;border:none;")
         else:
             diff = best_net - tp2
-            self._lbl_tp2_cmp.setText(f"⏳ 현재 ${best_net:.2f}  (차이 ${diff:+.2f})")
+            self._lbl_tp2_cmp.setText(
+                f"⏳ Net Debit ${best_net:.2f}  "
+                f"(진입하한 ${tp2:.2f} 까지 ${diff:.2f} 남음 → 대기)")
             self._lbl_tp2_cmp.setStyleSheet(
                 "color:#ffaa44;font-size:13px;border:none;")
 
@@ -799,9 +914,16 @@ class SleepOrderButton(QWidget):
         self._btn.setChecked(False)
 
     def _connect_watcher(self) -> None:
+        # QObject(QTimer 포함) 초기화는 이벤트 루프 진입 후 안전
+        # singleShot(0) 으로 지연 → 위젯 생성 시점 크래시 방지
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, self._do_connect_watcher)
+
+    def _do_connect_watcher(self) -> None:
         try:
             from Sleep_Order.sleep_order_watcher import SleepOrderWatcher
             SleepOrderWatcher.get().status_changed.connect(self._on_status_changed)
+            print("[SleepOrderButton] watcher 연결 성공")
         except Exception as e:
             print(f"[SleepOrderButton] watcher 연결 실패: {e}")
 

@@ -1,5 +1,5 @@
 """
-sleep_order_watcher.py — 수면 예약 주문 감시 루프  v1.0
+sleep_order_watcher.py — 수면 예약 주문 감시 루프  v2.1
 ════════════════════════════════════════════════════════════════
 역할:
   · QTimer(1초) 로 현재 시각 감시 → 설정 시간대 진입 시 체인 스캔 시작
@@ -7,11 +7,27 @@ sleep_order_watcher.py — 수면 예약 주문 감시 루프  v1.0
   · 조건 충족 시 주문 1회 실행 후 자동 종료
   · SleepSpikeWatcher 에 매 틱 가격 전달 (급락 캐치 병렬 동작)
 
+v2.0 변경:
+  · 목표가 비교: not in → <= (현재가 이하면 매수, 옵션 A 확정)
+  · Aggressive Entry: 주문가에 N틱 보정 추가 (기본 ON, 1틱)
+  · 미체결 OID 존재 시 신규 주문 차단 (안전장치 3)
+  · 디버그 로그: 각 필터 탈락 지점 출력 추가
+  · _fire_order(): lmt_price 확정 후 수량 재계산 (예산 초과 방지)
+
+v2.1 변경:
+  · start(): ref._sleep_subscribe_chain() 호출
+    → 감시 대상 행사가 전체를 전용 reqId(8600~)로 직접 구독
+    → bid/ask mid 실시간 수신 → _sleep_live_prices 딕셔너리 갱신
+  · stop(): ref._sleep_unsubscribe_chain() 호출 → 구독 해제
+  · 가격 소스 우선순위: 실시간 mid > _chain_put 3초 캐시(폴백)
+
 외부 연동:
   combo_ui_synthetic_panel.py 의 SyntheticStatusPanel 우측 상단 버튼에서
   SleepOrderWatcher.get().toggle(ref) 호출
 
 연동 메서드 (ref 객체에 주입 필요):
+  ref._sleep_subscribe_chain()               ← [신규] 구독 시작
+  ref._sleep_unsubscribe_chain()             ← [신규] 구독 해제
   ref._sleep_place_order(legs, lmt_price, qty, strat, tag) → oid
   ref._sleep_modify_order(oid, new_lmt, legs, qty, strat)
   ref._sleep_get_chain(expiry_offset)    → [{strike, put_net, put_ask, legs}, ...]
@@ -32,6 +48,20 @@ def _tg(msg: str) -> None:
         TelegramClient.get().send("order_confirm", msg)
     except Exception as e:
         print(f"[SleepWatcher] TG 실패: {e}")
+
+
+def _calc_entry_price(net_rounded: float, sleep_cfg) -> float:
+    """
+    Aggressive Entry ON 시 현재가에 N틱을 더해 주문가 결정.
+    틱 크기: net < $3.00 → $0.05 / net >= $3.00 → $0.10
+    반드시 이 함수 호출 후 반환된 lmt 기준으로 수량을 계산할 것.
+    (수량을 먼저 계산하면 lmt 상향 시 예산 초과 가능)
+    """
+    if not sleep_cfg.aggressive_entry:
+        return net_rounded
+    tick  = 0.10 if net_rounded >= 3.00 else 0.05
+    ticks = max(1, int(sleep_cfg.aggressive_ticks))
+    return round(net_rounded + tick * ticks, 2)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -60,7 +90,7 @@ class SleepOrderWatcher(QObject):
     def __init__(self, parent=None):
         if getattr(self, '_initialized', False):
             return
-        super().__init__(parent)
+        super().__init__(parent)   # QObject.__init__ 반드시 먼저
         self._initialized  = True
         self._ref          = None       # combo grid 참조
         self._active       = False
@@ -71,11 +101,15 @@ class SleepOrderWatcher(QObject):
         self._timer.timeout.connect(self._tick)
 
     @classmethod
+    @classmethod
     def get(cls) -> "SleepOrderWatcher":
-        if cls._inst is None:
-            cls()
+        with cls._mu:
+            if cls._inst is None:
+                inst = super(SleepOrderWatcher, cls).__new__(cls)
+                inst._initialized = False
+                cls._inst = inst
+                inst.__init__()
         return cls._inst
-
     # ── 외부 API ────────────────────────────────────────────────
 
     def toggle(self, ref: object) -> bool:
@@ -101,6 +135,10 @@ class SleepOrderWatcher(QObject):
         self._last_range_reset = 0.0
         SleepSpikeWatcher.get().reset_all()
 
+        # [v1.2] 감시 대상 행사가 실시간 구독 시작
+        if hasattr(ref, '_sleep_subscribe_chain'):
+            ref._sleep_subscribe_chain()
+
         msg = (f"🌙 감시 시작  {sleep_cfg.schedule_start}~{sleep_cfg.schedule_end}"
                f"  D+{sleep_cfg.expiry_offset}")
         self.status_changed.emit(f"🟢 감시중  {sleep_cfg.schedule_start}~{sleep_cfg.schedule_end}")
@@ -111,6 +149,12 @@ class SleepOrderWatcher(QObject):
     def stop(self, reason: str = "수동 중지") -> None:
         self._active = False
         self._timer.stop()
+
+        # [v1.2] 실시간 구독 해제
+        ref = getattr(self, '_ref', None)
+        if ref is not None and hasattr(ref, '_sleep_unsubscribe_chain'):
+            ref._sleep_unsubscribe_chain()
+
         self.status_changed.emit("🌙 예약 주문")
         print(f"[SleepWatcher] 감시 종료: {reason}")
 
@@ -162,22 +206,29 @@ class SleepOrderWatcher(QObject):
         if ref is None:
             return
 
-        # ── [안전장치 1] 시간대 이중 체크 (tick 에서도 하지만 여기서도 확인) ──
+        # ── [안전장치 1] 시간대 이중 체크 ──────────────────────
         if not self._in_time_window(sleep_cfg.schedule_start,
                                     sleep_cfg.schedule_end):
             print("[SleepWatcher] ⛔ 시간대 외 _scan_and_check 차단")
             return
 
-        # ── [안전장치 2] 체인 데이터 유효성 체크 ──────────────
+        # ── [안전장치 2] 체인 데이터 유효성 체크 ───────────────
         put_strikes = getattr(ref, '_put_strikes', [])
         chain_put   = getattr(ref, '_chain_put', {})
         if not put_strikes or not chain_put:
             print("[SleepWatcher] ⚠ 체인 데이터 없음 — 동기화 대기")
             return
-        # 유효 가격 있는 행사가 최소 3개 이상이어야 스캔
         valid_prices = [v for v in chain_put.values() if v and v > 0]
         if len(valid_prices) < 3:
             print(f"[SleepWatcher] ⚠ 유효 체인 가격 부족 ({len(valid_prices)}개) — 대기")
+            return
+
+        # ── [안전장치 3 신규] 미체결 주문 존재 시 신규 주문 차단 ─
+        pending_oid    = getattr(ref, '_chaser_current_oid', None)
+        pending_status = getattr(ref, '_pending_position', {}).get('status', '')
+        if pending_oid is not None and pending_status == '미체결':
+            print(f"[SleepWatcher] ⏳ 미체결 주문 존재"
+                  f"  OID={pending_oid} — 신규 주문 차단")
             return
 
         # 지수 현재가
@@ -190,7 +241,7 @@ class SleepOrderWatcher(QObject):
             print("[SleepWatcher] ⚠ 지수 가격 없음 — 대기")
             return
 
-        # ── [1분 보정] 지수 변동에 따른 범위 이탈 행사가 제거 ─────────────
+        # ── [1분 보정] 지수 변동에 따른 범위 이탈 행사가 제거 ─────
         now_ts = time.monotonic()
         if now_ts - self._last_range_reset >= 60:
             self._last_range_reset = now_ts
@@ -210,7 +261,9 @@ class SleepOrderWatcher(QObject):
         dist_max  = sleep_cfg.strike_dist_max / 100.0
         roi_min   = sleep_cfg.roi_min
         roi_max   = sleep_cfg.roi_max
-        sw        = sleep_cfg.spread_width   # 스프레드 폭 ($)
+        sw        = sleep_cfg.spread_width
+        tp1       = sleep_cfg.target_price_1
+        tp2       = sleep_cfg.target_price_2
 
         for item in chain:
             strike    = float(item.get("strike", 0))
@@ -224,16 +277,17 @@ class SleepOrderWatcher(QObject):
             # 조건 1: 행사가 거리 범위 체크
             dist = abs(und_price - strike) / und_price
             if not (dist_min <= dist <= dist_max):
+                print(f"[DEBUG] ⛔ 거리탈락  strike={strike}"
+                      f"  dist={dist*100:.3f}%"
+                      f"  허용={sleep_cfg.strike_dist_min}~{sleep_cfg.strike_dist_max}%")
                 continue
 
-            # 조건 2: 수익률 필터 (신규)
-            # 최대 수익 = (스프레드 폭 - 진입가) × 100
-            # 수익률(%) = 최대 수익 / 진입비용 × 100
+            # 조건 2: 수익률 필터
             if net_price > 0:
                 max_profit_dollar = (sw - net_price) * 100
                 if max_profit_dollar <= 0:
-                    print(f"[SleepWatcher] ⛔ ROI 계산 불가 (폭보다 비싼 스프레드)"
-                          f"  strike={strike}  net=${net_price:.2f}")
+                    print(f"[DEBUG] ⛔ ROI계산불가  strike={strike}"
+                          f"  net=${net_price:.2f} (폭보다 비쌈)")
                     continue
                 roi_pct = (max_profit_dollar / (net_price * 100)) * 100
                 if not (roi_min <= roi_pct <= roi_max):
@@ -250,25 +304,34 @@ class SleepOrderWatcher(QObject):
             SleepSpikeWatcher.get().on_price_update(
                 spread_key, net_price, ask_price)
 
-            # 조건 3: 일반 예약 주문 가격 체크 (이미 주문했으면 스킵)
+            # 조건 3: 예약 주문 가격 체크 (이미 주문했으면 스킵)
             if self._fired:
                 continue
 
-            target_prices = {sleep_cfg.target_price_1, sleep_cfg.target_price_2}
-            # 틱 단위 반올림 후 비교
-            net_rounded = round(net_price * 20) / 20  # 0.05 틱 단위
-            if net_rounded not in target_prices:
+            net_rounded = round(net_price * 20) / 20   # 0.05 틱 단위
+
+            # ── [변경] not in → <= 비교 (옵션 A 확정) ────────────
+            if net_rounded > tp1:
+                print(f"[DEBUG] ⛔ 목표가초과  strike={strike}"
+                      f"  net=${net_price:.2f}"
+                      f"  rounded=${net_rounded:.2f}"
+                      f"  tp1=${tp1:.2f}")
                 continue
 
-            # 조건 4: 수량 계산
-            cost_per = net_rounded * 100
-            if cost_per <= 0:
-                continue
-            qty = max(1, int(sleep_cfg.max_budget // cost_per))
+            matched_target = tp2 if net_rounded <= tp2 else tp1
 
-            # 주문 실행
+            # ── [변경] lmt 확정 후 수량 계산 (Aggressive Entry 반영) ─
+            lmt      = _calc_entry_price(net_rounded, sleep_cfg)
+            cost_per = lmt * 100
+            qty      = max(1, int(sleep_cfg.max_budget // cost_per))
+
+            print(f"[DEBUG] ✅ 주문조건충족  strike={strike}"
+                  f"  net=${net_rounded:.2f}  lmt=${lmt:.2f}"
+                  f"  matched=tp{'2' if matched_target == tp2 else '1'}"
+                  f"  qty={qty}  총비용=${qty * lmt * 100:.0f}")
+
             self._fire_order(legs, net_rounded, qty, strat)
-            break   # 첫 번째 조건 충족 스프레드만
+            break
 
     def _evict_out_of_range_catchers(self, und_price: float,
                                      sleep_cfg) -> None:
@@ -302,7 +365,7 @@ class SleepOrderWatcher(QObject):
             msg = f"[SleepWatcher] 📍 1분 보정 — 범위 이탈 제거: {keys_to_remove}"
             print(msg)
 
-    def _fire_order(self, legs: list, lmt: float,
+    def _fire_order(self, legs: list, net_price: float,
                     qty: int, strat: str) -> None:
         from Sleep_Order.sleep_order_config import sleep_cfg
 
@@ -317,7 +380,16 @@ class SleepOrderWatcher(QObject):
             _tg("⛔ <b>예약 주문 차단</b>\n시간대 외 발동 시도 — 주문 미전송")
             return
 
+        # ── [신규] Aggressive Entry → lmt 확정 후 수량 재계산 ──
+        lmt      = _calc_entry_price(net_price, sleep_cfg)
+        cost_per = lmt * 100
+        qty      = max(1, int(sleep_cfg.max_budget // cost_per))
+
         total_cost = round(lmt * qty * 100, 2)
+
+        # 틱 보정 정보 (TG/로그용)
+        agg_tag = (f" (+{sleep_cfg.aggressive_ticks}틱 보정)"
+                   if sleep_cfg.aggressive_entry else "")
 
         # ── [드라이런] 실제 주문 차단 ──────────────────────────
         if sleep_cfg.dry_run:
@@ -325,12 +397,13 @@ class SleepOrderWatcher(QObject):
             msg = (
                 f"🧪 <b>[드라이런] 예약 주문 시뮬레이션</b>\n"
                 f"전략: {strat}\n"
-                f"주문가: <b>${lmt:.2f}</b>  수량: {qty}계약\n"
-                f"총 금액: ${total_cost}\n"
+                f"현재가: ${net_price:.2f}  →  주문가: <b>${lmt:.2f}</b>{agg_tag}\n"
+                f"수량: {qty}계약  총 금액: ${total_cost}\n"
                 f"⚠ 드라이런 모드 — 실제 주문 미전송"
             )
             _tg(msg)
-            print(f"[SleepWatcher][DRYRUN] 주문 시뮬  lmt=${lmt:.2f}  qty={qty}")
+            print(f"[SleepWatcher][DRYRUN] 주문 시뮬"
+                  f"  net=${net_price:.2f}  lmt=${lmt:.2f}  qty={qty}")
             self.status_changed.emit(f"🧪 드라이런  ${lmt:.2f} × {qty}")
             return
 
@@ -353,13 +426,14 @@ class SleepOrderWatcher(QObject):
         self._fired = True
 
         print(f"[SleepWatcher] ✅ 예약 주문 실행  OID={oid}"
-              f"  lmt=${lmt:.2f}  qty={qty}  총=${total_cost}")
+              f"  net=${net_price:.2f}  lmt=${lmt:.2f}{agg_tag}"
+              f"  qty={qty}  총=${total_cost}")
 
         _tg(
             f"🌙 <b>수면 예약 주문 실행</b>\n"
             f"전략: {strat}\n"
-            f"주문가: <b>${lmt:.2f}</b>  수량: {qty}계약\n"
-            f"총 금액: ${total_cost}\n"
+            f"현재가: ${net_price:.2f}  →  주문가: <b>${lmt:.2f}</b>{agg_tag}\n"
+            f"수량: {qty}계약  총 금액: ${total_cost}\n"
             f"OID: {oid}"
         )
 
