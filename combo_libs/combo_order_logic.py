@@ -263,8 +263,10 @@ def _on_close_position_order(self, pos: dict, lmt_price: float = None):
             pass
 
     # [FIX-A] Submitted 콜백에서 파일 제거
+    # [FIX-CLOSE] 원본 oid 저장 → callbacks 에서 패널 행 제거에 사용
     if oid:
-        self._pending_close_oid = oid
+        self._pending_close_oid        = oid
+        self._pending_close_source_oid = oid
 
     # [FIX-J] 지정가/MKT 분기
     if lmt_price is not None:
@@ -413,6 +415,8 @@ def _init_synthetic_panel_callbacks(self):
     # [FIX-B] 청산 oid 추적 집합 초기화
     if not hasattr(self, '_close_oid_set'):
         self._close_oid_set = set()
+    # [FIX-CLOSE] 원본 oid 추적 초기화
+    self._pending_close_source_oid = None
 
     if not getattr(self, '_whatif_slots_connected', False):
         try:

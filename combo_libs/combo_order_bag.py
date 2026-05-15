@@ -524,6 +524,17 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         self._log("❌ nextOrderId 없음")
         return
 
+    # [FIX-CLOSE-TIMING] placeOrder 전에 청산 여부 확정 및 set 등록
+    # Submitted 콜백이 placeOrder 리턴 직후 동기적으로 올 수 있으므로
+    # add() 를 placeOrder 보다 반드시 먼저 실행해야 타이밍 레이스 차단
+    _is_close_order = strat.startswith("청산:") or (
+        oid in getattr(self, '_close_oid_set', set()))
+    if _is_close_order:
+        if not hasattr(self, '_close_oid_set'):
+            self._close_oid_set = set()
+        self._close_oid_set.add(oid)
+        self._log(f"  [FIX-CLOSE] 청산 주문 oid 사전 등록: {oid}")
+
     # ── 주문 객체 ────────────────────────────────────────────
     from ibapi.order import Order as IbOrder
     # [FIX-R] totalQuantity: 기존 하드코딩 1 → legs 에서 실제 수량 읽어서 반영
@@ -584,9 +595,8 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             self, oid=oid, price=lmt_price,
             action=bag_action, qty=int(ibord.totalQuantity))
 
-        # [FIX-W3] _is_close_order 정의 — 미정의로 NameError 발생하던 버그 수정
-        # _close_oid_set 에 등록된 OID 면 청산 주문, 아니면 신규 주문
-        _is_close_order = (oid in getattr(self, '_close_oid_set', set()))
+        # [FIX-W3] 청산 주문이 아닐 때만 SpecialFillWatcher 등록
+        # (_is_close_order 는 placeOrder 전 이미 확정됨)
 
         # [TG-3] 선주문 감시 등록 — 청산 주문이 아닐 때만
         # [FIX-W1] bag_contract / qty 직접 전달

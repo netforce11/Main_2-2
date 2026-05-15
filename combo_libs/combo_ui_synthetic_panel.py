@@ -422,6 +422,20 @@ class SyntheticStatusPanel(QWidget):
         self._positions = [p for p in self._positions if p.get("oid") != oid]
         self._refresh_pos_table()
 
+    def mark_position_closing(self, oid: int):
+        """[FIX-CLOSE] 청산 주문 접수 → 해당 행 '청산중' 상태로 변경.
+        체결 완료 전까지 행을 유지하되 총 손익 계산에서 제외하고
+        청산 버튼을 비활성화해 중복 청산을 방지한다."""
+        for pos in self._positions:
+            if pos.get("oid") == oid:
+                pos["status"] = "청산중"
+                break
+        self._refresh_pos_table()
+        self._btn_close_lmt.setEnabled(False)
+        self._btn_close_mkt.setEnabled(False)
+        self._spin_close_price.setEnabled(False)
+        self._lbl_pos_hint.setText("🔄 청산 주문 접수됨 — 체결 대기 중")
+
     def remove_position_by_oid(self, oid: int):
         """[FIX-L] 청산 Filled 콜백에서 oid 기준으로 패널 포지션 제거."""
         self._positions = [p for p in self._positions if p.get("oid") != oid]
@@ -522,8 +536,9 @@ class SyntheticStatusPanel(QWidget):
             entry     = pos.get("entry", 0.0)
             current   = pos.get("current", entry)
             status    = pos.get("status", "미체결")
-            is_filled = status in ("체결완료", "보유")   # [FIX-S] 두 값 모두 체결로 처리
-            pnl       = (current - entry) * qty * 100 if is_filled else 0.0
+            is_filled  = status in ("체결완료", "보유")   # [FIX-S] 두 값 모두 체결로 처리
+            is_closing = status == "청산중"               # [FIX-CLOSE] 청산 주문 접수됨
+            pnl       = (current - entry) * qty * 100 if is_filled and not is_closing else 0.0
             total_pnl += pnl
             pnl_col   = "#00ff88" if pnl > 0 else "#ff4444" if pnl < 0 else "#888899"
 
@@ -535,7 +550,7 @@ class SyntheticStatusPanel(QWidget):
                 return it
 
             # 수익률: (현재가 - 진입가) / 진입가 × 100
-            if is_filled and entry > 0:
+            if is_filled and not is_closing and entry > 0:
                 pnl_rate     = (current - entry) / entry * 100
                 pnl_rate_txt = f"{pnl_rate:+.1f}%"
                 pnl_rate_col = "#00ff88" if pnl_rate > 0 else "#ff4444" if pnl_rate < 0 else "#888899"
@@ -543,8 +558,16 @@ class SyntheticStatusPanel(QWidget):
                 pnl_rate_txt = "―"
                 pnl_rate_col = "#888899"
 
-            st_col  = "#00ff88" if is_filled else "#ffaa44"
-            st_text = "📌 보유" if is_filled else "⏳ 미체결"   # [FIX-S] "✅ 체결" → "📌 보유"
+            # 상태 표시 [FIX-CLOSE]
+            if is_closing:
+                st_col  = "#888888"
+                st_text = "🔄 청산중"
+            elif is_filled:
+                st_col  = "#00ff88"
+                st_text = "📌 보유"   # [FIX-S] "✅ 체결" → "📌 보유"
+            else:
+                st_col  = "#ffaa44"
+                st_text = "⏳ 미체결"
             # 만기 필드 추가
             expiry_txt, expiry_col = _format_expiry(pos.get("legs", []))
             tbl.setItem(r, 0, _it(expiry_txt, expiry_col))

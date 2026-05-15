@@ -78,16 +78,24 @@ def disconnect_order_callbacks(self) -> None:
 def _on_order_status(self, oid: int, status: str,
                      filled: float, remaining: float,
                      avg_fill: float) -> None:
-    # [FIX-P] 필터 수정: _chaser_current_oid → _pending_position 기반으로 변경
-    # 기존: Smart Chaser 모드 OFF 시 _chaser_current_oid=None → 콜백 무시
-    #       → 합성주문 체결 후 잔고 리스트에 미표시 버그
-    # 수정: _pending_position 의 oid 기준으로 필터링
-    #       → Chaser ON/OFF 무관하게 모든 합성주문 체결 처리
-    # 단, _close_oid_set 등록된 청산 주문은 pending 없어도 처리해야 하므로 OR 조건 유지
     pending          = getattr(self, '_pending_position', None)
     close_oids_check = getattr(self, '_close_oid_set', set())
     is_pending_match = bool(pending and pending.get('oid') == oid)
     is_close_match   = oid in close_oids_check
+
+    # [FIX-CLOSE-TIMING] 타이밍 레이스 대응:
+    # _place_combo_legs → placeOrder → _close_oid_set.add(oid) 순서인데
+    # Submitted 콜백이 add() 보다 먼저 도달하면 is_close_match=False → return 으로 차단됨.
+    # _pending_position.strategy 가 "청산:" 이면 청산 주문으로 확정 처리.
+    is_pending_close = (
+        is_pending_match
+        and str((pending or {}).get('strategy', '')).startswith("청산:")
+    )
+    if is_pending_close:
+        # 타이밍 레이스 방지: 지금 즉시 set 에 등록
+        close_oids_check.add(oid)
+        is_close_match = True
+
     if not is_pending_match and not is_close_match:
         return
 
@@ -96,14 +104,23 @@ def _on_order_status(self, oid: int, status: str,
     # ── 접수 ─────────────────────────────────────────────────
     if status in _STATUS_SUBMITTED:
         self._log(f"📨 OID={oid} 주문 접수됨 ({status})")
-        _set_panel_status(panel, oid, "⏳ 접수됨")
+
+        # [FIX-CLOSE] 청산 주문 접수 → 원본 포지션 행 "청산중" 표시
+        if is_close_match:
+            src_oid = getattr(self, '_pending_close_source_oid', None)
+            if src_oid and panel and hasattr(panel, 'mark_position_closing'):
+                panel.mark_position_closing(src_oid)
+                self._log(f"  [FIX-CLOSE] 원본 OID={src_oid} → 청산중 표시")
+        else:
+            _set_panel_status(panel, oid, "⏳ 접수됨")
 
         # [FIX-F] 청산 주문 접수 확인 → 파일 제거
         pending_close = getattr(self, '_pending_close_oid', None)
         if pending_close and pending_close == oid:
             try:
                 from combo_position_store import safe_remove_after_order
-                safe_remove_after_order(oid, log_fn=self._log)
+                src_oid = getattr(self, '_pending_close_source_oid', pending_close)
+                safe_remove_after_order(src_oid, log_fn=self._log)
             except Exception as e:
                 self._log(f"⚠ 청산 파일 제거 실패: {e}")
             self._pending_close_oid = None
@@ -125,24 +142,31 @@ def _on_order_status(self, oid: int, status: str,
             msg += f"  avg(exec캐시)=${avg:.2f}" if avg else "  avg=미수신"
             self._log(msg)
 
-        # [FIX-E] 청산 oid 여부 판별
+        # [FIX-E] 청산 oid 여부 판별 — is_pending_close 도 포함
         close_oids = getattr(self, '_close_oid_set', set())
-        is_close   = (oid in close_oids)
+        is_close   = (oid in close_oids) or is_pending_close
 
         if is_close:
             # 청산 체결 → 패널/파일에서 제거
-            self._log(f"🔴 OID={oid} 청산 체결 완료")
+            # [FIX-CLOSE] 원본 oid(_pending_close_source_oid) 기준으로 패널 행 제거
+            #   기존: panel.remove_position_by_oid(oid) — oid 는 새 BAG 주문 oid
+            #         원본 포지션 oid 와 달라서 행이 삭제되지 않음
+            #   수정: _pending_close_source_oid (원본) 로 제거
+            src_oid = getattr(self, '_pending_close_source_oid', None) or oid
+            self._log(f"🔴 OID={oid} 청산 체결 완료 (원본 OID={src_oid})")
             if panel and hasattr(panel, 'remove_position_by_oid'):
-                panel.remove_position_by_oid(oid)
+                panel.remove_position_by_oid(src_oid)
             try:
                 from combo_position_store import remove_position
-                remove_position(oid)
+                remove_position(src_oid)
             except Exception:
                 pass
             close_oids.discard(oid)
-            # [FIX-ST1] 청산 체결 시 실시간 가격 구독 해제 — 미해제 시 레그 tick 계속 수신
+            self._pending_close_source_oid = None   # [FIX-CLOSE] 초기화
+            self._pending_position         = None   # pending 소비 (청산 행 add_position 방지)
+            # [FIX-ST1] 청산 체결 시 실시간 가격 구독 해제 — 원본 oid 기준
             try:
-                stop_position_price_stream(self, oid)
+                stop_position_price_stream(self, src_oid)
             except Exception:
                 pass
 
@@ -273,11 +297,12 @@ def _on_order_status(self, oid: int, status: str,
 def _on_exec_details(self, oid: int, sym: str,
                      side: str, qty: float, price: float) -> None:
     """execDetails 콜백 — 폴백 캐시 저장 + 로그 전용."""
-    # [FIX-P] _pending_position 기반 필터로 변경 (known oids 보조)
     pending    = getattr(self, '_pending_position', None)
     known      = getattr(self, '_exec_known_oids', set())
     is_pending = bool(pending and pending.get('oid') == oid)
-    if not is_pending and oid not in known:
+    # [FIX-CLOSE-TIMING] 청산 주문도 exec_known_oids 에 포함
+    is_close_known = oid in getattr(self, '_close_oid_set', set())
+    if not is_pending and oid not in known and not is_close_known:
         return
 
     commission = round(float(qty) * 1.0, 2)

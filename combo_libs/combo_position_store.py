@@ -107,6 +107,9 @@ def update_position_current(oid: int, current: float) -> None:
                     return
     except Exception:
         pass
+
+
+def safe_remove_after_order(oid: int, log_fn=None) -> None:
     """
     [FIX-4] 청산 주문 전송 성공(oid 확정) 후 파일에서 제거.
     _on_close_position_order 에서 placeOrder 성공 직후 호출.
@@ -316,10 +319,14 @@ def restore_on_reconnect(self) -> None:
         [FIX-Q] 기존: 파일 기준 qty 보정만
                 → 파일에 없는 IB 포지션(FIX-P 이전 버그 등)은 재연결 후에도 누락
                 수정: ib_buf 중 파일 미매칭 항목을 패널에 직접 추가 + 파일 저장
+        [FIX-EXEC] IB 서버 포지션 없음 → reqExecutions 로 오늘 청산 여부 확인
+                   청산 체결 내역 있으면 파일/패널에서 해당 포지션 제거
         """
         _restore_done()
+
         if not ib_buf:
-            self._log("ℹ IB 서버 옵션 포지션 없음 (파일 복원 유지)")
+            self._log("ℹ IB 서버 옵션 포지션 없음 — 거래내역 조회로 청산 여부 확인")
+            _check_executions_and_clean(self, panel, saved_by_oid)
             return
 
         # ── 파일 포지션들의 레그 시그니처 집합 (매칭 판별용) ───
@@ -329,6 +336,40 @@ def restore_on_reconnect(self) -> None:
                 if l.get("strike"):
                     file_leg_sigs.add(
                         f"{l['cp'].upper()}{int(float(l['strike']))}")
+
+        # ── IB 서버에 없는 파일 포지션 → 청산 완료로 판단 ──────
+        # [FIX-EXEC-A] IB 포지션 시그니처에 만기 포함 — 같은 행사가 다른 만기 오매칭 방지
+        ib_sigs = set()
+        for ib_pos in ib_buf:
+            sig = _ib_sig_simple(ib_pos)
+            expiry = str(ib_pos.get("expiry", "")).replace('-', '')[:8]
+            if sig:
+                # 만기 있으면 "P7405:20260514", 없으면 "P7405" (하위호환)
+                ib_sigs.add(f"{sig}:{expiry}" if expiry else sig)
+                ib_sigs.add(sig)   # 만기 없는 매칭도 허용 (IB 응답 형식 차이 대응)
+
+        for oid, saved in list(saved_by_oid.items()):
+            legs = saved.get("legs", [])
+            leg_sigs = set(
+                f"{l['cp'].upper()}{int(float(l['strike']))}:"
+                f"{str(l.get('expiry','')).replace('-','')[:8]}"
+                for l in legs if l.get("strike")
+            )
+            # 모든 레그 시그니처(만기 포함)가 IB 서버에 없으면 → 청산 완료
+            if leg_sigs and not any(
+                sig in ib_sigs or sig.split(':')[0] in ib_sigs
+                for sig in leg_sigs
+            ):
+                self._log(f"🗑 [FIX-EXEC] IB 서버 미존재 → 청산 완료 판단: OID={oid}  {saved.get('strategy','')}")
+                if panel and hasattr(panel, 'remove_position_by_oid'):
+                    panel.remove_position_by_oid(oid)
+                remove_position(oid)
+                del saved_by_oid[oid]
+                try:
+                    from combo_order_callbacks import stop_position_price_stream
+                    stop_position_price_stream(self, oid)
+                except Exception:
+                    pass
 
         # ── 기존: 파일 포지션 qty 보정 ─────────────────────────
         updated = 0
@@ -342,7 +383,6 @@ def restore_on_reconnect(self) -> None:
             if matched and hasattr(panel, '_positions'):
                 for p in panel._positions:
                     if p.get('oid') == oid:
-                        # entry 는 파일값 유지, qty 만 서버값으로 보정
                         p['qty'] = matched[0]["qty"]
                         updated += 1
 
@@ -350,7 +390,6 @@ def restore_on_reconnect(self) -> None:
         added = 0
         for ib_pos in ib_buf:
             sig = _ib_sig_simple(ib_pos)
-            # 파일 포지션에 매칭 레그 없으면 → 누락 포지션
             if sig and sig not in file_leg_sigs:
                 enriched = dict(ib_pos)
                 enriched.setdefault("status", "보유")
@@ -358,10 +397,8 @@ def restore_on_reconnect(self) -> None:
                     "oid", int(datetime.now().timestamp() * 1000) % 100000)
                 enriched["strategy"] = (
                     f"[서버복원] {enriched.get('strategy', sig)}")
-                # 패널 추가
                 if panel and hasattr(panel, 'add_position'):
                     panel.add_position(enriched)
-                # 파일에도 저장 (다음 재연결 때 정상 복원)
                 try:
                     save_one_position(enriched)
                 except Exception:
@@ -585,8 +622,121 @@ def _write_atomic_path(path: Path, text: str) -> None:
 
 
 # ══════════════════════════════════════════════════════════════
-# 복원 포지션 스트림 확보 (장외 대응)
+# [FIX-EXEC] 거래내역 조회 → 청산 완료 포지션 파일/패널 제거
 # ══════════════════════════════════════════════════════════════
+
+def _check_executions_and_clean(self, panel, saved_by_oid: dict) -> None:
+    """
+    IB reqExecutions() 로 오늘 체결 내역을 조회.
+    파일에 남아있는 포지션 중 청산 체결(반대 방향 매도/매수)이 확인되면
+    파일과 패널에서 제거한다.
+
+    [FIX-EXEC-A] 시그니처에 만기(expiry) 포함 — 같은 행사가 다른 만기 오매칭 방지
+    [FIX-EXEC-C] ExecutionFilter.time 으로 오늘 날짜 필터 — 이전 날 체결 내역 혼입 방지
+
+    호출 시점: _on_pos_end 에서 IB 서버 포지션이 없을 때.
+    """
+    from PyQt5.QtCore import QTimer as _QT
+    ib = getattr(getattr(self, 'mw', None), 'ib', None)
+    if not ib or not saved_by_oid:
+        return
+
+    exec_buf  = []   # {side, strike, right, expiry_date} 체결 목록
+    _orig_exec     = getattr(ib, 'execDetails',    lambda *a: None)
+    _orig_exec_end = getattr(ib, 'execDetailsEnd', lambda *a: None)
+    _done          = [False]
+
+    def _cleanup():
+        if _done[0]:
+            return
+        _done[0] = True
+        try: ib.execDetails    = _orig_exec
+        except Exception: pass
+        try: ib.execDetailsEnd = _orig_exec_end
+        except Exception: pass
+
+    def _on_exec(req_id, contract, execution):
+        sec = getattr(contract, 'secType', '')
+        if sec not in ('OPT', 'FOP'):
+            return
+        side   = getattr(execution, 'side', '')      # 'BOT' or 'SLD'
+        strike = getattr(contract, 'strike', 0)
+        right  = getattr(contract, 'right', '').upper()
+
+        # [FIX-EXEC-A] 만기 추출 — contract.lastTradeDateOrContractMonth (YYYYMMDD)
+        expiry = str(getattr(contract, 'lastTradeDateOrContractMonth', '') or '')
+        expiry = expiry.replace('-', '')[:8]   # "20260514-..." → "20260514"
+
+        exec_buf.append({
+            "side":   'BUY' if side == 'BOT' else 'SELL',
+            "strike": float(strike),
+            "right":  right,
+            "expiry": expiry,
+        })
+
+    def _on_exec_end(req_id):
+        _cleanup()
+        if not exec_buf:
+            self._log("ℹ 오늘 체결 내역 없음 — 파일 포지션 유지")
+            return
+
+        # [FIX-EXEC-A] 시그니처: right + strike + side + expiry 모두 포함
+        # → 같은 행사가 다른 만기 포지션 오매칭 완전 차단
+        closed_sigs = set()
+        for e in exec_buf:
+            closed_sigs.add(
+                f"{e['right']}{int(e['strike'])}:{e['side']}:{e['expiry']}")
+
+        removed = 0
+        for oid, saved in list(saved_by_oid.items()):
+            legs = saved.get("legs", [])
+            if not legs:
+                continue
+
+            # 모든 레그에 대해 반대 방향 체결이 오늘 있는지 확인
+            close_confirmed = all(
+                f"{l['cp'].upper()}{int(float(l['strike']))}:"
+                f"{'SELL' if l['dir'] == 'BUY' else 'BUY'}:"
+                f"{str(l.get('expiry', '')).replace('-','')[:8]}"
+                in closed_sigs
+                for l in legs if l.get("strike")
+            )
+            if close_confirmed:
+                self._log(
+                    f"🗑 [FIX-EXEC] 거래내역 청산 확인 → 제거: "
+                    f"OID={oid}  {saved.get('strategy','')}")
+                if panel and hasattr(panel, 'remove_position_by_oid'):
+                    panel.remove_position_by_oid(oid)
+                remove_position(oid)
+                try:
+                    from combo_order_callbacks import stop_position_price_stream
+                    stop_position_price_stream(self, oid)
+                except Exception:
+                    pass
+                removed += 1
+
+        if removed:
+            self._log(f"✅ [FIX-EXEC] 거래내역 기반 청산 포지션 {removed}건 제거")
+        else:
+            self._log("ℹ [FIX-EXEC] 거래내역 확인 — 청산 미매칭, 파일 포지션 유지")
+
+    ib.execDetails    = _on_exec
+    ib.execDetailsEnd = _on_exec_end
+
+    # 타임아웃 10초
+    _QT.singleShot(10_000, _cleanup)
+
+    try:
+        from ibapi.execution import ExecutionFilter
+        from datetime import date as _date
+        ef = ExecutionFilter()
+        # [FIX-EXEC-C] 오늘 날짜 이후 체결만 조회 — 이전 날 내역 혼입 방지
+        ef.time = _date.today().strftime("%Y%m%d-00:00:00")
+        ib.reqExecutions(9001, ef)
+        self._log("🔍 [FIX-EXEC] 오늘 거래내역 조회 중…")
+    except Exception as e:
+        _cleanup()
+        self._log(f"⚠ reqExecutions 오류: {e}")
 
 def _ensure_restored_streams(self, saved_by_oid: dict) -> None:
     """

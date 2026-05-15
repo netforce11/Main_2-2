@@ -18,6 +18,22 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Callable, Dict, List
 import time
+import datetime
+
+try:
+    from zoneinfo import ZoneInfo          # Python 3.9+
+    _ET = ZoneInfo("America/New_York")
+except ImportError:
+    import pytz                            # Python 3.8 fallback
+    _ET = pytz.timezone("America/New_York")
+
+_MARKET_CLOSE = datetime.time(16, 0)      # 16:00 ET = 장 마감
+
+
+def _is_market_hours() -> bool:
+    """현재 시각이 ET 기준 정규장(09:30~16:00) 이내이면 True."""
+    now_et = datetime.datetime.now(tz=_ET).time()
+    return datetime.time(9, 30) <= now_et < _MARKET_CLOSE
 
 
 # ─────────────────────────────────────────────────────────────
@@ -111,6 +127,29 @@ class AlertEngine:
         self._vix_count   = 0
         self._vix_last_ts = 0.0
 
+    # ── 자동 리셋 헬퍼 ───────────────────────────────────────
+
+    @staticmethod
+    def _auto_reset_row(row) -> bool:
+        """
+        count 가 MAX 에 도달한 행을 검사.
+        장중(09:30~16:00 ET)이면 count/ts 초기화 후 True 반환.
+        장외이면 억제 유지 → False 반환.
+        """
+        if _is_market_hours():
+            row._alert_count   = 0
+            row._last_alert_ts = 0.0
+            return True   # 리셋 완료 → 이번 틱부터 재평가 허용
+        return False       # 장외 → 억제 유지
+
+    def _auto_reset_vix(self) -> bool:
+        """VIX 카운터용. 장중이면 리셋 후 True."""
+        if _is_market_hours():
+            self._vix_count   = 0
+            self._vix_last_ts = 0.0
+            return True
+        return False
+
     # ── 조건B 행사가 관리 ─────────────────────────────────────
 
     def add_strike(self, strike: float, opt_type: str,
@@ -148,7 +187,9 @@ class AlertEngine:
             if not row.enabled:
                 continue
             if row._alert_count >= self.MAX_ALERT_COUNT:
-                continue
+                # 장중이면 카운터 자동 리셋, 장외면 억제 유지
+                if not self._auto_reset_row(row):
+                    continue
             # deque 에서 row.minutes 분 전 가격 탐색
             target_ts = now - row.minutes * 60.0
             price_then = None
@@ -169,7 +210,9 @@ class AlertEngine:
         if row is None:
             return
         if row._alert_count >= self.MAX_ALERT_COUNT:
-            return
+            # 장중이면 카운터 자동 리셋, 장외면 억제 유지
+            if not self._auto_reset_row(row):
+                return
         self._eval_cond_b(row, price_now, price_prev)
 
     def push_vix(self, vix_now: float, vix_prev: float) -> None:
@@ -177,7 +220,9 @@ class AlertEngine:
         if not self._running or vix_prev <= 0:
             return
         if self._vix_count >= self.MAX_ALERT_COUNT:
-            return
+            # 장중이면 카운터 자동 리셋, 장외면 억제 유지
+            if not self._auto_reset_vix():
+                return
         chg_pct = (vix_now / vix_prev - 1.0) * 100.0
         if abs(chg_pct) >= self.vix_pct:
             now = time.time()
