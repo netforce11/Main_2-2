@@ -197,6 +197,17 @@ def _on_order_status(self, oid: int, status: str,
             from combo_order_special_condition import (
                 SpecialFillWatcher, notify_filled, notify_closed)
             SpecialFillWatcher.get().unwatch(oid)
+            # [SLEEP] 급락 캐치 체결 통보 — fill_price 전달 → 자동 매도 트리거
+            try:
+                from Sleep_Order.spike_watcher_debit import DebitSpikeWatcher
+                DebitSpikeWatcher.get().unwatch_by_oid(oid, fill_price=avg or 0.0)
+            except Exception:
+                pass
+            try:
+                from Sleep_Order.spike_watcher_single import SingleOptSpikeWatcher
+                SingleOptSpikeWatcher.get().unwatch_by_oid(oid, fill_price=avg or 0.0)
+            except Exception:
+                pass
             if is_close:
                 # 청산 체결 TG
                 pos_for_tg = next(
@@ -238,6 +249,17 @@ def _on_order_status(self, oid: int, status: str,
         try:
             from combo_order_special_condition import SpecialFillWatcher
             SpecialFillWatcher.get().unwatch(oid)
+        except Exception:
+            pass
+        # [SLEEP] 급락 캐치 취소 통보 — 매수 재시도 허용 (자동 매도 미발동)
+        try:
+            from Sleep_Order.spike_watcher_debit import DebitSpikeWatcher
+            DebitSpikeWatcher.get().unwatch_cancelled_by_oid(oid)
+        except Exception:
+            pass
+        try:
+            from Sleep_Order.spike_watcher_single import SingleOptSpikeWatcher
+            SingleOptSpikeWatcher.get().unwatch_cancelled_by_oid(oid)
         except Exception:
             pass
         # [FIX-ST2] 취소 시 실시간 가격 구독 해제

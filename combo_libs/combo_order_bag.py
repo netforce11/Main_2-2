@@ -229,6 +229,161 @@ _load_conid_cache()
 
 
 # ══════════════════════════════════════════════════════════════
+# [SLEEP v2.0] 급락 캐치 자동 익절 매도 콜백
+# ══════════════════════════════════════════════════════════════
+
+def _sleep_place_sell_order(self, legs: list, lmt_price: float,
+                            qty: int = 1, strat: str = "",
+                            tag: str = "SPIKE_AUTO_SELL") -> "Optional[int]":
+    """
+    급락 캐치 매수 체결 직후 SpikeCatcher 가 호출하는 익절 매도 주문.
+
+    기존 _place_combo_legs / _do_send_body 를 우회하고
+    conId 캐시 → placeOrder 를 직접 수행.
+    (UI 확인 다이얼로그 없음 — 자동 실행)
+
+    ref 객체(combo grid)에 이 함수를 바인딩해서 사용:
+      ref._sleep_place_sell_order = lambda *a, **kw: \\
+          _sleep_place_sell_order(ref, *a, **kw)
+
+    Returns:
+      OID (int) 성공 시 / None 실패 시
+    """
+    from typing import Optional as _Opt
+
+    try:
+        from core_contract import make_opt_contract
+        from ibapi.contract import Contract, ComboLeg
+        from ibapi.order   import Order as IbOrder
+        from combo_order_callbacks import connect_order_callbacks
+        from combo_order_chaser    import register_chaser
+    except ImportError as e:
+        print(f"[SleepSell] ❌ import 실패: {e}")
+        return None
+
+    ib = getattr(getattr(self, 'mw', None), 'ib', None)
+    if ib is None:
+        print("[SleepSell] ❌ IB 연결 없음")
+        return None
+
+    connect_order_callbacks(self)
+
+    sym_w  = getattr(self, 'edit_sym_combo', None)
+    symbol = sym_w.text().strip().upper() if sym_w else "SPX"
+
+    # ── BAG 컨트랙트 구성 ─────────────────────────────────
+    bag = Contract()
+    bag.symbol   = symbol.replace("SPXW", "SPX")
+    bag.secType  = "BAG"
+    bag.currency = "USD"
+    bag.exchange = "SMART"
+
+    combo_legs_out = []
+    for leg in legs:
+        opt_c = make_opt_contract(
+            symbol=symbol, strike=leg["strike"],
+            right=leg["cp"], expiry=leg["expiry"])
+
+        cl          = ComboLeg()
+        cl.exchange = "SMART"
+        cl.ratio    = int(float(leg.get("qty", 1)))
+
+        # 매도 주문: 기존 legs 방향 반전 (BUY→SELL, SELL→BUY)
+        orig_dir = str(leg.get("dir", "BUY")).upper()
+        cl.action = "SELL" if orig_dir == "BUY" else "BUY"
+
+        # conId — 캐시 우선
+        cl.conId = int(leg.get("con_id", 0))
+        if cl.conId == 0:
+            try:
+                key = _conid_key(
+                    bag.symbol,
+                    str(leg.get("cp", "")),
+                    float(leg.get("strike", 0)),
+                    str(leg.get("expiry", "")),
+                )
+                cl.conId = int(_CONID_CACHE.get(key, 0))
+            except Exception:
+                pass
+
+        combo_legs_out.append(cl)
+
+    bag.comboLegs = combo_legs_out
+
+    # conId=0 레그 차단
+    zero_legs = [i + 1 for i, cl in enumerate(combo_legs_out) if cl.conId == 0]
+    if zero_legs:
+        msg = f"[SleepSell] ❌ 레그 {zero_legs} conId 없음 — 자동 매도 실패"
+        print(msg)
+        try:
+            from telegram_bot.tg_client import TelegramClient
+            TelegramClient.get().send(
+                "order_confirm",
+                f"❌ <b>자동 매도 실패</b>\n전략: {strat}\n"
+                f"레그 {zero_legs} conId 없음\n수동 매도 필요! qty={qty}")
+        except Exception:
+            pass
+        return None
+
+    # ── 틱 단위 스냅 (자동 — floor 방향으로 보수적 선택) ─────
+    try:
+        from combo_order_chaser import _get_tick_size, _snap_to_tick
+        tick      = _get_tick_size(lmt_price)
+        lmt_price = _snap_to_tick(lmt_price, tick, "sell")
+    except Exception:
+        pass
+
+    # ── 주문 세션 / TIF ───────────────────────────────────
+    try:
+        from combo_order_logic import _get_session_info
+        _, _, tif, outside_rth = _get_session_info()
+    except Exception:
+        tif         = "DAY"
+        outside_rth = True
+
+    # ── OID ───────────────────────────────────────────────
+    oid = ib.get_next_id()
+    if oid is None:
+        print("[SleepSell] ❌ nextOrderId 없음")
+        return None
+
+    # ── 주문 객체 ─────────────────────────────────────────
+    ibord               = IbOrder()
+    ibord.action        = "SELL"   # BAG 전체 방향 = SELL (크레딧 수취)
+    ibord.orderType     = "LMT"
+    ibord.totalQuantity = qty
+    ibord.lmtPrice      = lmt_price
+    ibord.tif           = tif
+    ibord.outsideRth    = outside_rth
+    ibord.eTradeOnly    = False
+    ibord.firmQuoteOnly = False
+    ibord.transmit      = True
+
+    # ── placeOrder ────────────────────────────────────────
+    try:
+        ib.placeOrder(oid, bag, ibord)
+        print(f"[SleepSell] ✅ 자동 매도 전송  OID={oid}"
+              f"  lmt=${lmt_price:.2f}  qty={qty}  tag={tag}")
+
+        # _pending_position 등록 (콜백 체결 처리용)
+        if not hasattr(self, '_close_oid_set'):
+            self._close_oid_set = set()
+        self._close_oid_set.add(oid)   # 청산 주문으로 등록
+
+        if not hasattr(self, '_exec_known_oids'):
+            self._exec_known_oids = set()
+        self._exec_known_oids.add(oid)
+
+        register_chaser(self, oid=oid, price=lmt_price,
+                        action="SELL", qty=qty)
+        return oid
+
+    except Exception as e:
+        print(f"[SleepSell] ❌ placeOrder 실패: {e}")
+        return None
+
+
+# ══════════════════════════════════════════════════════════════
 # 진입점
 # ══════════════════════════════════════════════════════════════
 

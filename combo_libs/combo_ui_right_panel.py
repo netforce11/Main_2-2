@@ -162,7 +162,7 @@ class RightPanelMixin:
         # ── 버튼 행 2: Smart Chaser ─────────────────────────────
         v.addWidget(self._build_chaser_row())
 
-        self.synthetic_panel = SyntheticStatusPanel()
+        self.synthetic_panel = SyntheticStatusPanel(self)
         v.addWidget(self.synthetic_panel, 0)
 
         # ── synthetic_panel 콜백 연결 (생성 직후 1회) ──────────

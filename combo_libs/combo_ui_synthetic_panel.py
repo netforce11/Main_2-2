@@ -104,6 +104,14 @@ class SyntheticStatusPanel(QWidget):
         except Exception:
             pass
 
+        # ── [SLEEP] 예약 주문 버튼에 ref 주입 (parent 확정 후) ─
+        # showEvent 에서 주입하면 더 안전하므로 여기서는 타이머 사용
+        try:
+            from PyQt5.QtCore import QTimer as _QT
+            _QT.singleShot(0, self._inject_sleep_ref)
+        except Exception:
+            pass
+
     # ══════════════════════════════════════════════════════════
     # UI 빌드
     # ══════════════════════════════════════════════════════════
@@ -135,6 +143,20 @@ class SyntheticStatusPanel(QWidget):
         self._lbl_margin_mode_desc = QLabel("즉시 계산")
         self._lbl_margin_mode_desc.setStyleSheet("color:#445566;font-size:10px;border:none;")
         mode_row.addWidget(self._lbl_margin_mode_desc)
+
+        # ── [SLEEP] 예약 주문 버튼 우측 상단 ───────────────────
+        try:
+            import sys, os as _os
+            _this_dir = _os.path.dirname(_os.path.abspath(__file__))
+            if _this_dir not in sys.path:
+                sys.path.insert(0, _this_dir)
+            from Sleep_Order.sleep_order_ui import SleepOrderButton
+            self._sleep_btn = SleepOrderButton(ref=None, parent=self)
+            mode_row.addWidget(self._sleep_btn)
+        except Exception as _e:
+            print(f"[SyntheticPanel] sleep_order 버튼 오류: {_e}")
+            import traceback; traceback.print_exc()
+
         mode_row.addStretch()
 
         self._rb_margin_local.toggled.connect(self._on_margin_mode_toggle)
@@ -615,6 +637,45 @@ class SyntheticStatusPanel(QWidget):
                 self.profit_alert_banner.update_pct(best_pct)
             except Exception:
                 pass
+
+    # ══════════════════════════════════════════════════════════
+    # [SLEEP] 예약 주문 버튼 ref 지연 주입
+    # ══════════════════════════════════════════════════════════
+
+    def _inject_sleep_ref(self):
+        """
+        SleepOrderButton 에 ref 주입.
+        ref = _sleep_get_chain / _sleep_place_order 를 가진 ComboTab.
+        parent() 체인을 타고 올라가며 해당 메서드가 있는 객체를 찾음.
+        """
+        try:
+            btn = getattr(self, '_sleep_btn', None)
+            if btn is None:
+                return
+
+            # parent() 체인을 타고 올라가며 _sleep_get_chain 이 있는 객체 탐색
+            ref = None
+            w = self
+            # combo_ui_synthetic_panel.py 659번줄 for 루프를 이렇게 수정
+            for _ in range(10):   # 6 → 10으로 늘리기
+                w = w.parent()
+                if w is None:
+                    print(f"[SyntheticPanel] parent 체인 끊김 at depth {_}")
+                    break
+                print(f"[SyntheticPanel] depth={_} type={type(w).__name__} has_sleep={hasattr(w, '_sleep_get_chain')}")
+                if hasattr(w, '_sleep_get_chain'):
+                    ref = w
+                    break
+            if ref is not None:
+                btn.set_ref(ref)
+                print(f"[SyntheticPanel] sleep ref 주입 완료: {type(ref).__name__}")
+            else:
+                # 찾지 못하면 1초 후 재시도 (탭이 완전히 붙기 전일 수 있음)
+                from PyQt5.QtCore import QTimer as _QT
+                _QT.singleShot(1000, self._inject_sleep_ref)
+                print("[SyntheticPanel] sleep ref 탐색 실패 — 1초 후 재시도")
+        except Exception as e:
+            print(f"[SyntheticPanel] _inject_sleep_ref 실패: {e}")
 
     # ══════════════════════════════════════════════════════════
     # 증거금 모드 토글

@@ -39,6 +39,19 @@ from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtGui import QDesktopServices
 
 from combo_constants import SPLITTER_STYLE, mk_item
+
+# ── [SLEEP] SleepOrderMixin ────────────────────────────────────
+try:
+    import sys as _sys, os as _os
+    _this_dir = _os.path.dirname(_os.path.abspath(__file__))
+    if _this_dir not in _sys.path:
+        _sys.path.insert(0, _this_dir)
+    from Sleep_Order.sleep_order_mixin import SleepOrderMixin as _SleepOrderMixin
+    print("[combo_ui_left] SleepOrderMixin 로드 OK")
+except Exception as _e:
+    print(f"[combo_ui_left] SleepOrderMixin 로드 실패: {_e}")
+    class _SleepOrderMixin:  # 패키지 없을 때 빈 Mixin 으로 폴백
+        pass
 from core import REQ_CALL, REQ_PUT
 
 # 델타 컬럼 인덱스 상수
@@ -49,7 +62,7 @@ _COL_IV     = 3
 _COL_DIST   = 4
 
 
-class LeftPanelMixin:
+class LeftPanelMixin(_SleepOrderMixin):
     """좌측 패널(옵션 체인) 빌드·동기화 Mixin."""
 
     # ── 빌드 ──────────────────────────────────────────────────
@@ -309,7 +322,8 @@ class LeftPanelMixin:
         _delta_call_loaded = 0   # [FIX-DELTA] 로그용 카운터
         for i, st in enumerate(cp.call_strikes):
             d     = cp.call_data.get(REQ_CALL + i, {})
-            lp    = d.get("last")
+            _bid  = d.get("bid"); _ask = d.get("ask")  # [FIX-PRICE] bid/ask mid 우선
+            lp    = round((_bid + _ask) / 2, 2) if (_bid and _ask and _bid > 0 and _ask > 0) else d.get("last")
             delta = d.get("delta")
             gamma = d.get("gamma")   # [FIX-SCENARIO]
             theta = d.get("theta")   # [FIX-SCENARIO]
@@ -371,7 +385,8 @@ class LeftPanelMixin:
         _delta_put_loaded = 0   # [FIX-DELTA] 로그용 카운터
         for i, st in enumerate(cp.put_strikes):
             d     = cp.put_data.get(REQ_PUT + i, {})
-            lp    = d.get("last")
+            _bid  = d.get("bid"); _ask = d.get("ask")  # [FIX-PRICE] bid/ask mid 우선
+            lp    = round((_bid + _ask) / 2, 2) if (_bid and _ask and _bid > 0 and _ask > 0) else d.get("last")
             delta = d.get("delta")
             gamma = d.get("gamma")   # [FIX-SCENARIO]
             theta = d.get("theta")   # [FIX-SCENARIO]
