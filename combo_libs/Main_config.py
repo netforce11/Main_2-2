@@ -48,6 +48,10 @@ _DEFAULTS = {
     "chain_columns": [                 # 체인 표시 컬럼 선택
         "행사가", "가격", "등락%", "델타", "쎄타", "감마", "잔고"
     ],
+    # ── 1분봉 차트탭 — 미니 차트 오버레이 설정 ───────────────
+    "overlay_candle_half": 10,         # 앞뒤 캔들 수 ±N봉 (총 2N+1봉)
+    "overlay_width_pct":   31,         # 오버레이 너비 (p1 폭 대비 %)
+    "overlay_height_pct":  33,         # 오버레이 높이 (p1 높이 대비 %)
 }
 
 # 선택 가능한 전체 컬럼 목록
@@ -120,6 +124,19 @@ class MainConfigStore:
     @property
     def chain_columns(self) -> list:
         return self._data.get("chain_columns", _DEFAULTS["chain_columns"])
+
+    # ── 1분봉 차트탭 오버레이 프로퍼티 ───────────────────────
+    @property
+    def overlay_candle_half(self) -> int:
+        return int(self._data.get("overlay_candle_half", 10))
+
+    @property
+    def overlay_width_pct(self) -> int:
+        return int(self._data.get("overlay_width_pct", 31))
+
+    @property
+    def overlay_height_pct(self) -> int:
+        return int(self._data.get("overlay_height_pct", 33))
 
 
 # 전역 싱글톤
@@ -354,10 +371,11 @@ class ConfigTab(QWidget):
     """
 
     # 외부에서 연결할 시그널
-    chain_save_interval_changed = pyqtSignal(int)   # 기초자산 저장 주기 변경
-    chain_initial_count_changed = pyqtSignal(int)   # 체인 초기 조회 갯수 변경
-    atm_range_changed           = pyqtSignal(int, int)  # (extra_above, extra_below)
-    chain_columns_changed       = pyqtSignal(list)  # 컬럼 선택 변경
+    chain_save_interval_changed = pyqtSignal(int)
+    chain_initial_count_changed = pyqtSignal(int)
+    atm_range_changed           = pyqtSignal(int, int)
+    chain_columns_changed       = pyqtSignal(list)
+    overlay_settings_changed    = pyqtSignal(int, int, int)  # (candle_half, w_pct, h_pct)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -417,6 +435,9 @@ class ConfigTab(QWidget):
 
         # 섹션 6: 체인 컬럼 선택
         vlay.addWidget(self._build_column_select_section())
+
+        # 섹션 7: 1분봉 차트탭 — 미니 차트 오버레이 설정
+        vlay.addWidget(self._build_overlay_section())
 
         vlay.addStretch()
         scroll.setWidget(inner)
@@ -778,6 +799,95 @@ class ConfigTab(QWidget):
             cb.setChecked(col in defaults)
         self._col_status.setText("↩ 기본값으로 초기화됨 (적용 버튼 눌러야 저장)")
 
+    # ─────────────────────────────────────────────────────────
+    # 섹션 7: 1분봉 차트탭 — 미니 차트 오버레이 설정
+    # ─────────────────────────────────────────────────────────
+    def _build_overlay_section(self) -> QGroupBox:
+        gb = _gb("📊  1분봉 차트탭 — 미니 차트 오버레이", color="#f9a825")
+        lay = QGridLayout(gb)
+        lay.setContentsMargins(12, 14, 12, 10)
+        lay.setSpacing(10)
+
+        note = _lbl(
+            "1분봉 차트 우측에 표시되는 일봉 인셋 오버레이 크기와 캔들 수를 설정합니다.\n"
+            "✔ 적용 후 캘린더 날짜를 클릭하면 즉시 반영됩니다.",
+            "#aaa", 11)
+        note.setWordWrap(True)
+        lay.addWidget(note, 0, 0, 1, 4)
+
+        # ── 가로 (너비) ───────────────────────────────────────
+        lay.addWidget(_lbl("미니 차트 오버레이  가로:"), 1, 0, Qt.AlignRight)
+        self._ov_w_spin = _spinbox(10, 70, self._cfg.overlay_width_pct, "%")
+        lay.addWidget(self._ov_w_spin, 1, 1)
+        lay.addWidget(_lbl("(기본: 31%  · 범위: 10~70%)", "#888", 11), 1, 2, 1, 2)
+
+        # ── 세로 (높이) ───────────────────────────────────────
+        lay.addWidget(_lbl("미니 차트 오버레이  세로:"), 2, 0, Qt.AlignRight)
+        self._ov_h_spin = _spinbox(10, 70, self._cfg.overlay_height_pct, "%")
+        lay.addWidget(self._ov_h_spin, 2, 1)
+        lay.addWidget(_lbl("(기본: 33%  · 범위: 10~70%)", "#888", 11), 2, 2, 1, 2)
+
+        # ── 캔들 출력 갯수 ────────────────────────────────────
+        lay.addWidget(_lbl("미니 차트 캔들 출력 갯수:"), 3, 0, Qt.AlignRight)
+        self._ov_half_spin = _spinbox(3, 60, self._cfg.overlay_candle_half, "봉")
+        lay.addWidget(self._ov_half_spin, 3, 1)
+        lay.addWidget(_lbl("앞뒤 ±N봉  (기본: ±10, 총 21봉)", "#888", 11), 3, 2, 1, 2)
+
+        # ── 현재값 미리보기 ───────────────────────────────────
+        self._ov_status = _lbl("", "#aaa", 12)
+        self._ov_status.setWordWrap(True)
+        lay.addWidget(self._ov_status, 4, 0, 1, 4)
+        self._ov_update_preview()
+
+        # 값 바뀔 때마다 미리보기 갱신
+        self._ov_w_spin.valueChanged.connect(lambda _: self._ov_update_preview())
+        self._ov_h_spin.valueChanged.connect(lambda _: self._ov_update_preview())
+        self._ov_half_spin.valueChanged.connect(lambda _: self._ov_update_preview())
+
+        # ── 버튼 ─────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        apply_btn = _btn("✔  적용", "#1a2a1a", "#f9a825")
+        reset_btn = _btn("↩  기본값", "#1a1a2a", "#888")
+        apply_btn.clicked.connect(self._on_overlay_apply)
+        reset_btn.clicked.connect(self._on_overlay_reset)
+        btn_row.addWidget(apply_btn)
+        btn_row.addWidget(reset_btn)
+        btn_row.addStretch()
+        lay.addLayout(btn_row, 5, 0, 1, 4)
+
+        return gb
+
+    def _ov_update_preview(self):
+        try:
+            half  = self._ov_half_spin.value()
+            w_pct = self._ov_w_spin.value()
+            h_pct = self._ov_h_spin.value()
+            self._ov_status.setText(
+                f"현재 설정:  가로 {w_pct}%  세로 {h_pct}%  "
+                f"캔들 ±{half}봉 (총 {2*half+1}봉)")
+        except Exception:
+            pass
+
+    def _on_overlay_apply(self):
+        half  = self._ov_half_spin.value()
+        w_pct = self._ov_w_spin.value()
+        h_pct = self._ov_h_spin.value()
+        self._cfg.set("overlay_candle_half", half)
+        self._cfg.set("overlay_width_pct",   w_pct)
+        self._cfg.set("overlay_height_pct",  h_pct)
+        self._cfg.save()
+        self._ov_status.setText(
+            f"✅ 저장됨:  가로 {w_pct}%  세로 {h_pct}%  "
+            f"캔들 ±{half}봉 (총 {2*half+1}봉)  — 캘린더 날짜 클릭 시 반영")
+        self.overlay_settings_changed.emit(half, w_pct, h_pct)
+        print(f"[Config] 오버레이 변경: ±{half}봉, {w_pct}%×{h_pct}%")
+
+    def _on_overlay_reset(self):
+        self._ov_w_spin.setValue(_DEFAULTS["overlay_width_pct"])
+        self._ov_h_spin.setValue(_DEFAULTS["overlay_height_pct"])
+        self._ov_half_spin.setValue(_DEFAULTS["overlay_candle_half"])
+        self._ov_status.setText("↩ 기본값 복원 — ✔ 적용을 눌러야 저장됩니다")
+
 
 # ══════════════════════════════════════════════════════════════
 # ConfigMixin — CallPutGrid 에 mixin 하여 설정값 접근 제공
@@ -826,3 +936,16 @@ class ConfigMixin:
     @property
     def cfg_chain_columns(self) -> list:
         return config_store.chain_columns
+
+    # ── 1분봉 차트탭 오버레이 ────────────────────────────────
+    @property
+    def cfg_overlay_candle_half(self) -> int:
+        return config_store.overlay_candle_half
+
+    @property
+    def cfg_overlay_width_pct(self) -> int:
+        return config_store.overlay_width_pct
+
+    @property
+    def cfg_overlay_height_pct(self) -> int:
+        return config_store.overlay_height_pct

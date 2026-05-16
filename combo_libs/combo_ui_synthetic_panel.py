@@ -1575,6 +1575,10 @@ class ScenarioTab(QWidget):
 
     def _refresh(self):
         """슬라이더 값으로 현재 시나리오 갱신."""
+        # 카드 위젯이 아직 생성되지 않은 경우 (슬라이더 setValue → 시그널 조기 발화)
+        if not hasattr(self, '_card_dg'):
+            return
+
         move  = float(getattr(self, 'sl_move', None).value()
                       if hasattr(self, 'sl_move') else 5)
         time_ticks = float(getattr(self, 'sl_time', None).value()
