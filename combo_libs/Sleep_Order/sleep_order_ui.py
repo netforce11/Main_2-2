@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QLabel, QPushButton, QDoubleSpinBox, QSpinBox,
     QGroupBox, QScrollArea, QButtonGroup, QRadioButton,
     QSizePolicy, QTimeEdit, QTextEdit, QFrame,
+    QCheckBox, QComboBox,
 )
 from PyQt5.QtCore import Qt, QTime
 from PyQt5.QtGui import QFont
@@ -418,12 +419,225 @@ class SleepOrderRightPanel(QWidget):
 
         r = 0
 
+        # ── [신규] ON / OFF 토글 버튼 ─────────────────────────
+        self._btn_spike_toggle = QPushButton("⚡  급락 캐치  OFF")
+        self._btn_spike_toggle.setCheckable(True)
+        self._btn_spike_toggle.setFixedHeight(34)
+        self._btn_spike_toggle.setStyleSheet(self._spike_btn_style(False))
+        self._btn_spike_toggle.clicked.connect(self._on_spike_toggle)
+        self._lbl_spike_status = _lbl("● 비활성", "#888", 12)
+        toggle_row = QHBoxLayout()
+        toggle_row.setSpacing(10)
+        toggle_row.addWidget(self._btn_spike_toggle)
+        toggle_row.addWidget(self._lbl_spike_status)
+        toggle_row.addStretch()
+        lay.addLayout(toggle_row, r, 0, 1, 4); r += 1
+
+        # 구분선
+        sep0 = QFrame(); sep0.setFrameShape(QFrame.HLine)
+        sep0.setStyleSheet("border:none;background:#2a2a5a;max-height:1px;")
+        lay.addWidget(sep0, r, 0, 1, 4); r += 1
+
+        # ── [신규] 전용 시간대 ────────────────────────────────
+        self._chk_spike_own = QCheckBox("예약 주문과 별도 시간대 사용")
+        self._chk_spike_own.setStyleSheet(
+            "QCheckBox{color:#ff9988;font-size:14px;border:none;font-weight:bold;}"
+            "QCheckBox::indicator{width:16px;height:16px;}"
+            "QCheckBox::indicator:checked{background:#3a0a0a;border:2px solid #ff6b6b;border-radius:3px;}"
+            "QCheckBox::indicator:unchecked{background:#0a0a18;border:1px solid #3a3a7a;border-radius:3px;}"
+        )
+        self._chk_spike_own.stateChanged.connect(self._on_spike_own_toggled)
+        lay.addWidget(self._chk_spike_own, r, 0, 1, 4); r += 1
+
+        tz_tag = "EDT(서머타임)" if _is_edt() else "EST(표준시)"
+        spike_kst_note = _lbl(f"⏰ 한국시간(KST) 기준 입력  →  {tz_tag} 자동 변환", "#ff9988", 11)
+        lay.addWidget(spike_kst_note, r, 0, 1, 4); r += 1
+
+        lay.addWidget(_lbl("감시 시작 (KST):"), r, 0, Qt.AlignRight)
+        self._te_spike_start = _time_edit("01:53")
+        lay.addWidget(self._te_spike_start, r, 1)
+        self._lbl_spike_start_et = _lbl("→ ET --:--", "#888", 12)
+        lay.addWidget(self._lbl_spike_start_et, r, 2, 1, 2)
+        self._te_spike_start.timeChanged.connect(self._update_spike_et_preview)
+        r += 1
+
+        lay.addWidget(_lbl("감시 종료 (KST):"), r, 0, Qt.AlignRight)
+        self._te_spike_end = _time_edit("18:14")
+        lay.addWidget(self._te_spike_end, r, 1)
+        self._lbl_spike_end_et = _lbl("→ ET --:--", "#888", 12)
+        lay.addWidget(self._lbl_spike_end_et, r, 2, 1, 2)
+        self._te_spike_end.timeChanged.connect(self._update_spike_et_preview)
+        r += 1
+
+        # 시간 입력 컨테이너 (own_schedule OFF 시 비활성)
+        self._spike_time_widgets = [
+            spike_kst_note,
+            self._te_spike_start, self._lbl_spike_start_et,
+            self._te_spike_end,   self._lbl_spike_end_et,
+        ]
+
+        # 구분선
+        sep1 = QFrame(); sep1.setFrameShape(QFrame.HLine)
+        sep1.setStyleSheet("border:none;background:#2a2a5a;max-height:1px;")
+        lay.addWidget(sep1, r, 0, 1, 4); r += 1
+
+        # ── [신규] 기준가 산출 방식 ────────────────────────────
+        lay.addWidget(_lbl("기준가 방식:"), r, 0, Qt.AlignRight)
+        self._cmb_ref_mode = QComboBox()
+        self._cmb_ref_mode.addItem("시간 기준  (N분 전 고가 확정)", "time")
+        self._cmb_ref_mode.addItem("틱 평균    (최근 N개 mid 평균)", "tick")
+        self._cmb_ref_mode.setFixedWidth(220)
+        self._cmb_ref_mode.setStyleSheet(
+            "QComboBox{background:#0a0a18;border:1px solid #2e3060;font-size:14px;"
+            "border-radius:4px;padding:3px 6px;color:#dde0f0;}"
+            "QComboBox::drop-down{border:none;width:20px;}"
+            "QComboBox QAbstractItemView{background:#0d0d20;color:#dde0f0;"
+            "selection-background-color:#2a2a5a;}"
+        )
+        self._cmb_ref_mode.currentIndexChanged.connect(self._on_ref_mode_changed)
+        lay.addWidget(self._cmb_ref_mode, r, 1, 1, 3); r += 1
+
+        # 시간 기준 필드
+        lay.addWidget(_lbl("기준 시간:"), r, 0, Qt.AlignRight)
+        self._sb_ref_min = _spinbox(1, 60, 3, "분")
+        lay.addWidget(self._sb_ref_min, r, 1)
+        self._lbl_ref_min_note = _lbl(
+            "N분간 최고가 → 기준가 확정\n"
+            "예) $5.60 → 현재 $0.80 → 낙폭 85.7%", "#888", 11)
+        self._lbl_ref_min_note.setWordWrap(True)
+        lay.addWidget(self._lbl_ref_min_note, r, 2, 1, 2); r += 1
+
+        # 틱 평균 필드
         lay.addWidget(_lbl("틱 평균 개수 N:"), r, 0, Qt.AlignRight)
         self._sb_tick_n = _spinbox(5, 10, 7, "개")
         lay.addWidget(self._sb_tick_n, r, 1)
-        lay.addWidget(_lbl("(5~10개 평균 기준가)", "#888", 11), r, 2, 1, 2); r += 1
+        self._lbl_tick_note = _lbl("(5~10개 평균 기준가)", "#888", 11)
+        lay.addWidget(self._lbl_tick_note, r, 2, 1, 2); r += 1
 
+        # 구분선
+        sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine)
+        sep2.setStyleSheet("border:none;background:#2a2a5a;max-height:1px;")
+        lay.addWidget(sep2, r, 0, 1, 4); r += 1
+
+        # ── 기존 필드 유지 ────────────────────────────────────
         lay.addWidget(_lbl("급락 판단 비율:"), r, 0, Qt.AlignRight)
+        self._sb_drop = _spinbox(10, 90, 40, "%")
+        lay.addWidget(self._sb_drop, r, 1)
+        lay.addWidget(_lbl("이상 급락 시 발동", "#888", 11), r, 2, 1, 2); r += 1
+
+        lay.addWidget(_lbl("절대가 상한:"), r, 0, Qt.AlignRight)
+        self._dsb_floor = _dspinbox(0.05, 1.00, 0.20, 0.05, prefix="$")
+        lay.addWidget(self._dsb_floor, r, 1); r += 1
+
+        lay.addWidget(_lbl("주문 방식:"), r, 0, Qt.AlignRight)
+        mode_w = QWidget(); mode_w.setStyleSheet("background:transparent;")
+        mode_row = QHBoxLayout(mode_w)
+        mode_row.setContentsMargins(0, 0, 0, 0); mode_row.setSpacing(10)
+        self._rb_ask1  = QRadioButton("1호가 위")
+        self._rb_fixed = QRadioButton("고정값")
+        self._rb_ask1.setChecked(True)
+        for rb in (self._rb_ask1, self._rb_fixed):
+            rb.setStyleSheet("color:#dde0f0;font-size:15px;border:none;")
+        self._mode_grp = QButtonGroup(self)
+        self._mode_grp.addButton(self._rb_ask1,  0)
+        self._mode_grp.addButton(self._rb_fixed, 1)
+        mode_row.addWidget(self._rb_ask1)
+        mode_row.addWidget(self._rb_fixed)
+        lay.addWidget(mode_w, r, 1, 1, 3); r += 1
+
+        lay.addWidget(_lbl("고정 주문가:"), r, 0, Qt.AlignRight)
+        self._dsb_fixed = _dspinbox(0.01, 9.99, 0.15, 0.05, prefix="$")
+        lay.addWidget(self._dsb_fixed, r, 1)
+        self._rb_ask1.toggled.connect(
+            lambda on: self._dsb_fixed.setEnabled(not on))
+        self._dsb_fixed.setEnabled(False)
+        r += 1
+
+        lay.addWidget(_lbl("정정 대기:"), r, 0, Qt.AlignRight)
+        self._sb_wait = _spinbox(1, 60, 2, "초")
+        lay.addWidget(self._sb_wait, r, 1)
+        lay.addWidget(_lbl("정정 단위:"), r, 2, Qt.AlignRight)
+        self._dsb_step = _dspinbox(0.01, 1.00, 0.05, 0.01, prefix="$")
+        lay.addWidget(self._dsb_step, r, 3); r += 1
+
+        lay.addWidget(_lbl("최대 정정:"), r, 0, Qt.AlignRight)
+        self._sb_max_mod = _spinbox(1, 10, 3, "회")
+        lay.addWidget(self._sb_max_mod, r, 1)
+        lay.addWidget(_lbl("정정 상한가:"), r, 2, Qt.AlignRight)
+        self._dsb_cap = _dspinbox(0.05, 9.99, 0.30, 0.05, prefix="$")
+        lay.addWidget(self._dsb_cap, r, 3); r += 1
+
+        lay.addWidget(_lbl("최대 투자 금액:"), r, 0, Qt.AlignRight)
+        self._sb_spike_budget = _spinbox(10, 9999, 100, "$")
+        lay.addWidget(self._sb_spike_budget, r, 1); r += 1
+
+        # ── 취소 후 쿨다운 ────────────────────────────────────
+        lay.addWidget(_lbl("취소 쿨다운:"), r, 0, Qt.AlignRight)
+        self._sb_cooldown = _spinbox(10, 600, 120, "초")
+        lay.addWidget(self._sb_cooldown, r, 1)
+        lay.addWidget(
+            _lbl("수동 취소 후 재주문 차단 대기", "#888", 11),
+            r, 2, 1, 2); r += 1
+
+        # ── [신규] 자동 매도 섹션 ─────────────────────────────
+        sep3 = QFrame(); sep3.setFrameShape(QFrame.HLine)
+        sep3.setStyleSheet("border:none;background:#2a2a5a;max-height:1px;")
+        lay.addWidget(sep3, r, 0, 1, 4); r += 1
+
+        self._chk_auto_sell = QCheckBox("💰 체결 즉시 자동 매도 (익절)")
+        self._chk_auto_sell.setStyleSheet(
+            "QCheckBox{color:#2ecc71;font-size:14px;border:none;font-weight:bold;}"
+            "QCheckBox::indicator{width:16px;height:16px;}"
+            "QCheckBox::indicator:checked{background:#0a3a1a;border:2px solid #2ecc71;border-radius:3px;}"
+            "QCheckBox::indicator:unchecked{background:#0a0a18;border:1px solid #3a3a7a;border-radius:3px;}"
+        )
+        self._chk_auto_sell.stateChanged.connect(self._on_auto_sell_toggled)
+        lay.addWidget(self._chk_auto_sell, r, 0, 1, 4); r += 1
+
+        lay.addWidget(_lbl("매도가 방식:"), r, 0, Qt.AlignRight)
+        self._cmb_sell_mode = QComboBox()
+        self._cmb_sell_mode.addItem("매수 체결가 × 배수", "multiplier")
+        self._cmb_sell_mode.addItem("고정 매도가",        "fixed")
+        self._cmb_sell_mode.setFixedWidth(180)
+        self._cmb_sell_mode.setStyleSheet(
+            "QComboBox{background:#0a0a18;border:1px solid #2e3060;font-size:14px;"
+            "border-radius:4px;padding:3px 6px;color:#dde0f0;}"
+            "QComboBox::drop-down{border:none;width:20px;}"
+            "QComboBox QAbstractItemView{background:#0d0d20;color:#dde0f0;"
+            "selection-background-color:#2a2a5a;}"
+        )
+        self._cmb_sell_mode.currentIndexChanged.connect(self._on_sell_mode_changed)
+        lay.addWidget(self._cmb_sell_mode, r, 1, 1, 3); r += 1
+
+        lay.addWidget(_lbl("배수:"), r, 0, Qt.AlignRight)
+        self._dsb_sell_mult = _dspinbox(1.1, 20.0, 3.0, 0.5, decimals=1)
+        self._dsb_sell_mult.valueChanged.connect(self._update_sell_preview)
+        lay.addWidget(self._dsb_sell_mult, r, 1)
+        self._lbl_sell_preview = _lbl("", "#8cf", 11)
+        lay.addWidget(self._lbl_sell_preview, r, 2, 1, 2); r += 1
+
+        lay.addWidget(_lbl("고정 매도가:"), r, 0, Qt.AlignRight)
+        self._dsb_sell_fixed = _dspinbox(0.05, 50.0, 2.50, 0.05, prefix="$")
+        lay.addWidget(self._dsb_sell_fixed, r, 1)
+        lay.addWidget(_lbl("항상 이 가격으로 매도", "#888", 11), r, 2, 1, 2); r += 1
+
+        # 자동매도 위젯 그룹 (enabled 토글용)
+        self._auto_sell_widgets = [
+            self._cmb_sell_mode, self._dsb_sell_mult,
+            self._lbl_sell_preview, self._dsb_sell_fixed,
+        ]
+
+        self._lbl_b_status = _lbl("", "#aaa", 12)
+        lay.addWidget(self._lbl_b_status, r, 0, 1, 4); r += 1
+
+        btn_row = QHBoxLayout()
+        self._btn_b_apply = _btn("✔  저장", "#1a2a1a", "#00e676")
+        self._btn_b_apply.clicked.connect(self._on_b_apply)
+        btn_row.addWidget(self._btn_b_apply)
+        btn_row.addStretch()
+        lay.addLayout(btn_row, r, 0, 1, 4)
+
+        return gb
         self._sb_drop = _spinbox(10, 90, 40, "%")
         lay.addWidget(self._sb_drop, r, 1)
         lay.addWidget(_lbl("이상 급락 시 발동", "#888", 11), r, 2, 1, 2); r += 1
@@ -548,6 +762,52 @@ class SleepOrderRightPanel(QWidget):
         # ── [신규] 취소 쿨다운 ──────────────────────────────
         self._sb_cooldown.setValue(sleep_cfg.cancel_cooldown_sec)
 
+        # ── [신규] 급락 캐치 ON/OFF ──────────────────────────
+        spike_on = sleep_cfg.spike_enabled
+        self._btn_spike_toggle.setChecked(spike_on)
+        self._btn_spike_toggle.setText(
+            "⚡  급락 캐치  ON  (클릭하여 OFF)" if spike_on
+            else "⚡  급락 캐치  OFF")
+        self._btn_spike_toggle.setStyleSheet(self._spike_btn_style(spike_on))
+        self._lbl_spike_status.setText("● 활성" if spike_on else "● 비활성")
+        self._lbl_spike_status.setStyleSheet(
+            f"color:{'#ff4444' if spike_on else '#888'};font-size:12px;border:none;")
+
+        # ── [신규] 급락 캐치 전용 시간 ──────────────────────
+        own = sleep_cfg.spike_use_own_schedule
+        self._chk_spike_own.setChecked(own)
+        for w in self._spike_time_widgets:
+            w.setEnabled(own)
+        try:
+            kst_ss = _et_to_kst(sleep_cfg.get("spike_start", "16:53"))
+            h, m   = map(int, kst_ss.split(":"))
+            self._te_spike_start.setTime(QTime(h, m))
+        except Exception:
+            pass
+        try:
+            kst_se = _et_to_kst(sleep_cfg.get("spike_end", "05:14"))
+            h, m   = map(int, kst_se.split(":"))
+            self._te_spike_end.setTime(QTime(h, m))
+        except Exception:
+            pass
+        self._update_spike_et_preview()
+
+        # ── [신규] 기준가 방식 ───────────────────────────────
+        mode_idx = self._cmb_ref_mode.findData(sleep_cfg.spike_ref_mode)
+        self._cmb_ref_mode.setCurrentIndex(max(0, mode_idx))
+        self._sb_ref_min.setValue(sleep_cfg.spike_ref_minutes)
+        self._on_ref_mode_changed()
+
+        # ── [신규] 자동 매도 ─────────────────────────────────
+        self._chk_auto_sell.setChecked(sleep_cfg.auto_sell_enabled)
+        sell_idx = self._cmb_sell_mode.findData(sleep_cfg.auto_sell_mode)
+        self._cmb_sell_mode.setCurrentIndex(max(0, sell_idx))
+        self._dsb_sell_mult.setValue(sleep_cfg.auto_sell_multiplier)
+        self._dsb_sell_fixed.setValue(sleep_cfg.auto_sell_fixed_price)
+        self._on_auto_sell_toggled(int(sleep_cfg.auto_sell_enabled))
+        self._on_sell_mode_changed()
+        self._update_sell_preview()
+
     # ── 저장 ────────────────────────────────────────────────────
 
     def _on_a_apply(self) -> None:
@@ -591,6 +851,22 @@ class SleepOrderRightPanel(QWidget):
         from Sleep_Order.sleep_order_config  import sleep_cfg
         from Sleep_Order.sleep_order_spike   import SleepSpikeWatcher
 
+        # ── [신규] 급락 캐치 ON/OFF ──────────────────────────
+        sleep_cfg.set("spike_enabled", self._btn_spike_toggle.isChecked())
+
+        # ── [신규] 전용 시간대 ────────────────────────────────
+        own = self._chk_spike_own.isChecked()
+        sleep_cfg.set("spike_use_own_schedule", own)
+        kst_ss = self._te_spike_start.time().toString("HH:mm")
+        kst_se = self._te_spike_end.time().toString("HH:mm")
+        sleep_cfg.set("spike_start", _kst_to_et(kst_ss))
+        sleep_cfg.set("spike_end",   _kst_to_et(kst_se))
+
+        # ── [신규] 기준가 방식 ───────────────────────────────
+        sleep_cfg.set("spike_ref_mode",    self._cmb_ref_mode.currentData())
+        sleep_cfg.set("spike_ref_minutes", self._sb_ref_min.value())
+
+        # ── 기존 필드 ─────────────────────────────────────────
         sleep_cfg.set("tick_window",      self._sb_tick_n.value())
         sleep_cfg.set("drop_ratio",       self._sb_drop.value())
         sleep_cfg.set("abs_floor",        self._dsb_floor.value())
@@ -602,17 +878,104 @@ class SleepOrderRightPanel(QWidget):
         sleep_cfg.set("modify_max_count", self._sb_max_mod.value())
         sleep_cfg.set("modify_price_cap", self._dsb_cap.value())
         sleep_cfg.set("spike_budget",     self._sb_spike_budget.value())
-        # ── [신규] 취소 쿨다운 ──────────────────────────────
         sleep_cfg.set("cancel_cooldown_sec", self._sb_cooldown.value())
-        sleep_cfg.save()
 
+        # ── [신규] 자동 매도 ─────────────────────────────────
+        sleep_cfg.set("auto_sell_enabled",     self._chk_auto_sell.isChecked())
+        sleep_cfg.set("auto_sell_mode",        self._cmb_sell_mode.currentData())
+        sleep_cfg.set("auto_sell_multiplier",  self._dsb_sell_mult.value())
+        sleep_cfg.set("auto_sell_fixed_price", self._dsb_sell_fixed.value())
+
+        sleep_cfg.save()
         SleepSpikeWatcher.get().reconfigure_all()
 
+        tz = "EDT" if _is_edt() else "EST"
+        ref_tag = (f"시간기준 {sleep_cfg.spike_ref_minutes}분"
+                   if sleep_cfg.spike_ref_mode == "time"
+                   else f"틱평균 {sleep_cfg.tick_window}개")
+        spike_tag = "ON" if sleep_cfg.spike_enabled else "OFF"
+        sell_tag  = "ON" if sleep_cfg.auto_sell_enabled else "OFF"
         self._lbl_b_status.setText(
-            f"✅ 저장됨  N={sleep_cfg.tick_window}  "
-            f"급락{sleep_cfg.drop_ratio}%  상한${sleep_cfg.abs_floor}"
-            f"  쿨다운{sleep_cfg.cancel_cooldown_sec}초")
-        print(f"[SleepUI] 섹션 B 저장 완료  쿨다운={sleep_cfg.cancel_cooldown_sec}초")
+            f"✅ 저장됨  급락캐치:{spike_tag}  기준가:{ref_tag}"
+            f"  급락{sleep_cfg.drop_ratio}%  상한${sleep_cfg.abs_floor}"
+            f"  자동매도:{sell_tag}  쿨다운{sleep_cfg.cancel_cooldown_sec}초")
+        print(f"[SleepUI] 섹션 B 저장 완료  spike={spike_tag}  ref={ref_tag}"
+              f"  auto_sell={sell_tag}")
+
+    # ── [신규] 급락 캐치 핸들러 ─────────────────────────────────
+
+    def _spike_btn_style(self, active: bool) -> str:
+        if active:
+            return (
+                "QPushButton{background:#3a0a0a;color:#ff4444;"
+                "font-size:14px;font-weight:bold;"
+                "border:2px solid #ff4444;border-radius:4px;padding:4px 12px;}"
+                "QPushButton:hover{background:#5a1010;}"
+            )
+        return (
+            "QPushButton{background:#1c1c3a;color:#666;"
+            "font-size:14px;font-weight:bold;"
+            "border:1px solid #3a3a7a;border-radius:4px;padding:4px 12px;}"
+            "QPushButton:hover{background:#2a2a5a;color:#aaa;}"
+        )
+
+    def _on_spike_toggle(self, checked: bool) -> None:
+        """급락 캐치 ON/OFF — 즉시 config 저장 (저장 버튼 없이도 반영)."""
+        self._btn_spike_toggle.setText(
+            "⚡  급락 캐치  ON  (클릭하여 OFF)" if checked
+            else "⚡  급락 캐치  OFF")
+        self._btn_spike_toggle.setStyleSheet(self._spike_btn_style(checked))
+        self._lbl_spike_status.setText("● 활성" if checked else "● 비활성")
+        self._lbl_spike_status.setStyleSheet(
+            f"color:{'#ff4444' if checked else '#888'};font-size:12px;border:none;")
+        try:
+            from Sleep_Order.sleep_order_config import sleep_cfg
+            from Sleep_Order.sleep_order_spike  import SleepSpikeWatcher
+            sleep_cfg.set("spike_enabled", checked)
+            sleep_cfg.save()
+            SleepSpikeWatcher.get().reconfigure_all()
+            print(f"[SleepUI] spike_enabled → {checked} (즉시 저장)")
+        except Exception as e:
+            print(f"[SleepUI] spike_enabled 즉시 저장 실패: {e}")
+
+    def _on_spike_own_toggled(self, state: int) -> None:
+        enabled = bool(state)
+        for w in self._spike_time_widgets:
+            w.setEnabled(enabled)
+
+    def _update_spike_et_preview(self) -> None:
+        """급락 캐치 KST 시간 → ET 미리보기."""
+        kst_s = self._te_spike_start.time().toString("HH:mm")
+        kst_e = self._te_spike_end.time().toString("HH:mm")
+        tz    = "EDT" if _is_edt() else "EST"
+        self._lbl_spike_start_et.setText(f"→ {_kst_to_et(kst_s)} {tz}")
+        self._lbl_spike_end_et.setText(f"→ {_kst_to_et(kst_e)} {tz}")
+
+    def _on_ref_mode_changed(self, *_) -> None:
+        """기준가 방식 전환 — 관련 필드 show/hide."""
+        is_time = (self._cmb_ref_mode.currentData() == "time")
+        self._sb_ref_min.setVisible(is_time)
+        self._lbl_ref_min_note.setVisible(is_time)
+        self._sb_tick_n.setVisible(not is_time)
+        self._lbl_tick_note.setVisible(not is_time)
+
+    def _on_auto_sell_toggled(self, state: int) -> None:
+        enabled = bool(state)
+        for w in self._auto_sell_widgets:
+            w.setEnabled(enabled)
+
+    def _on_sell_mode_changed(self, *_) -> None:
+        is_mult = (self._cmb_sell_mode.currentData() == "multiplier")
+        self._dsb_sell_mult.setVisible(is_mult)
+        self._lbl_sell_preview.setVisible(is_mult)
+        self._dsb_sell_fixed.setVisible(not is_mult)
+        if is_mult:
+            self._update_sell_preview()
+
+    def _update_sell_preview(self, *_) -> None:
+        mult = self._dsb_sell_mult.value()
+        parts = [f"${p:.2f}→${p*mult:.2f}" for p in (0.10, 0.15, 0.20, 0.30)]
+        self._lbl_sell_preview.setText("  예) " + "  /  ".join(parts))
 
     # ── ref 탐색 (버그 수정: findChildren(QWidget)) ──────────────
 

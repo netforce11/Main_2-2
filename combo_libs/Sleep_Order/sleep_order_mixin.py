@@ -435,7 +435,38 @@ class SleepOrderMixin:
 
         return oid
 
-    # ── 4. 주문 정정 ────────────────────────────────────────────
+    """
+    sleep_order_mixin_patch.py — _sleep_place_sell_order 바인딩 패치
+    ════════════════════════════════════════════════════════════════
+    기존 sleep_order_mixin.py 의 SleepOrderMixin 클래스에
+    아래 메서드 1개를 추가하세요.
+
+    위치: _sleep_place_order() 메서드 바로 아래
+    ════════════════════════════════════════════════════════════════
+    """
+
+    # ── sleep_order_mixin.py 에 추가할 메서드 ──────────────────────
+
+    def _sleep_place_sell_order(self, legs: list, lmt_price: float,
+                                qty: int = 1, strat: str = "",
+                                tag: str = "SPIKE_AUTO_SELL"):
+        """
+        급락 캐치 자동 익절 매도 주문 콜백.
+        SpikeCatcher._place_sell_order() 에서 호출됨.
+
+        combo_order_bag._sleep_place_sell_order() 로 위임.
+        별도 UI 확인 없이 즉시 전송.
+        """
+        from combo_order_bag import _sleep_place_sell_order as _fn
+        return _fn(
+            self,
+            legs=legs,
+            lmt_price=lmt_price,
+            qty=qty,
+            strat=strat,
+            tag=tag,
+        )
+        # ── 4. 주문 정정 ────────────────────────────────────────────
 
     def _sleep_modify_order(self, oid: int, new_lmt: float,
                             legs: list, qty: int,
