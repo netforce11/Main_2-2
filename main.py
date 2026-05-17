@@ -112,7 +112,7 @@ from core import (
     GridTab, TabWrapper, SAVE_DIR
 )
 from core_ui import apply_theme_to_all_tables, apply_theme_to_all_frames
-from main_config_theme import apply_light_fg_fix, ThemeConfigPanel
+from main_config_theme import apply_light_fg_fix
 apply_light_fg_fix()   # 라이트 모드 전경색 누락 버그 즉시 수정
 
 # ── 공유 데이터 저장소 ─────────────────────────────────────────
@@ -462,35 +462,17 @@ class TradingDashboard(QMainWindow):
         # tab_callput 이 이미 생성된 후이므로 바로 주입 가능
         self.tab_config.attach_callput(self.tab_callput)
 
-        # ── 테마 설정 패널을 설정 탭 좌측에 삽입 ──────────────
+        # ── 테마 패널은 Main_config.py 슬라이딩 패널에서 직접 관리 ──
+        # ConfigTab._build_theme_panel() 이 ThemeConfigPanel 을 생성하므로
+        # 여기서는 apply_callback 만 주입하고 sync 참조만 저장한다.
         try:
-            _tcp = ThemeConfigPanel(
-                parent=self.tab_config,
-                apply_callback=_apply_theme,
-            )
-            # ConfigTab 의 최상위 레이아웃이 QHBoxLayout 이면 insertWidget(0)
-            # QVBoxLayout 이면 상단에 가로 박스로 래핑
-            _cfg_layout = self.tab_config.layout()
-            if isinstance(_cfg_layout, __import__('PyQt5.QtWidgets', fromlist=['QHBoxLayout']).QHBoxLayout):
-                _cfg_layout.insertWidget(0, _tcp)
-            else:
-                from PyQt5.QtWidgets import QHBoxLayout as _QH, QWidget as _QW
-                _wrap = _QW()
-                _wlay = _QH(_wrap)
-                _wlay.setContentsMargins(0, 0, 0, 0)
-                _wlay.setSpacing(0)
-                _wlay.addWidget(_tcp)
-                # 기존 위젯들을 오른쪽으로 이동
-                if _cfg_layout:
-                    _old_widget = _cfg_layout.itemAt(0)
-                    if _old_widget and _old_widget.widget():
-                        _wlay.addWidget(_old_widget.widget(), 1)
-                self.tab_config.layout().insertWidget(0, _wrap)
-            # tab_config 에서 참조 가능하도록 저장
-            self.tab_config.theme_panel = _tcp
-            print("[Theme] ThemeConfigPanel 설정 탭 좌측 삽입 완료")
+            _tcp = getattr(self.tab_config, '_theme_config_panel', None)
+            if _tcp is not None:
+                _tcp._callback = _apply_theme   # 콜백 교체
+                self.tab_config.theme_panel = _tcp
+                print("[Theme] 슬라이딩 ThemeConfigPanel 콜백 연결 완료")
         except Exception as _e:
-            print(f"[Theme] ThemeConfigPanel 삽입 실패 (무시): {_e}")
+            print(f"[Theme] 슬라이딩 패널 콜백 연결 실패 (무시): {_e}")
 
         # ── Heartbeat: dashboard 참조 주입 → IBKR 연결 시 자동 시작
         _get_heartbeat_mgr().attach_dashboard(self)

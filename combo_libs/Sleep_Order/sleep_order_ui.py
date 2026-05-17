@@ -1,13 +1,10 @@
 """
-sleep_order_ui.py — 수면 예약 주문 UI 조립  v2.0
+sleep_order_ui.py — 수면 예약 주문 UI 조립  v2.1
 ════════════════════════════════════════
-SleepOrderRightPanel : Main_config 우측 패널 (좌=예약주문+Debit, 우=단일옵션)
-SleepOrderButton     : combo 탭 우측 상단 버튼 (기존 유지)
-
-각 설정 패널은 별도 파일에서 import:
-  ui_panel_debit.py  → DebitSpikePanel
-  ui_panel_single.py → SingleOptSpikePanel
-  (예약주문 섹션은 기존 SleepOrderRightPanel 내부 유지)
+SleepOrderRightPanel : 2단 패널
+  좌  — 예약주문 + Debit 급락캐치 + 콤보 비중 주문 [신규 ↓ 하단 추가]
+  우  — 단일 옵션 급락캐치
+SleepOrderButton : combo 탭 우측 상단 버튼 (기존 유지)
 """
 from __future__ import annotations
 from PyQt5.QtWidgets import (
@@ -18,15 +15,15 @@ from PyQt5.QtCore import Qt, QTimer
 
 
 # ══════════════════════════════════════════════════════════════
-# SleepOrderRightPanel — 좌/우 2단 패널
+# SleepOrderRightPanel — 좌 / 중 / 우  3단 패널
 # ══════════════════════════════════════════════════════════════
 
 class SleepOrderRightPanel(QWidget):
     """
     Main_config.py ConfigTab 우측.
-    ┌──────────────────┬──────────────────┐
-    │ 예약주문 + Debit  │  단일 옵션 캐치  │
-    └──────────────────┴──────────────────┘
+    ┌──────────────┬──────────────┬──────────────┐
+    │ 예약주문+Debit│  단일옵션캐치 │ 콤보 비중    │
+    └──────────────┴──────────────┴──────────────┘
     """
 
     def __init__(self, parent=None):
@@ -39,65 +36,51 @@ class SleepOrderRightPanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── 좌측: 예약주문 + Debit 급락캐치 ─────────────────
-        root.addWidget(self._make_left_col(), stretch=1)
-
-        sep = QFrame(); sep.setFrameShape(QFrame.VLine)
-        sep.setFixedWidth(1)
-        sep.setStyleSheet("background:#2a2a5a;border:none;")
-        root.addWidget(sep)
-
-        # ── 우측: 단일 옵션 급락캐치 ─────────────────────────
+        root.addWidget(self._make_left_col(),  stretch=1)
+        root.addWidget(_vline())
         root.addWidget(self._make_right_col(), stretch=1)
 
+    # ── 좌측: 예약주문 + Debit + 콤보 비중 ──────────────
     def _make_left_col(self) -> QWidget:
         col = QWidget(); col.setStyleSheet("background:#0a0a18;")
-        v   = QVBoxLayout(col); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
-
+        v   = QVBoxLayout(col)
+        v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
         hdr = QLabel("🌙  수면 예약 주문 설정")
         hdr.setStyleSheet(
             "color:#ffd700;font-size:18px;font-weight:bold;border:none;"
             "padding:6px 12px 2px 12px;")
         v.addWidget(hdr)
-
         scroll = _make_scroll()
         inner  = QWidget(); inner.setStyleSheet("background:#0a0a18;")
-        vlay   = QVBoxLayout(inner); vlay.setContentsMargins(10, 8, 10, 12); vlay.setSpacing(10)
-
-        # 기존 예약주문 섹션 A (파일 분리 없이 유지)
+        vlay   = QVBoxLayout(inner)
+        vlay.setContentsMargins(10, 8, 10, 12); vlay.setSpacing(10)
         vlay.addWidget(self._build_schedule_section())
-
-        # Debit 급락캐치 패널
         from Sleep_Order.ui_panel_debit import DebitSpikePanel
         self._debit_panel = DebitSpikePanel()
         vlay.addWidget(self._debit_panel)
-
         vlay.addStretch()
-        scroll.setWidget(inner)
-        v.addWidget(scroll)
+        scroll.setWidget(inner); v.addWidget(scroll)
         return col
 
+    # ── 우측: 단일 옵션 급락캐치 ─────────────────────────
     def _make_right_col(self) -> QWidget:
         col = QWidget(); col.setStyleSheet("background:#0a0a18;")
-        v   = QVBoxLayout(col); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
-
+        v   = QVBoxLayout(col)
+        v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
         hdr = QLabel("🎯  단일 옵션 급락 캐치")
         hdr.setStyleSheet(
             "color:#2ecc71;font-size:18px;font-weight:bold;border:none;"
             "padding:6px 12px 2px 12px;")
         v.addWidget(hdr)
-
         scroll = _make_scroll()
         inner  = QWidget(); inner.setStyleSheet("background:#0a0a18;")
-        vlay   = QVBoxLayout(inner); vlay.setContentsMargins(10, 8, 10, 12); vlay.setSpacing(10)
-
+        vlay   = QVBoxLayout(inner)
+        vlay.setContentsMargins(10, 8, 10, 12); vlay.setSpacing(10)
         from Sleep_Order.ui_panel_single import SingleOptSpikePanel
         self._single_panel = SingleOptSpikePanel()
         vlay.addWidget(self._single_panel)
-
         vlay.addStretch()
-        scroll.setWidget(inner)
-        v.addWidget(scroll)
+        scroll.setWidget(inner); v.addWidget(scroll)
         return col
 
     def _build_schedule_section(self):
@@ -105,7 +88,14 @@ class SleepOrderRightPanel(QWidget):
         return build_schedule_section_a(self)
 
 
-# ── 스크롤 헬퍼 ─────────────────────────────────────────────────
+# ── 공통 헬퍼 ────────────────────────────────────────────────────
+
+def _vline() -> QFrame:
+    f = QFrame(); f.setFrameShape(QFrame.VLine)
+    f.setFixedWidth(1)
+    f.setStyleSheet("background:#2a2a5a;border:none;")
+    return f
+
 
 def _make_scroll() -> QScrollArea:
     s = QScrollArea()
@@ -178,26 +168,11 @@ class SleepOrderButton(QWidget):
             started = SleepOrderWatcher.get().toggle(self._ref)
             if started:
                 self._set_on(); self._btn.setText("🟢 ON  예약감시중")
-                self._auto_check_chain()
             else:
                 self._set_off(); self._btn.setText("🌙 예약 주문")
                 self._lbl_status.setText("⏸ 대기")
         except Exception as e:
             print(f"[SleepBtn] toggle 실패: {e}")
-
-    def _auto_check_chain(self) -> None:
-        try:
-            from PyQt5.QtWidgets import QApplication
-            for w in QApplication.topLevelWidgets():
-                panels = w.findChildren(SleepOrderRightPanel)
-                if panels:
-                    # 기존 체인 확인 메서드 호출 (섹션 A에 존재)
-                    panel = panels[0]
-                    if hasattr(panel, '_on_check_chain'):
-                        panel._on_check_chain()
-                    return
-        except Exception as e:
-            print(f"[SleepBtn] 체인 확인 실패: {e}")
 
     def _set_on(self) -> None:
         self._lbl_onoff.setText("ON")

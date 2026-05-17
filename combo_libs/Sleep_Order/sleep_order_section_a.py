@@ -1,15 +1,15 @@
 """
-sleep_order_section_a.py — 예약주문 섹션 A UI 빌더  v1.0
+sleep_order_section_a.py — 예약주문 섹션 A UI 빌더  v2.0
 ════════════════════════════════════════
-기존 sleep_order_ui.py 의 예약주문 관련 QGroupBox 위젯 빌더.
-SleepOrderRightPanel._make_left_col() 에서 호출.
-
-함수:
-    build_schedule_section_a(parent) -> QGroupBox
+v2.0 변경:
+  · 주문 방향 (풋만/콜만/콜+풋 동시) 섹션 A 내부 통합
+  · 방향에 따라 예산/슬라이더 위젯 자동 활성/비활성
+  · 저장 버튼 하단에 현재 설정 요약 뱃지 표시
+  · 콤보 비중 패널 별도 불필요 (섹션 A에서 일괄 저장)
 """
 from __future__ import annotations
 from PyQt5.QtWidgets import (
-    QGroupBox, QGridLayout, QHBoxLayout, QWidget,
+    QGroupBox, QGridLayout, QHBoxLayout, QWidget, QSlider,
 )
 from PyQt5.QtCore import Qt
 from Sleep_Order.ui_helpers import (
@@ -19,21 +19,15 @@ from Sleep_Order.ui_helpers import (
 
 
 def build_schedule_section_a(parent) -> QGroupBox:
-    """
-    섹션 A : 예약 주문 기본 설정.
-    parent 는 SleepOrderRightPanel 인스턴스.
-    parent 에 위젯 참조(_te_sched_start 등)를 직접 주입.
-    """
     g   = gb("🌙  예약 주문 설정", "#ffd700")
     lay = QGridLayout(g)
     lay.setContentsMargins(10, 14, 10, 10); lay.setSpacing(8)
-    r   = 0
-    tz  = "EDT" if _is_edt() else "EST"
+    r = 0; tz = "EDT" if _is_edt() else "EST"
 
-    # 스케줄 시간
+    # ── 스케줄 시간 ───────────────────────────────────────────
     lay.addWidget(lbl(f"KST 입력 → {tz} 자동변환", "#ffd066", 11), r, 0, 1, 4); r += 1
     parent._te_sched_start = time_edit("18:40")
-    parent._lbl_sched_s_et  = lbl("→ ET --:--", "#888", 12)
+    parent._lbl_sched_s_et = lbl("→ ET --:--", "#888", 12)
     parent._te_sched_start.timeChanged.connect(
         lambda: update_et_preview(parent._te_sched_start, parent._lbl_sched_s_et))
     lay.addWidget(lbl("시작 (KST):"), r, 0, Qt.AlignRight)
@@ -41,7 +35,7 @@ def build_schedule_section_a(parent) -> QGroupBox:
     lay.addWidget(parent._lbl_sched_s_et, r, 2, 1, 2); r += 1
 
     parent._te_sched_end   = time_edit("18:14")
-    parent._lbl_sched_e_et  = lbl("→ ET --:--", "#888", 12)
+    parent._lbl_sched_e_et = lbl("→ ET --:--", "#888", 12)
     parent._te_sched_end.timeChanged.connect(
         lambda: update_et_preview(parent._te_sched_end, parent._lbl_sched_e_et))
     lay.addWidget(lbl("종료 (KST):"), r, 0, Qt.AlignRight)
@@ -49,7 +43,7 @@ def build_schedule_section_a(parent) -> QGroupBox:
     lay.addWidget(parent._lbl_sched_e_et, r, 2, 1, 2); r += 1
     lay.addWidget(sep(), r, 0, 1, 4); r += 1
 
-    # 파라미터
+    # ── 파라미터 ──────────────────────────────────────────────
     lay.addWidget(lbl("익일물 오프셋:"), r, 0, Qt.AlignRight)
     parent._sb_expiry = spinbox(0, 5, 1, "일")
     lay.addWidget(parent._sb_expiry, r, 1)
@@ -71,19 +65,54 @@ def build_schedule_section_a(parent) -> QGroupBox:
     parent._dsb_tp2 = dspinbox(0.01, 5.0, 0.40, 0.05, prefix="$")
     lay.addWidget(parent._dsb_tp2, r, 3); r += 1
 
-    lay.addWidget(lbl("최대 예산:"), r, 0, Qt.AlignRight)
-    parent._sb_budget = spinbox(10, 9999, 100, "$")
-    lay.addWidget(parent._sb_budget, r, 1)
-    lay.addWidget(lbl("ROI 하한:"), r, 2, Qt.AlignRight)
+    lay.addWidget(lbl("ROI 하한:"), r, 0, Qt.AlignRight)
     parent._sb_roi_min = spinbox(0, 9999, 0, "%")
-    lay.addWidget(parent._sb_roi_min, r, 3); r += 1
-
-    lay.addWidget(lbl("ROI 상한:"), r, 0, Qt.AlignRight)
+    lay.addWidget(parent._sb_roi_min, r, 1)
+    lay.addWidget(lbl("ROI 상한:"), r, 2, Qt.AlignRight)
     parent._sb_roi_max = spinbox(0, 9999, 1200, "%")
-    lay.addWidget(parent._sb_roi_max, r, 1); r += 1
+    lay.addWidget(parent._sb_roi_max, r, 3); r += 1
     lay.addWidget(sep(), r, 0, 1, 4); r += 1
 
-    # 공격적 진입
+    # ── 주문 방향 ─────────────────────────────────────────────
+    lay.addWidget(lbl("주문 방향:", "#ffd700", 14), r, 0, Qt.AlignRight)
+    parent._cmb_direction = combo([
+        ("🔵 풋 스프레드만",      "put_only"),
+        ("🟠 콜 스프레드만",      "call_only"),
+        ("🟢 콜 + 풋  동시 주문", "both"),
+    ], 190)
+    parent._cmb_direction.currentIndexChanged.connect(
+        lambda: _on_direction_changed(parent))
+    lay.addWidget(parent._cmb_direction, r, 1, 1, 3); r += 1
+
+    # ── 예산 ──────────────────────────────────────────────────
+    lay.addWidget(lbl("풋 예산:"), r, 0, Qt.AlignRight)
+    parent._sb_put_budget = spinbox(10, 9999, 100, "$")
+    parent._sb_put_budget.valueChanged.connect(lambda: _update_direction_badge(parent))
+    lay.addWidget(parent._sb_put_budget, r, 1)
+    lay.addWidget(lbl("콜 예산:"), r, 2, Qt.AlignRight)
+    parent._sb_call_budget = spinbox(10, 9999, 100, "$")
+    parent._sb_call_budget.valueChanged.connect(lambda: _update_direction_badge(parent))
+    lay.addWidget(parent._sb_call_budget, r, 3); r += 1
+
+    # ── 콜 비중 슬라이더 (both 전용) ─────────────────────────
+    parent._lbl_ratio_hdr = lbl("콜 비중:", "#aaa", 13)
+    lay.addWidget(parent._lbl_ratio_hdr, r, 0, Qt.AlignRight)
+    parent._slider_ratio = QSlider(Qt.Horizontal)
+    parent._slider_ratio.setMinimum(10); parent._slider_ratio.setMaximum(90)
+    parent._slider_ratio.setValue(50); parent._slider_ratio.setSingleStep(5)
+    parent._slider_ratio.setStyleSheet(
+        "QSlider::groove:horizontal{height:6px;background:#2a2a5a;border-radius:3px;}"
+        "QSlider::handle:horizontal{width:16px;height:16px;margin:-5px 0;"
+        "background:#5dade2;border-radius:8px;}"
+        "QSlider::sub-page:horizontal{background:#5dade2;border-radius:3px;}")
+    parent._slider_ratio.valueChanged.connect(
+        lambda v: _on_slider_changed(parent, v))
+    lay.addWidget(parent._slider_ratio, r, 1, 1, 2)
+    parent._lbl_ratio_pct = lbl("50%", "#5dade2", 13)
+    lay.addWidget(parent._lbl_ratio_pct, r, 3); r += 1
+    lay.addWidget(sep(), r, 0, 1, 4); r += 1
+
+    # ── 공격적 진입 + 드라이런 ────────────────────────────────
     parent._chk_agg = checkbox("공격적 진입 (호가 위 주문)")
     parent._chk_agg.setChecked(True)
     lay.addWidget(parent._chk_agg, r, 0, 1, 2)
@@ -91,37 +120,85 @@ def build_schedule_section_a(parent) -> QGroupBox:
     lay.addWidget(parent._sb_agg_ticks, r, 2); r += 1
 
     parent._chk_dry = checkbox("🧪 드라이런 (실제 주문 안함)", "#ffaa44", "#ffaa44")
+    parent._chk_dry.stateChanged.connect(lambda: _update_direction_badge(parent))
     lay.addWidget(parent._chk_dry, r, 0, 1, 4); r += 1
 
-    # 저장
+    # ── 저장 ──────────────────────────────────────────────────
     parent._lbl_sched_st = lbl("", "#aaa", 12)
     lay.addWidget(parent._lbl_sched_st, r, 0, 1, 4); r += 1
     b = btn("✔  저장", "#1a1a0a", "#ffd700")
     b.clicked.connect(lambda: _save_schedule(parent))
-    lay.addWidget(b, r, 0)
+    lay.addWidget(b, r, 0); r += 1
+    lay.addWidget(sep(), r, 0, 1, 4); r += 1
+
+    # ── 현재 설정 요약 뱃지 ───────────────────────────────────
+    parent._lbl_direction_badge = lbl("", "#fff", 13)
+    parent._lbl_direction_badge.setWordWrap(True)
+    lay.addWidget(parent._lbl_direction_badge, r, 0, 1, 4)
 
     _load_schedule(parent)
     return g
 
 
+# ── 핸들러 ────────────────────────────────────────────────────
+
+def _on_direction_changed(parent) -> None:
+    d = parent._cmb_direction.currentData()
+    parent._sb_put_budget.setEnabled(d in ("put_only", "both"))
+    parent._sb_call_budget.setEnabled(d in ("call_only", "both"))
+    parent._slider_ratio.setEnabled(d == "both")
+    parent._lbl_ratio_hdr.setEnabled(d == "both")
+    parent._lbl_ratio_pct.setEnabled(d == "both")
+    _update_direction_badge(parent)
+
+
+def _on_slider_changed(parent, val: int) -> None:
+    parent._lbl_ratio_pct.setText(f"{val}%")
+    total = parent._sb_put_budget.value() + parent._sb_call_budget.value()
+    call_b = max(10, round(total * val / 100 / 10) * 10)
+    put_b  = max(10, total - call_b)
+    parent._sb_call_budget.blockSignals(True)
+    parent._sb_put_budget.blockSignals(True)
+    parent._sb_call_budget.setValue(call_b)
+    parent._sb_put_budget.setValue(put_b)
+    parent._sb_call_budget.blockSignals(False)
+    parent._sb_put_budget.blockSignals(False)
+    _update_direction_badge(parent)
+
+
+# ── 저장 / 로드 ───────────────────────────────────────────────
+
 def _save_schedule(parent) -> None:
     from Sleep_Order.sleep_order_config import sleep_cfg
-    sleep_cfg.set("schedule_start", kst_to_et(parent._te_sched_start.time().toString("HH:mm")))
-    sleep_cfg.set("schedule_end",   kst_to_et(parent._te_sched_end.time().toString("HH:mm")))
-    sleep_cfg.set("expiry_offset",   parent._sb_expiry.value())
-    sleep_cfg.set("spread_width",    parent._sb_sw.value())
-    sleep_cfg.set("strike_dist_min", parent._dsb_dmin.value())
-    sleep_cfg.set("strike_dist_max", parent._dsb_dmax.value())
-    sleep_cfg.set("target_price_1",  parent._dsb_tp1.value())
-    sleep_cfg.set("target_price_2",  parent._dsb_tp2.value())
-    sleep_cfg.set("max_budget",      parent._sb_budget.value())
-    sleep_cfg.set("roi_min",         parent._sb_roi_min.value())
-    sleep_cfg.set("roi_max",         parent._sb_roi_max.value())
-    sleep_cfg.set("aggressive_entry",parent._chk_agg.isChecked())
-    sleep_cfg.set("aggressive_ticks",parent._sb_agg_ticks.value())
-    sleep_cfg.set("dry_run",         parent._chk_dry.isChecked())
+    sleep_cfg.set("schedule_start",   kst_to_et(parent._te_sched_start.time().toString("HH:mm")))
+    sleep_cfg.set("schedule_end",     kst_to_et(parent._te_sched_end.time().toString("HH:mm")))
+    sleep_cfg.set("expiry_offset",    parent._sb_expiry.value())
+    sleep_cfg.set("spread_width",     parent._sb_sw.value())
+    sleep_cfg.set("strike_dist_min",  parent._dsb_dmin.value())
+    sleep_cfg.set("strike_dist_max",  parent._dsb_dmax.value())
+    sleep_cfg.set("target_price_1",   parent._dsb_tp1.value())
+    sleep_cfg.set("target_price_2",   parent._dsb_tp2.value())
+    sleep_cfg.set("roi_min",          parent._sb_roi_min.value())
+    sleep_cfg.set("roi_max",          parent._sb_roi_max.value())
+    sleep_cfg.set("aggressive_entry", parent._chk_agg.isChecked())
+    sleep_cfg.set("aggressive_ticks", parent._sb_agg_ticks.value())
+    sleep_cfg.set("dry_run",          parent._chk_dry.isChecked())
+    d = parent._cmb_direction.currentData()
+    sleep_cfg.set("combo_direction",   d)
+    sleep_cfg.set("combo_call_budget", parent._sb_call_budget.value())
+    sleep_cfg.set("combo_put_budget",  parent._sb_put_budget.value())
+    sleep_cfg.set("combo_call_ratio",  parent._slider_ratio.value() / 100.0)
+    # max_budget 호환 유지
+    if d == "put_only":
+        sleep_cfg.set("max_budget", parent._sb_put_budget.value())
+    elif d == "call_only":
+        sleep_cfg.set("max_budget", parent._sb_call_budget.value())
+    else:
+        sleep_cfg.set("max_budget",
+                      parent._sb_put_budget.value() + parent._sb_call_budget.value())
     sleep_cfg.save()
     parent._lbl_sched_st.setText("✅ 저장됨")
+    _update_direction_badge(parent)
 
 
 def _load_schedule(parent) -> None:
@@ -136,9 +213,50 @@ def _load_schedule(parent) -> None:
     parent._dsb_dmax.setValue(sleep_cfg.strike_dist_max)
     parent._dsb_tp1.setValue(sleep_cfg.target_price_1)
     parent._dsb_tp2.setValue(sleep_cfg.target_price_2)
-    parent._sb_budget.setValue(sleep_cfg.max_budget)
     parent._sb_roi_min.setValue(sleep_cfg.roi_min)
     parent._sb_roi_max.setValue(sleep_cfg.roi_max)
     parent._chk_agg.setChecked(sleep_cfg.aggressive_entry)
     parent._sb_agg_ticks.setValue(sleep_cfg.aggressive_ticks)
     parent._chk_dry.setChecked(sleep_cfg.dry_run)
+    idx = parent._cmb_direction.findData(sleep_cfg.combo_direction)
+    parent._cmb_direction.setCurrentIndex(max(0, idx))
+    parent._sb_call_budget.setValue(sleep_cfg.combo_call_budget)
+    parent._sb_put_budget.setValue(sleep_cfg.combo_put_budget)
+    v = int(round(sleep_cfg.combo_call_ratio * 100))
+    parent._slider_ratio.setValue(v)
+    parent._lbl_ratio_pct.setText(f"{v}%")
+    _on_direction_changed(parent)
+
+
+# ── 요약 뱃지 ─────────────────────────────────────────────────
+
+def _update_direction_badge(parent) -> None:
+    w = getattr(parent, '_lbl_direction_badge', None)
+    if w is None:
+        return
+    try:
+        d   = parent._cmb_direction.currentData()
+        dry = parent._chk_dry.isChecked()
+        cb  = parent._sb_call_budget.value()
+        pb  = parent._sb_put_budget.value()
+        pct = parent._slider_ratio.value()
+        _DIR = {
+            "put_only":  ("🔵 풋 스프레드만", "#3399ff"),
+            "call_only": ("🟠 콜 스프레드만", "#ff9933"),
+            "both":      ("🟢 콜 + 풋  동시", "#00cc66"),
+        }
+        dir_text, color = _DIR.get(d, ("❓ 미설정", "#888"))
+        if d == "put_only":
+            budget = f"  예산 ${pb}"
+        elif d == "call_only":
+            budget = f"  예산 ${cb}"
+        else:
+            budget = f"  콜 ${cb} ({pct}%) / 풋 ${pb} ({100-pct}%)"
+        dry_mark = "  🧪 드라이런" if dry else "  ✅ 실제주문"
+        w.setText(f"{dir_text}{budget}{dry_mark}")
+        w.setStyleSheet(
+            f"color:{color};font-size:13px;font-weight:bold;border:none;"
+            f"background:#0d0d20;border-radius:4px;padding:5px 8px;"
+            f"border-left:3px solid {color};")
+    except Exception as e:
+        print(f"[SectionA] badge 갱신 실패: {e}")

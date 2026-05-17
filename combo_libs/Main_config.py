@@ -27,9 +27,9 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QLineEdit, QSpinBox,
     QGroupBox, QScrollArea, QFrame, QCheckBox,
-    QSizePolicy, QComboBox,
+    QSizePolicy, QComboBox, QSplitter,
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QFont
 
 # ── 경로 상수 (core.py 와 동일) ──────────────────────────────
@@ -393,7 +393,37 @@ class ConfigTab(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── 좌측: 기존 설정 스크롤 영역 ──────────────────────
+        # ══ 슬라이딩 테마 패널 (좌측 외부, 기본 숨김) ════════
+        self._theme_panel = self._build_theme_panel()
+        self._theme_panel.setFixedWidth(0)          # 초기 숨김
+        self._theme_panel.setMinimumWidth(0)
+        root.addWidget(self._theme_panel)
+
+        # ══ 테마 토글 탭 버튼 ═════════════════════════════════
+        self._theme_tab_btn = QPushButton("⚙\n테\n마\n설\n정")
+        self._theme_tab_btn.setFixedWidth(22)
+        self._theme_tab_btn.setCheckable(True)
+        self._theme_tab_btn.setStyleSheet(
+            "QPushButton{background:#1a1a2e;color:#ffd700;font-size:11px;"
+            "font-weight:bold;border:none;border-right:1px solid #2a2a5a;"
+            "padding:6px 2px;letter-spacing:1px;}"
+            "QPushButton:checked{background:#2a2a0a;color:#ffee44;"
+            "border-right:2px solid #ffd700;}"
+            "QPushButton:hover{background:#2a2a3a;}"
+        )
+        self._theme_tab_btn.clicked.connect(self._toggle_theme_panel)
+        root.addWidget(self._theme_tab_btn)
+
+        # ══ 메인 Splitter (좌=설정, 우=수면주문) ══════════════
+        self._splitter = QSplitter(Qt.Horizontal)
+        self._splitter.setStyleSheet(
+            "QSplitter::handle{background:#2a2a5a;width:5px;}"
+            "QSplitter::handle:hover{background:#5a5aaa;}"
+            "QSplitter::handle:pressed{background:#8080dd;}"
+        )
+        self._splitter.setHandleWidth(5)
+
+        # ── 좌측: 기본 설정 스크롤 영역 ──────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet(
@@ -402,53 +432,28 @@ class ConfigTab(QWidget):
             "QScrollBar::handle:vertical{background:#3a3a7a;border-radius:4px;}"
             "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}"
         )
-
         inner = QWidget()
         inner.setStyleSheet("background:#0a0a18;")
         vlay = QVBoxLayout(inner)
         vlay.setContentsMargins(16, 12, 16, 16)
         vlay.setSpacing(10)
 
-        # 헤더
         hdr = QLabel("⚙️  기본 설정 관리")
         hdr.setStyleSheet(
             "color:#5dade2;font-size:18px;font-weight:bold;border:none;"
-            "padding:6px 0 2px 0;"
-        )
+            "padding:6px 0 2px 0;")
         vlay.addWidget(hdr)
         vlay.addWidget(_sep())
-
-        # 섹션 1: 텔레그램 Heartbeat
         vlay.addWidget(self._build_heartbeat_section())
-
-        # 섹션 2: 경로 정보
         vlay.addWidget(self._build_paths_section())
-
-        # 섹션 3: 기초자산 저장 주기
         vlay.addWidget(self._build_chain_save_section())
-
-        # 섹션 4: 옵션 체인 초기 조회 갯수
         vlay.addWidget(self._build_chain_count_section())
-
-        # 섹션 5: ATM 범위 설정
         vlay.addWidget(self._build_atm_range_section())
-
-        # 섹션 6: 체인 컬럼 선택
         vlay.addWidget(self._build_column_select_section())
-
-        # 섹션 7: 1분봉 차트탭 — 미니 차트 오버레이 설정
         vlay.addWidget(self._build_overlay_section())
-
         vlay.addStretch()
         scroll.setWidget(inner)
-        root.addWidget(scroll, stretch=1)
-
-        # ── 구분선 ────────────────────────────────────────────
-        sep = QFrame()
-        sep.setFrameShape(QFrame.VLine)
-        sep.setFixedWidth(1)
-        sep.setStyleSheet("background:#2a2a5a;border:none;")
-        root.addWidget(sep)
+        self._splitter.addWidget(scroll)
 
         # ── 우측: 수면 예약 주문 설정 패널 ───────────────────
         try:
@@ -458,7 +463,7 @@ class ConfigTab(QWidget):
                 sys.path.insert(0, _this_dir)
             from Sleep_Order.sleep_order_ui import SleepOrderRightPanel
             self._sleep_right_panel = SleepOrderRightPanel()
-            root.addWidget(self._sleep_right_panel, stretch=1)
+            self._splitter.addWidget(self._sleep_right_panel)
         except Exception as e:
             print(f"[ConfigTab] SleepOrderRightPanel 로드 실패: {e}")
             import traceback; traceback.print_exc()
@@ -466,7 +471,54 @@ class ConfigTab(QWidget):
             placeholder.setAlignment(Qt.AlignCenter)
             placeholder.setWordWrap(True)
             placeholder.setStyleSheet("color:#ff6666;font-size:13px;border:none;padding:10px;")
-            root.addWidget(placeholder, stretch=1)
+            self._splitter.addWidget(placeholder)
+
+        self._splitter.setSizes([500, 900])   # 기본 비율 (픽셀, 실제 크기에 맞게 비례)
+        root.addWidget(self._splitter)
+
+    # ── 슬라이딩 테마 패널 ──────────────────────────────────
+    def _build_theme_panel(self) -> QWidget:
+        """기존 ThemeConfigPanel 을 슬라이딩 컨테이너로 감싸서 반환."""
+        try:
+            from main_config_theme import ThemeConfigPanel
+            panel = ThemeConfigPanel(
+                parent=self,
+                apply_callback=self._apply_theme,
+            )
+            self._theme_config_panel = panel   # sync_preset_buttons 호출용
+        except Exception as e:
+            print(f"[ConfigTab] ThemeConfigPanel 로드 실패: {e}")
+            panel = QLabel(f"테마 패널 로드 실패\n{e}")
+            panel.setStyleSheet("color:#ff6666;font-size:12px;padding:8px;")
+        panel.setStyleSheet(panel.styleSheet() +
+                            "border-right:1px solid #2a2a5a;")
+        return panel
+
+    def _apply_theme(self, key: str) -> None:
+        try:
+            from PyQt5.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app and hasattr(app, 'apply_theme'):
+                app.apply_theme(key)
+        except Exception as e:
+            print(f"[ConfigTab] 테마 적용 실패: {e}")
+
+    def _toggle_theme_panel(self, checked: bool) -> None:
+        """테마 패널 슬라이딩 애니메이션 (열림 220px / 닫힘 0px)."""
+        OPEN_W = 220
+        self._theme_panel.setMaximumWidth(99999)
+        self._theme_panel.setMinimumWidth(0)
+        start = self._theme_panel.width()
+        target = OPEN_W if checked else 0
+        self._anim = QPropertyAnimation(self._theme_panel, b"maximumWidth")
+        self._anim.setDuration(220)
+        self._anim.setStartValue(start)
+        self._anim.setEndValue(target)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+        if not checked:
+            self._anim.finished.connect(
+                lambda: self._theme_panel.setFixedWidth(0))
+        self._anim.start()
 
     # ─────────────────────────────────────────────────────────
     # 섹션 1: 텔레그램 Heartbeat

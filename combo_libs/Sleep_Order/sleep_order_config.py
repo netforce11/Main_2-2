@@ -1,9 +1,10 @@
 """
-sleep_order_config.py — 수면 예약 주문 전체 설정  v3.0
+sleep_order_config.py — 수면 예약 주문 전체 설정  v3.1
 ════════════════════════════════════════
 섹션 A : 예약 주문
 섹션 B1: Debit Spread 급락 캐치
-섹션 B2: 단일 옵션 급락 캐치  [신규]
+섹션 B2: 단일 옵션 급락 캐치
+섹션 B3: 콤보 비중 주문 [신규]  ← 콜+풋 동시 또는 단방향 선택
 섹션 C : 자동 매도
 """
 from __future__ import annotations
@@ -38,13 +39,12 @@ _DEFAULTS: dict = {
     "cancel_cooldown_sec":  120,
     "dry_run":              False,
 
-
     # ── B1: Debit Spread 급락 캐치 ───────────────────────
     "spike_enabled":            False,
     "spike_use_own_schedule":   True,
     "spike_start":              "16:53",
     "spike_end":                "05:14",
-    "spike_ref_mode":           "time",   # "time" | "tick"
+    "spike_ref_mode":           "time",
     "spike_ref_minutes":        3,
     "tick_window":              7,
     "drop_ratio":               40,
@@ -57,7 +57,7 @@ _DEFAULTS: dict = {
     "modify_max_count":         3,
     "modify_price_cap":         0.30,
 
-    # ── B2: 단일 옵션 급락 캐치 [신규] ───────────────────
+    # ── B2: 단일 옵션 급락 캐치 ──────────────────────────
     "single_spike_enabled":         False,
     "single_spike_use_own_schedule":True,
     "single_spike_start":           "16:53",
@@ -67,13 +67,12 @@ _DEFAULTS: dict = {
     "single_tick_window":           7,
     "single_drop_ratio":            40,
     "single_abs_floor":             0.20,
-    # 행사가 지정 방식: "direct"|"atm_offset"|"dist_pct"|"range"
     "single_strike_mode":           "atm_offset",
-    "single_strike_value":          0.0,   # direct=행사가, atm_offset=±N포인트
-    "single_dist_pct":              0.50,  # dist_pct 전용: 지수 대비 %
-    "single_dist_min":              0.30,  # range 전용: 하한 %
-    "single_dist_max":              0.80,  # range 전용: 상한 %
-    "single_cp":                    "P",   # "P" | "C"
+    "single_strike_value":          0.0,
+    "single_dist_pct":              0.50,
+    "single_dist_min":              0.30,
+    "single_dist_max":              0.80,
+    "single_cp":                    "P",
     "single_order_mode":            "ask+1",
     "single_fixed_price":           0.15,
     "single_budget":                100,
@@ -82,12 +81,23 @@ _DEFAULTS: dict = {
     "single_modify_max_count":      3,
     "single_modify_price_cap":      0.30,
 
+    # ── B3: 콤보 비중 주문 [신규] ────────────────────────
+    # direction: "put_only" | "call_only" | "both"
+    "combo_direction":          "put_only",
+    # ratio_mode: "equal" | "custom"  (both 선택 시에만 유효)
+    "combo_ratio_mode":         "equal",
+    # call 비중 0.0~1.0  (put 비중 = 1 - call_ratio)
+    "combo_call_ratio":         0.5,
+    # 콜 스프레드 전용 예산 (direction=call_only 또는 both 시 사용)
+    "combo_call_budget":        100,
+    # 풋 스프레드 전용 예산 (direction=put_only 또는 both 시 사용)
+    "combo_put_budget":         100,
+
     # ── C: 자동 매도 ─────────────────────────────────────
     "auto_sell_enabled":        False,
     "auto_sell_mode":           "multiplier",
     "auto_sell_fixed_price":    2.50,
     "auto_sell_multiplier":     3.0,
-    # 단일 옵션 전용 자동매도 (Debit 과 별도 설정 가능)
     "single_auto_sell_enabled":     False,
     "single_auto_sell_mode":        "multiplier",
     "single_auto_sell_fixed_price": 2.50,
@@ -203,6 +213,26 @@ class SleepOrderConfigStore(_SingleSellProps):
     def modify_max_count(self) -> int:    return int(self._data.get("modify_max_count", 3))
     @property
     def modify_price_cap(self) -> float:  return float(self._data.get("modify_price_cap", 0.30))
+
+    # ── B3 콤보 비중 프로퍼티 [신규] ─────────────────────
+    @property
+    def combo_direction(self) -> str:
+        return str(self._data.get("combo_direction", "put_only"))
+    @property
+    def combo_ratio_mode(self) -> str:
+        return str(self._data.get("combo_ratio_mode", "equal"))
+    @property
+    def combo_call_ratio(self) -> float:
+        return float(self._data.get("combo_call_ratio", 0.5))
+    @property
+    def combo_put_ratio(self) -> float:
+        return round(1.0 - self.combo_call_ratio, 4)
+    @property
+    def combo_call_budget(self) -> int:
+        return int(self._data.get("combo_call_budget", 100))
+    @property
+    def combo_put_budget(self) -> int:
+        return int(self._data.get("combo_put_budget", 100))
 
 
 sleep_cfg = SleepOrderConfigStore()
