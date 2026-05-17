@@ -11,37 +11,44 @@ if _here not in _sys.path:
 
 from PyQt5.QtWidgets import QCheckBox
 
+# ── [피뢰침 포착 비활성화] _on_order_panel_toggle ─────────────
+# 조건부 주문 패널(피뢰침 포착) 토글 핸들러 — 전체 주석 처리
+# def _on_order_panel_toggle(self, checked: bool):
+#     """
+#     체크박스 상태 변경 시 호출.
+#     checked=True  → 조건부 주문 패널 (page 1)
+#     checked=False → 대량체결 테이블  (page 0)
+#     """
+#     self._right_stack.setCurrentIndex(1 if checked else 0)
+#
+#     # 로드 행(FTD/파일) 은 테이블 모드일 때만 의미있으므로 시인성 처리
+#     _load_visible = not checked
+#     self.file_type_combo.setVisible(_load_visible)
+#     self.file_sym_in.setVisible(_load_visible)
+#     self.file_status_lbl.setVisible(_load_visible)
+#
+#     # 체크박스 색상 업데이트
+#     if checked:
+#         self.chk_order_panel.setStyleSheet(
+#             "QCheckBox{ color:#FF8C00; font-weight:bold; font-size:11px; }"
+#             "QCheckBox::indicator{ width:14px; height:14px; }"
+#             "QCheckBox::indicator:checked{"
+#             "  border:1px solid #FF8C00; border-radius:3px;"
+#             "  background:#3a2a0a; }"
+#         )
+#     else:
+#         self.chk_order_panel.setStyleSheet(
+#             "QCheckBox{ color:#888; font-weight:bold; font-size:11px; }"
+#             "QCheckBox::indicator{ width:14px; height:14px; }"
+#             "QCheckBox::indicator:unchecked{"
+#             "  border:1px solid #3a3a3a; border-radius:3px;"
+#             "  background:#1a1a1a; }"
+#         )
+# ── [피뢰침 포착 비활성화 끝] ─────────────────────────────────
+
 def _on_order_panel_toggle(self, checked: bool):
-    """
-    체크박스 상태 변경 시 호출.
-    checked=True  → 조건부 주문 패널 (page 1)
-    checked=False → 대량체결 테이블  (page 0)
-    """
-    self._right_stack.setCurrentIndex(1 if checked else 0)
-
-    # 로드 행(FTD/파일) 은 테이블 모드일 때만 의미있으므로 시인성 처리
-    _load_visible = not checked
-    self.file_type_combo.setVisible(_load_visible)
-    self.file_sym_in.setVisible(_load_visible)
-    self.file_status_lbl.setVisible(_load_visible)
-
-    # 체크박스 색상 업데이트
-    if checked:
-        self.chk_order_panel.setStyleSheet(
-            "QCheckBox{ color:#FF8C00; font-weight:bold; font-size:11px; }"
-            "QCheckBox::indicator{ width:14px; height:14px; }"
-            "QCheckBox::indicator:checked{"
-            "  border:1px solid #FF8C00; border-radius:3px;"
-            "  background:#3a2a0a; }"
-        )
-    else:
-        self.chk_order_panel.setStyleSheet(
-            "QCheckBox{ color:#888; font-weight:bold; font-size:11px; }"
-            "QCheckBox::indicator{ width:14px; height:14px; }"
-            "QCheckBox::indicator:unchecked{"
-            "  border:1px solid #3a3a3a; border-radius:3px;"
-            "  background:#1a1a1a; }"
-        )
+    """피뢰침 포착 비활성화 — 항상 테이블(page 0) 유지."""
+    pass
 
 
 # ── 데이터 테이블 토글 핸들러 (v6.7) ─────────────────────────

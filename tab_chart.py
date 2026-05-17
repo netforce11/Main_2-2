@@ -98,6 +98,9 @@ from chart_exec_marker import (init_exec_markers, add_exec_marker,
                                 redraw_exec_markers, clear_exec_markers,
                                 load_exec_markers_from_db)
 from chart_tick_speed  import stop_tick_speed
+# ── 일봉 오버레이 (p1 인셋) ──────────────────────────────────
+from chart_daily_overlay import (init_daily_overlay, update_daily_overlay,
+                                  clear_daily_overlay)
 # ── v6.7 신규: 날짜별 메모 ───────────────────────────────────
 from chart_memo import toggle_memo_panel, on_memo_date_changed
 
@@ -148,6 +151,8 @@ class ChartGrid(QWidget):
         self._apply_theme()
         # ── 체결 마커 초기화 (SignalBridge 연결 포함) ─────────
         init_exec_markers(self)
+        # ── 일봉 오버레이 초기화 ─────────────────────────────
+        init_daily_overlay(self)
 
     # ── 위임 메서드 바인딩 ────────────────────────────────────
     _apply_theme         = apply_theme
@@ -203,9 +208,27 @@ class ChartGrid(QWidget):
     _clear_exec_markers    = clear_exec_markers
     _load_exec_from_db     = load_exec_markers_from_db
     _stop_tick_speed       = stop_tick_speed
+    # ── 일봉 오버레이 바인딩 ─────────────────────────────────
+    _update_daily_overlay  = update_daily_overlay
+    _clear_daily_overlay   = clear_daily_overlay
     # ── v6.7 메모 바인딩 ──────────────────────────────────────
     _toggle_memo_panel     = toggle_memo_panel
     _on_memo_date_changed  = on_memo_date_changed
+
+    # ── 차트 반전 슬롯 (chart_build_chart.py btn_flip 연결) ───
+    def _on_flip_chart(self, checked: bool):
+        """Y축 반전 토글 — p1/p2/p3 동시 처리."""
+        self._chart_flipped = checked
+        for attr in ('p1', 'p2', 'p3'):
+            try:
+                getattr(self, attr).getViewBox().invertY(checked)
+            except Exception:
+                pass
+        try:
+            from chart_exec_marker import redraw_exec_markers
+            redraw_exec_markers(self)
+        except Exception:
+            pass
 
     # ── API 키 / 관심종목 ─────────────────────────────────────
     def _load_api_key(self):

@@ -17,22 +17,24 @@ from PyQt5.QtWidgets import (
 )
 
 
-def _build_chaser_row(self) -> QWidget:
-    """
-    Chaser 제어 행 빌드.
+def _pal():
+    try:
+        import core as _core
+        return _core.THEME_PALETTES.get(_core.CURRENT_THEME,
+                                        _core.THEME_PALETTES["light"])
+    except Exception:
+        return {"group_bg": "#e5e7eb", "group_title": "#1e40af",
+                "widget_fg": "#111827", "input_border": "#cbd5e1",
+                "btn_hover": "#e2e8f0", "btn_hover_bdr": "#94a3b8"}
 
-    레이아웃:
-      ┌─────────────────────────────────────────────────────┐
-      │ ◉ 수동  ○ 자동    🎯 Chase    ✕ 주문 취소          │
-      │ 자동: 5초마다 1틱 개선, 최대 3회                    │
-      └─────────────────────────────────────────────────────┘
-    """
+
+def _build_chaser_row(self) -> QWidget:
+    t = _pal()
     container = QWidget()
     cv = QVBoxLayout(container)
     cv.setContentsMargins(0, 2, 0, 2)
     cv.setSpacing(3)
 
-    # ── 버튼 행 ──────────────────────────────────────────────
     btn_row = QHBoxLayout()
     btn_row.setSpacing(6)
 
@@ -40,7 +42,8 @@ def _build_chaser_row(self) -> QWidget:
     self._rb_chaser_manual = QRadioButton("수동")
     self._rb_chaser_auto   = QRadioButton("자동")
     self._rb_chaser_manual.setChecked(True)
-    _rb_s = "QRadioButton{color:#aaa;font-size:11px;} QRadioButton:checked{color:#ffd700;}"
+    _rb_s = (f"QRadioButton{{color:{t['group_title']};font-size:11px;}}"
+             f"QRadioButton:checked{{color:#ffd700;}}")
     self._rb_chaser_manual.setStyleSheet(_rb_s)
     self._rb_chaser_auto.setStyleSheet(_rb_s)
     _grp = QButtonGroup(container)
@@ -57,33 +60,32 @@ def _build_chaser_row(self) -> QWidget:
     self.btn_chase = QPushButton("🎯 Chase")
     self.btn_chase.setFixedHeight(26)
     self.btn_chase.setStyleSheet(
-        "QPushButton{background:#1a2a4a;color:#90caf9;font-size:12px;"
-        "font-weight:bold;padding:3px 10px;border-radius:3px;"
-        "border:1px solid #3a5a9a;}"
-        "QPushButton:hover{background:#2a3a6a;}"
-        "QPushButton:disabled{background:#0a0a1a;color:#333;border-color:#222;}")
+        f"QPushButton{{background:{t['group_bg']};color:{t['group_title']};font-size:12px;"
+        f"font-weight:bold;padding:3px 10px;border-radius:6px;"
+        f"border:1px solid {t['input_border']};}}"
+        f"QPushButton:hover{{background:{t['btn_hover']};}}"
+        f"QPushButton:disabled{{color:{t['input_border']};border-color:{t['input_border']};}}")
     self.btn_chase.clicked.connect(lambda: self.on_chase_click())
     btn_row.addWidget(self.btn_chase)
 
-    # ✕ 주문 취소 버튼 (신규)
+    # ✕ 주문 취소 버튼
     self.btn_cancel_bag = QPushButton("✕ 주문 취소")
     self.btn_cancel_bag.setFixedHeight(26)
-    self.btn_cancel_bag.setEnabled(False)   # 주문 전 비활성
+    self.btn_cancel_bag.setEnabled(False)
     self.btn_cancel_bag.setStyleSheet(
-        "QPushButton{background:#1a1a2a;color:#555;font-size:12px;"
-        "font-weight:bold;padding:3px 10px;border-radius:3px;"
-        "border:1px solid #333;}"
-        "QPushButton:disabled{background:#0a0a1a;color:#333;border-color:#222;}")
+        f"QPushButton{{background:{t['group_bg']};color:#ff5555;font-size:12px;"
+        f"font-weight:bold;padding:3px 10px;border-radius:6px;"
+        f"border:1px solid #8a1a1a;}}"
+        f"QPushButton:disabled{{color:{t['input_border']};border-color:{t['input_border']};}}")
     self.btn_cancel_bag.clicked.connect(lambda: self._on_cancel_bag_order())
     btn_row.addWidget(self.btn_cancel_bag)
 
     btn_row.addStretch()
     cv.addLayout(btn_row)
 
-    # ── 설명 라벨 ─────────────────────────────────────────────
     self._lbl_chaser_desc = QLabel("수동: Chase 클릭 시 1틱 정정")
     self._lbl_chaser_desc.setStyleSheet(
-        "color:#555;font-size:10px;border:none;")
+        f"color:{t['group_title']};font-size:10px;border:none;")
     cv.addWidget(self._lbl_chaser_desc)
 
     return container

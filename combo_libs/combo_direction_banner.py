@@ -96,15 +96,33 @@ _S = {
         "tag":  "color:#ffffaa;font-size:10px;border:none;background:transparent;",
     },
     "none": {
-        "main": (
-            "background:#0d0d18;color:#44445a;"
-            "border:1px solid #222238;border-radius:10px;"
-            "font-weight:normal;letter-spacing:1px;"
-        ),
-        "sub":  "color:#333350;font-size:11px;border:none;background:transparent;",
-        "tag":  "color:#333350;font-size:10px;border:none;background:transparent;",
+        "main": "",   # 런타임에 _get_none_style()로 생성
+        "sub":  "",
+        "tag":  "",
     },
 }
+
+
+def _get_none_style() -> dict:
+    """'none' 상태 스타일 — 현재 테마 팔레트 참조."""
+    try:
+        import core as _c
+        t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
+        return {
+            "main": (f"background:{t['group_bg']};color:{t['group_title']};"
+                     f"border:1px solid {t['group_border']};border-radius:10px;"
+                     "font-weight:normal;letter-spacing:1px;"),
+            "sub":  f"color:{t['group_title']};font-size:11px;border:none;background:transparent;",
+            "tag":  f"color:{t['group_title']};font-size:10px;border:none;background:transparent;",
+        }
+    except Exception:
+        return {
+            "main": ("background:#0d0d18;color:#44445a;"
+                     "border:1px solid #222238;border-radius:10px;"
+                     "font-weight:normal;letter-spacing:1px;"),
+            "sub":  "color:#333350;font-size:11px;border:none;background:transparent;",
+            "tag":  "color:#333350;font-size:10px;border:none;background:transparent;",
+        }
 
 
 # ══════════════════════════════════════════════════════════
@@ -125,25 +143,24 @@ class DirectionBanner(QWidget):
         lay.setContentsMargins(10, 12, 10, 8)
         lay.setSpacing(5)
 
-        # ── 전략 태그 라벨 (상단 작은 글씨) ─────────────────
+        _ns = _get_none_style()
+
         self.lbl_tag = QLabel("")
         self.lbl_tag.setAlignment(Qt.AlignCenter)
-        self.lbl_tag.setStyleSheet(_S["none"]["tag"])
+        self.lbl_tag.setStyleSheet(_ns["tag"])
         lay.addWidget(self.lbl_tag)
 
-        # ── 메인 배너 ────────────────────────────────────────
         self.lbl_main = QLabel("━  레그를 설정하면 방향을 표시합니다  ━")
         self.lbl_main.setAlignment(Qt.AlignCenter)
         self.lbl_main.setMinimumHeight(72)
         self.lbl_main.setFont(QFont("Arial", 19, QFont.Bold))
-        self.lbl_main.setStyleSheet(_S["none"]["main"])
+        self.lbl_main.setStyleSheet(_ns["main"])
         self.lbl_main.setWordWrap(True)
         lay.addWidget(self.lbl_main)
 
-        # ── 서브 설명 (구조 요약) ────────────────────────────
         self.lbl_sub = QLabel("C/P · 행사가 · BUY/SELL 조합으로 자동 판단")
         self.lbl_sub.setAlignment(Qt.AlignCenter)
-        self.lbl_sub.setStyleSheet(_S["none"]["sub"])
+        self.lbl_sub.setStyleSheet(_ns["sub"])
         self.lbl_sub.setWordWrap(True)
         lay.addWidget(self.lbl_sub)
 
@@ -167,7 +184,8 @@ class DirectionBanner(QWidget):
 
     # ── 내부 렌더 ────────────────────────────────────────────
     def _apply(self, mode: str, banner: str, sub: str, tag: str):
-        s = _S.get(mode, _S["none"])
+        # none 모드는 런타임 팔레트 참조
+        s = _get_none_style() if mode == "none" else _S.get(mode, _get_none_style())
         self.lbl_tag.setText(tag)
         self.lbl_tag.setStyleSheet(s["tag"])
         self.lbl_main.setText(banner)

@@ -16,7 +16,7 @@ try:
 except ImportError:
     PG = False
 
-from combo_constants import SPLITTER_STYLE, STRATEGIES, STRATEGY_DESC, LEG_COLORS
+from combo_constants import SPLITTER_STYLE, get_splitter_style, STRATEGIES, STRATEGY_DESC, LEG_COLORS
 from combo_ui_synthetic_panel import SyntheticStatusPanel
 from combo_ui_leg_panel       import _build_leg_left          # noqa: F401
 from combo_ui_chaser_row      import _build_chaser_row        # noqa: F401
@@ -42,7 +42,7 @@ class RightPanelMixin:
 
         self._mid_hsplit = QSplitter(Qt.Horizontal)
         self._mid_hsplit.setHandleWidth(6)
-        self._mid_hsplit.setStyleSheet(SPLITTER_STYLE)
+        self._mid_hsplit.setStyleSheet(get_splitter_style())
         self._mid_hsplit.setChildrenCollapsible(False)
         self._mid_hsplit.addWidget(self._build_result_panel())
         self._mid_hsplit.addWidget(self._build_spread_chart_panel())
@@ -58,7 +58,7 @@ class RightPanelMixin:
         outer.setSpacing(4); outer.setContentsMargins(6, 6, 6, 6)
 
         hsplit = QSplitter(Qt.Horizontal)
-        hsplit.setHandleWidth(5); hsplit.setStyleSheet(SPLITTER_STYLE)
+        hsplit.setHandleWidth(5); hsplit.setStyleSheet(get_splitter_style())
         hsplit.setChildrenCollapsible(False)
         hsplit.addWidget(self._build_leg_left())
         hsplit.addWidget(self._build_leg_right())
@@ -83,9 +83,12 @@ class RightPanelMixin:
         self.edit_stock_price = QLineEdit()
         self.edit_stock_price.setPlaceholderText("커버드콜·프로텍티브풋")
         self.edit_stock_price.setFixedHeight(26)
+        from combo_constants import _pal as _cp2
+        _t2 = _cp2()
         self.edit_stock_price.setStyleSheet(
-            "background:#0a0a1e;color:#ffd700;border:1px solid #3a3a6a;"
-            "border-radius:3px;font-size:12px;")
+            f"background:{_t2['input_bg']};color:{_t2['group_title']};"
+            f"border:1px solid {_t2['input_border']};"
+            "border-radius:4px;font-size:12px;")
         sr.addWidget(self.edit_stock_price, 1)
         sr.addWidget(QLabel("수량:"))
         self.spin_stock_qty = QSpinBox()
@@ -223,29 +226,31 @@ class RightPanelMixin:
           • 실계좌 상태에서 합성 주문 버튼 클릭 시 확인 팝업 (별도 guard)
         """
         from PyQt5.QtWidgets import QFrame
+        from combo_constants import _pal as _cpal
+        t = _cpal()
         bar = QFrame()
         bar.setFixedHeight(28)
         bar.setStyleSheet(
-            "QFrame{background:#0a0a1a;border-bottom:1px solid #2a2a4a;}")
+            f"QFrame{{background:{t['group_bg']};border-bottom:1px solid {t['group_border']};}}")
         h = QHBoxLayout(bar)
         h.setContentsMargins(8, 2, 8, 2); h.setSpacing(8)
 
         # 연결 상태 점
         self._acct_dot = QLabel("●")
         self._acct_dot.setStyleSheet(
-            "color:#444;font-size:13px;border:none;")
+            f"color:{t['group_title']};font-size:13px;border:none;")
         h.addWidget(self._acct_dot)
 
         # 계좌 번호 / 모드
         self._acct_lbl = QLabel("미연결")
         self._acct_lbl.setStyleSheet(
-            "color:#666;font-size:12px;font-weight:bold;border:none;")
+            f"color:{t['group_title']};font-size:12px;font-weight:bold;border:none;")
         h.addWidget(self._acct_lbl)
 
         # 모드 뱃지
         self._acct_mode_lbl = QLabel("")
         self._acct_mode_lbl.setStyleSheet(
-            "color:#666;font-size:11px;border:none;")
+            f"color:{t['group_title']};font-size:11px;border:none;")
         h.addWidget(self._acct_mode_lbl)
 
         h.addStretch()

@@ -275,25 +275,67 @@ _TRADING_CLASS = {
 }
 
 def _resolve_spx_trading_class(symbol: str, expiry: str, tag: str = "") -> str:
+    """
+    SPX/SPXW 옵션 계약의 tradingClass 결정.
+
+    IBKR 규칙:
+      ┌─────────────────────────────────────────────────────────────┐
+      │ SPX Monthly (AM-settled, tradingClass="SPX")                │
+      │   - 매월 세 번째 금요일이 공식 만기일                          │
+      │   - 마지막 거래일 = 만기 전날(목요일)                          │
+      │   - 만기 당일(금요일)은 거래 없음 → IBKR 시세 미제공           │
+      │                                                             │
+      │ SPXW Weekly (PM-settled, tradingClass="SPXW")               │
+      │   - 매일 만기 존재 (세 번째 금요일 포함)                       │
+      │   - 만기 당일 장마감(4PM ET)까지 거래 가능                     │
+      │   - 세 번째 금요일 당일에도 SPXW로 시세 조회 가능              │
+      └─────────────────────────────────────────────────────────────┘
+
+    따라서:
+      - expiry가 세 번째 금요일이고 오늘이 그 날이면 → "SPXW"
+        (AM-settled SPX Monthly는 이미 마감, SPXW만 살아있음)
+      - expiry가 세 번째 금요일이고 오늘이 그 전날(목요일)이면 → "SPX"
+        (SPX Monthly 마지막 거래일 → SPX로 조회)
+      - 그 외 날짜 → "SPXW"
+    """
     sym_up = symbol.upper()
-    if sym_up == "SPXW":
-        return "SPXW"
+
+    # tag 명시 우선 (하위 호환)
     if tag == "W":
         return "SPXW"
-    if tag == "M":
-        return "SPX"
+    if tag in ("M", "MONTHLY"):
+        # MONTHLY 태그라도 만기 당일이면 SPXW로 전환
+        pass   # 아래 날짜 로직에서 처리
+
     try:
         dt = datetime.strptime(expiry, "%Y%m%d")
-        wd = dt.weekday()
-        if wd != 4:
+        if dt.weekday() != 4:
+            # 금요일이 아닌 날짜 → 무조건 SPXW (평일 만기 주간물)
             return "SPXW"
+
         from datetime import date as _date
-        first_day = _date(dt.year, dt.month, 1)
-        days_to_fri = (4 - first_day.weekday()) % 7
+        first_day    = _date(dt.year, dt.month, 1)
+        days_to_fri  = (4 - first_day.weekday()) % 7
         third_friday = first_day.day + days_to_fri + 14
-        if dt.day == third_friday:
+
+        if dt.day != third_friday:
+            # 세 번째 금요일이 아닌 일반 금요일 → SPXW
+            return "SPXW"
+
+        # ── 세 번째 금요일 ────────────────────────────────────────
+        # 오늘 날짜와 비교해서 tradingClass 결정
+        from call_put_tab.core_conn_spxw import _today_et
+        today = _today_et()
+        expiry_date = _date(dt.year, dt.month, dt.day)
+
+        if today >= expiry_date:
+            # 만기 당일 또는 이후 → SPX Monthly 이미 마감
+            # SPXW PM-settled로 조회 (당일 4PM까지 거래 가능)
+            return "SPXW"
+        else:
+            # 만기 전날(목요일) 포함 그 이전 → SPX Monthly 조회 가능
             return "SPX"
-        return "SPXW"
+
     except Exception:
         return "SPXW"
 

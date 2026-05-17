@@ -62,8 +62,8 @@ def build_memo_panel(self) -> QWidget:
         "이 날짜에 대한 메모를 입력하세요.\n\n"
         "예) 시장 분위기, 주요 이벤트, 매매 일지 등"
     )
-    self._memo_edit.setMinimumHeight(100)
-    self._memo_edit.setMaximumHeight(200)
+    self._memo_edit.setMinimumHeight(180)
+    self._memo_edit.setMaximumHeight(9999)   # 사이드바 공간 최대 활용
     self._memo_edit.setStyleSheet(
         "QTextEdit{"
         "  background:#131325;"

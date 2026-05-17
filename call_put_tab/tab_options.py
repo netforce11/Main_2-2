@@ -42,7 +42,12 @@ from call_put_tab.core_conn            import CoreConnMixin
 from call_put_tab.core_fetch           import CoreFetchMixin
 from call_put_tab.tab_options_settings import SettingsMixin
 from call_put_tab.tab_options_panels   import PanelsMixin
-from config_ui import ConfigMixin
+from config_ui import ConfigMixin  # 기존 호환성 유지
+# ✅ Main_config.py 로 통합 — ConfigMixin 재정의
+try:
+    from Main_config import ConfigMixin  # Main_config.py 우선
+except ImportError:
+    pass  # fallback: config_ui.ConfigMixin 그대로 사용
 
 
 def _mk(text: str, color: str = "#dde0f0") -> QTableWidgetItem:

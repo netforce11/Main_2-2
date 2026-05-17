@@ -95,7 +95,8 @@ pg.setConfigOption('antialias', False)
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
-    QTabWidget, QLabel, QMessageBox
+    QTabWidget, QLabel, QMessageBox,
+    QStatusBar, QHBoxLayout, QPushButton, QButtonGroup
 )
 from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtGui import QKeySequence
@@ -105,9 +106,14 @@ from PyQt5.QtWidgets import QShortcut
 from core import (
     IBapi, bridge, router, SignalBridge,
     TWS_HOST, TWS_PORT, CLIENT_ID,
-    make_style, DEFAULT_FONT_SIZE,
+    make_style, set_theme, make_theme_selector,
+    THEME_ORDER, THEME_LABELS, CURRENT_THEME,
+    DEFAULT_FONT_SIZE,
     GridTab, TabWrapper, SAVE_DIR
 )
+from core_ui import apply_theme_to_all_tables, apply_theme_to_all_frames
+from main_config_theme import apply_light_fg_fix, ThemeConfigPanel
+apply_light_fg_fix()   # 라이트 모드 전경색 누락 버그 즉시 수정
 
 # ── 공유 데이터 저장소 ─────────────────────────────────────────
 from shared_chain_store   import SharedChainStore
@@ -154,6 +160,7 @@ _MAIN2_DIR = os.path.dirname(os.path.abspath(os.path.join(os.getcwd(), __file__)
 if _MAIN2_DIR not in sys.path:
     sys.path.insert(0, _MAIN2_DIR)
 from strategy_report.tab_report import ReportTab
+from Main_config import ConfigTab, _get_heartbeat_mgr   # 기본 설정 탭
 
 
 # ══════════════════════════════════════════════════════════════
@@ -202,6 +209,7 @@ class TradingDashboard(QMainWindow):
         self.tab_report   = None
         self.tab_telegram = None   # 텔레그램 설정 탭
         self.tab_kr_chart = None   # Korea_1분 차트 탭
+        self.tab_config   = None   # 기본 설정 탭
 
         # ── 공유 데이터 저장소 ──────────────────────────────────
         self.chain_store   = SharedChainStore()    # 탭 간 옵션 체인 공유
@@ -220,6 +228,190 @@ class TradingDashboard(QMainWindow):
             + datetime.today().strftime("%Y-%m-%d"))
         self.setGeometry(40, 40, 1700, 980)
         self.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
+
+        # ── 테마 선택 버튼 (상단 메뉴바 우측) ─────────────────────
+        self._theme_bar = QWidget()
+        _tbar_layout = QHBoxLayout(self._theme_bar)
+        _tbar_layout.setContentsMargins(4, 2, 8, 2)
+        _tbar_layout.setSpacing(4)
+
+        _tbar_layout.addStretch()
+
+        _lbl_theme = QLabel("테마:")
+        _lbl_theme.setStyleSheet("font-size:13px; font-weight:bold; border:none;")
+        _tbar_layout.addWidget(_lbl_theme)
+
+        self._theme_btn_group = QButtonGroup(self._theme_bar)
+        self._theme_btn_group.setExclusive(True)
+        self._theme_buttons = {}
+
+        import core as _core  # 런타임 참조용
+
+        def _apply_theme(theme_name):
+            set_theme(theme_name)
+            self.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
+
+            # ── ① 전체 QTableWidget / _ResizableFrame 일괄 갱신 ──
+            apply_theme_to_all_tables()
+            apply_theme_to_all_frames()
+
+            # ── ② combo 모듈 스타일 상수 갱신 ────────────────────
+            try:
+                import combo_constants as _cc
+                import combo_ui_panel_constants as _cp
+                _cc.SPLITTER_STYLE = _cc.get_splitter_style()
+                _cc.TBL_STYLE      = _cc.get_tbl_style()
+                _cp._TAB_STYLE     = _cp.get_tab_style()
+                _cp._TBL_STYLE     = _cp.get_tbl_style()
+            except Exception as _e:
+                print(f"[Theme] combo 스타일 갱신 실패 (무시): {_e}")
+
+            # ── ③ 콜-풋 탭 (tab_callput) ─────────────────────────
+            try:
+                cp = getattr(self, 'tab_callput', None)
+                if cp:
+                    # QSS 직접 재적용 (테이블, 패널, 스플리터 등)
+                    if hasattr(cp, 'refresh_theme'):
+                        cp.refresh_theme()
+                    else:
+                        cp.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
+                    # 체인 테이블 셀 색상 재적용
+                    for _tbl_attr in ('tbl_call', 'tbl_put', 'tbl_watch'):
+                        _tbl = getattr(cp, _tbl_attr, None)
+                        if _tbl:
+                            from core_ui import _apply_table_theme
+                            _apply_table_theme(_tbl)
+            except Exception as _e:
+                print(f"[Theme] CallPut 갱신 실패 (무시): {_e}")
+
+            # ── ④ 잔고/PnL 탭 (tab_balance) ──────────────────────
+            try:
+                bal = getattr(self, 'tab_balance', None)
+                if bal:
+                    if hasattr(bal, 'refresh_theme'):
+                        bal.refresh_theme()
+                    else:
+                        bal.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
+                    # 잔고 테이블들 재적용
+                    for _tbl_attr in ('tbl_positions', 'tbl_orders',
+                                      'tbl_balance', 'tbl_pnl', 'tbl_trades'):
+                        _tbl = getattr(bal, _tbl_attr, None)
+                        if _tbl:
+                            from core_ui import _apply_table_theme
+                            _apply_table_theme(_tbl)
+            except Exception as _e:
+                print(f"[Theme] Balance 갱신 실패 (무시): {_e}")
+
+            # ── ⑤ Greeks Matrix 탭 (tab_greeks) ──────────────────
+            try:
+                grk = getattr(self, 'tab_greeks', None)
+                if grk:
+                    if hasattr(grk, 'refresh_theme'):
+                        grk.refresh_theme()
+                    else:
+                        grk.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
+            except Exception as _e:
+                print(f"[Theme] Greeks 갱신 실패 (무시): {_e}")
+
+            # ── ⑥ 스나이퍼 탭 (tab_sniper) ───────────────────────
+            try:
+                snp = getattr(self, 'tab_sniper', None)
+                if snp:
+                    if hasattr(snp, 'refresh_theme'):
+                        snp.refresh_theme()
+                    else:
+                        snp.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
+            except Exception as _e:
+                print(f"[Theme] Sniper 갱신 실패 (무시): {_e}")
+
+            # ── ⑦ 복합 전략 탭 (tab_combo) ───────────────────────
+            try:
+                tab_combo = getattr(self, 'tab_combo', None)
+                if tab_combo:
+                    if hasattr(tab_combo, 'refresh_theme'):
+                        tab_combo.refresh_theme()
+                    else:
+                        tab_combo.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
+                    # SyntheticStatusPanel 갱신
+                    sp = getattr(tab_combo, '_synthetic_panel', None)
+                    if sp and hasattr(sp, 'refresh_theme'):
+                        sp.refresh_theme()
+                    # 방향 배너 갱신
+                    db = getattr(tab_combo, 'direction_banner', None)
+                    if db:
+                        if hasattr(db, 'tbl_legs'):
+                            db.refresh(tab_combo.tbl_legs)
+                        elif hasattr(db, '_apply'):
+                            db._apply("none",
+                                      "━  레그를 설정하면 방향을 표시합니다  ━",
+                                      "C/P · 행사가 · BUY/SELL 조합으로 자동 판단", "")
+            except Exception as _e:
+                print(f"[Theme] Combo 갱신 실패 (무시): {_e}")
+
+            # ── ⑧ 리포트 탭 (tab_report) ─────────────────────────
+            try:
+                rep = getattr(self, 'tab_report', None)
+                if rep:
+                    if hasattr(rep, 'refresh_theme'):
+                        rep.refresh_theme()
+                    else:
+                        rep.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
+            except Exception as _e:
+                print(f"[Theme] Report 갱신 실패 (무시): {_e}")
+
+            # ── ⑨ 설정 탭 (tab_config) ───────────────────────────
+            try:
+                cfg = getattr(self, 'tab_config', None)
+                if cfg:
+                    if hasattr(cfg, 'refresh_theme'):
+                        cfg.refresh_theme()
+                    else:
+                        cfg.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
+                    # ThemeConfigPanel 버튼 동기화
+                    tcp = getattr(cfg, 'theme_panel', None)
+                    if tcp and hasattr(tcp, 'sync_preset_buttons'):
+                        tcp.sync_preset_buttons(theme_name)
+            except Exception as _e:
+                print(f"[Theme] Config 갱신 실패 (무시): {_e}")
+
+            # ── ⑩ 나머지 탭 (TabWidget 전체 순회) ───────────────
+            # 위에서 처리 못한 탭까지 setStyleSheet 로 폴백 적용
+            try:
+                for _i in range(self.tabs.count()):
+                    _w = self.tabs.widget(_i)
+                    # TabWrapper 안의 실제 그리드 접근
+                    _grid = getattr(_w, 'grid_tab', getattr(_w, '_grid', _w))
+                    if hasattr(_grid, 'refresh_theme'):
+                        _grid.refresh_theme()
+                    elif _grid is not None:
+                        _grid.setStyleSheet(make_style(DEFAULT_FONT_SIZE))
+            except Exception as _e:
+                print(f"[Theme] 탭 순회 갱신 실패 (무시): {_e}")
+
+            # ── ⑪ 버튼 체크 상태 동기화 ─────────────────────────
+            for k, b in self._theme_buttons.items():
+                b.setChecked(k == theme_name)
+
+            print(f"[Theme] 전체 갱신 완료 → {theme_name}")
+
+        for _key in THEME_ORDER:
+            _btn = QPushButton(THEME_LABELS[_key], self._theme_bar)
+            _btn.setCheckable(True)
+            _btn.setChecked(_key == _core.CURRENT_THEME)
+            _btn.setFixedHeight(24)
+            _btn.setMinimumWidth(80)
+            _btn.setStyleSheet(
+                "QPushButton { font-size: 12px; border-radius: 3px; padding: 2px 8px; }"
+                "QPushButton:checked { font-weight: bold; border: 2px solid #4da6ff; }"
+            )
+            _btn.clicked.connect(lambda _, k=_key: _apply_theme(k))
+            self._theme_btn_group.addButton(_btn)
+            _tbar_layout.addWidget(_btn)
+            self._theme_buttons[_key] = _btn
+
+        # 메뉴바에 테마 바 삽입
+        self.menuBar().setCornerWidget(self._theme_bar, Qt.TopRightCorner)
+        self.menuBar().setFixedHeight(32)
 
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.South)
@@ -253,6 +445,55 @@ class TradingDashboard(QMainWindow):
 
         self.tab_telegram = TgConfigWidget()
         self.tabs.addTab(self.tab_telegram, "📡 텔레그램")
+
+        # ── 기본 설정 탭 ──────────────────────────────────────
+        self.tab_config = ConfigTab()
+        self.tabs.addTab(self.tab_config, "⚙️ 설정")
+        # 설정 변경 시그널 연결
+        self.tab_config.chain_save_interval_changed.connect(
+            self._on_chain_save_interval_changed)
+        self.tab_config.chain_initial_count_changed.connect(
+            self._on_chain_initial_count_changed)
+        self.tab_config.atm_range_changed.connect(
+            self._on_atm_range_changed)
+        self.tab_config.chain_columns_changed.connect(
+            self._on_chain_columns_changed)
+        # ── CallPutGrid 참조 주입 (컬럼 즉시 반영용) ─────────
+        # tab_callput 이 이미 생성된 후이므로 바로 주입 가능
+        self.tab_config.attach_callput(self.tab_callput)
+
+        # ── 테마 설정 패널을 설정 탭 좌측에 삽입 ──────────────
+        try:
+            _tcp = ThemeConfigPanel(
+                parent=self.tab_config,
+                apply_callback=_apply_theme,
+            )
+            # ConfigTab 의 최상위 레이아웃이 QHBoxLayout 이면 insertWidget(0)
+            # QVBoxLayout 이면 상단에 가로 박스로 래핑
+            _cfg_layout = self.tab_config.layout()
+            if isinstance(_cfg_layout, __import__('PyQt5.QtWidgets', fromlist=['QHBoxLayout']).QHBoxLayout):
+                _cfg_layout.insertWidget(0, _tcp)
+            else:
+                from PyQt5.QtWidgets import QHBoxLayout as _QH, QWidget as _QW
+                _wrap = _QW()
+                _wlay = _QH(_wrap)
+                _wlay.setContentsMargins(0, 0, 0, 0)
+                _wlay.setSpacing(0)
+                _wlay.addWidget(_tcp)
+                # 기존 위젯들을 오른쪽으로 이동
+                if _cfg_layout:
+                    _old_widget = _cfg_layout.itemAt(0)
+                    if _old_widget and _old_widget.widget():
+                        _wlay.addWidget(_old_widget.widget(), 1)
+                self.tab_config.layout().insertWidget(0, _wrap)
+            # tab_config 에서 참조 가능하도록 저장
+            self.tab_config.theme_panel = _tcp
+            print("[Theme] ThemeConfigPanel 설정 탭 좌측 삽입 완료")
+        except Exception as _e:
+            print(f"[Theme] ThemeConfigPanel 삽입 실패 (무시): {_e}")
+
+        # ── Heartbeat: dashboard 참조 주입 → IBKR 연결 시 자동 시작
+        _get_heartbeat_mgr().attach_dashboard(self)
 
         # 텔레그램 정보 핸들러 등록
         self._register_tg_info_handler()
@@ -454,6 +695,32 @@ class TradingDashboard(QMainWindow):
             print(f"[spread_tele] 탭 참조 주입 실패: {e}")
 
 
+    # ── 설정 탭 시그널 핸들러 ───────────────────────────────────
+    def _on_chain_save_interval_changed(self, sec: int):
+        """기초자산 저장 주기 변경 → chain_saver 에 반영."""
+        try:
+            from call_put_tab.chain_saver import set_save_interval
+            set_save_interval(sec)
+        except Exception as e:
+            print(f"[Config] 저장 주기 반영 실패 (chain_saver): {e}")
+
+    def _on_chain_initial_count_changed(self, count: int):
+        """체인 초기 조회 갯수 변경 — 다음 조회 시 자동 반영 (config_store 경유)."""
+        print(f"[Config] 체인 초기 조회 갯수: {count}개 (다음 조회 시 반영)")
+
+    def _on_atm_range_changed(self, above: int, below: int):
+        """ATM 범위 변경 — 다음 조회 시 자동 반영 (config_store 경유)."""
+        print(f"[Config] ATM 범위 변경: 위+{above}, 아래+{below} (다음 조회 시 반영)")
+
+    def _on_chain_columns_changed(self, columns: list):
+        """체인 컬럼 변경 → 콜-풋 탭 갱신 시도."""
+        print(f"[Config] 체인 컬럼 변경: {columns}")
+        try:
+            if self.tab_callput and hasattr(self.tab_callput, '_refresh_chain_columns'):
+                self.tab_callput._refresh_chain_columns(columns)
+        except Exception as e:
+            print(f"[Config] 체인 컬럼 반영 실패: {e}")
+
     # ── 탭 전환 제어 ────────────────────────────────────────
     def _on_tab_changed(self, idx: int):
         """탭 전환 시 비활성 탭의 타이머/구독 일시 중단, 활성 탭 재개."""
@@ -569,6 +836,7 @@ class TradingDashboard(QMainWindow):
                     self.tab_callput.lbl_status.setStyleSheet(
                         "color:#ff8800;font-weight:bold;border:none;")
         except:
+            
             pass
 
     def closeEvent(self, event):

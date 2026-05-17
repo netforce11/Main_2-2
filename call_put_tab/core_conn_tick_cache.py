@@ -34,12 +34,21 @@ from core import REQ_UND, REQ_CALL, REQ_PUT
 # UI 갱신 주기 (ms). 50~500 사이에서 조절 가능.
 _UI_FLUSH_INTERVAL_MS = 200
 
-# 틱 타입 → tbl_call/put 컬럼 매핑
-# 컬럼: 0=행사가, 1=Bid, 2=Ask, 3=Last, 4=Vol, 5=OI, 6=잔고
+# ── 컬럼 인덱스 상수 ────────────────────────────────────────
+# tbl_call / tbl_put 헤더:
+#   0=행사가  1=가격  2=등락%  3=Delta  4=Theta  5=Gamma  6=잔고
+COL_STRIKE  = 0
+COL_PRICE   = 1   # Last 가격
+COL_CHG_PCT = 2   # 등락% (전일 종가 대비)
+COL_DELTA   = 3
+COL_THETA   = 4
+COL_GAMMA   = 5
+COL_HOLD    = 6   # 잔고
+
+# 틱 타입 → 가격 컬럼 (Last만 "가격" 컬럼에 표시)
+# Bid/Ask는 현재가 패널(_pp_lbl_bid/ask)로만 보내고 테이블엔 안 씀
 _TT_TO_COL = {
-    1: 1,   # Bid
-    2: 2,   # Ask
-    4: 3,   # Last
+    4: COL_PRICE,   # Last → 가격 컬럼
 }
 
 
@@ -178,15 +187,30 @@ class TickCacheMixin:
         if tbl is None or row < 0 or row >= tbl.rowCount():
             return
 
-        # 가격 틱 갱신 (Bid=1, Ask=2, Last=4)
+        # 가격 틱 갱신 (Last=4 → 가격 컬럼)
+        last_price = None
         for tt, col in _TT_TO_COL.items():
             price = price_ticks.get(tt)
             if price is not None and price > 0:
                 self._set_cell_price(tbl, row, col, price, req_id, tt)
+                if tt == 4:
+                    last_price = price
 
-        # Greeks 갱신 (Delta 등 — 테이블 컬럼 존재 시)
+        # Bid/Ask → data_dict 동기화 (테이블엔 표시 안 함, 패널/스나이퍼용)
+        for tt_ba, key_ba in ((1, "bid"), (2, "ask")):
+            val_ba = price_ticks.get(tt_ba)
+            if val_ba is not None and val_ba > 0:
+                data_dict_ba = (self.call_data if tbl is getattr(self, "tbl_call", None)
+                                else self.put_data)
+                if req_id in data_dict_ba:
+                    data_dict_ba[req_id][key_ba] = val_ba
+
+        # Greeks 갱신
         if option_ticks:
             self._apply_greeks_to_row(tbl, row, option_ticks, req_id)
+
+        # 지수대비거리% 갱신 (und_price 수신 후 매 flush 마다 재계산)
+        self._update_dist_pct(tbl, row, req_id)
 
         # 현재가 패널 갱신 (1클릭으로 선택된 reqId만)
         if req_id == getattr(self, '_pp_opt_req_id', None):
@@ -196,28 +220,28 @@ class TickCacheMixin:
                         price: float, req_id: int, tt: int):
         """
         테이블 셀에 가격 기록. 변화 없으면 스킵 (불필요한 repaint 방지).
+        Last(tt=4)만 COL_PRICE 에 기록. Bid/Ask는 테이블에 쓰지 않음.
         """
         from PyQt5.QtWidgets import QTableWidgetItem
         from PyQt5.QtGui import QColor, QBrush
+
+        # Last 가격: 흰색으로 표시
+        color = "#ffffff"
 
         item = tbl.item(row, col)
         new_text = f"{price:.2f}"
         if item and item.text() == new_text:
             return  # 값 동일 → repaint 생략
 
-        # 색상: Bid=청색, Ask=주황, Last=흰색
-        _COLOR = {1: "#33aaff", 2: "#ffaa33", 4: "#ffffff"}
-        color = _COLOR.get(tt, "#cccccc")
-
         new_item = QTableWidgetItem(new_text)
         new_item.setForeground(QBrush(QColor(color)))
         tbl.setItem(row, col, new_item)
 
         # call_data / put_data 딕셔너리도 동기화 (스나이퍼, 알람엔진 직접 참조)
-        _tt_key = {1: 'bid', 2: 'ask', 4: 'last'}
+        _tt_key = {1: "bid", 2: "ask", 4: "last"}
         key = _tt_key.get(tt)
         if key:
-            data_dict = (self.call_data if tbl is getattr(self, 'tbl_call', None)
+            data_dict = (self.call_data if tbl is getattr(self, "tbl_call", None)
                          else self.put_data)
             if req_id in data_dict:
                 data_dict[req_id][key] = price
@@ -225,19 +249,107 @@ class TickCacheMixin:
     def _apply_greeks_to_row(self, tbl, row: int,
                               cache: dict, req_id: int):
         """
-        Greeks 캐시 → 테이블 Greeks 컬럼 갱신.
-        Delta 컬럼(col=7 등)이 존재하는 경우에만 작동.
+        Greeks 캐시 → 테이블 Greeks 컬럼 + data_dict 동기화.
+        컬럼: Delta=3, Theta=4, Gamma=5
         """
-        # tbl_call/put Greeks 컬럼은 구현마다 다름 — super()로 위임
-        # super()._apply_tick_option을 직접 호출할 수 없으므로
-        # call_data/put_data만 업데이트하여 다른 로직이 읽을 수 있도록 함
-        data_dict = (self.call_data if tbl is getattr(self, 'tbl_call', None)
+        from PyQt5.QtWidgets import QTableWidgetItem
+        from PyQt5.QtGui import QColor, QBrush
+
+        def _set(col, val, color="#aaddff"):
+            if tbl.columnCount() <= col:
+                return
+            new_text = f"{val:+.4f}"
+            item = tbl.item(row, col)
+            if item and item.text() == new_text:
+                return
+            it = QTableWidgetItem(new_text)
+            it.setForeground(QBrush(QColor(color)))
+            tbl.setItem(row, col, it)
+
+        delta = cache.get("delta")
+        theta = cache.get("theta")
+        gamma = cache.get("gamma")
+
+        if delta is not None:
+            col = "#00e5ff" if delta >= 0 else "#ff6b9d"
+            _set(COL_DELTA, delta, col)
+        if theta is not None:
+            _set(COL_THETA, theta, "#ff9a3c")
+        if gamma is not None:
+            _set(COL_GAMMA, gamma, "#b39ddb")
+
+        # data_dict 동기화 (스나이퍼, 알람엔진 직접 참조)
+        data_dict = (self.call_data if tbl is getattr(self, "tbl_call", None)
                      else self.put_data)
         if req_id in data_dict:
-            for field in ('iv', 'delta', 'gamma', 'theta', 'vega'):
+            for field in ("iv", "delta", "gamma", "theta", "vega"):
                 val = cache.get(field)
                 if val is not None:
                     data_dict[req_id][field] = val
+
+    def _get_spx_ref_price(self) -> float | None:
+        """
+        SPX 기준가 반환.
+        - 장중: und_price (SPX 현물) 그대로 사용
+        - 장외: und_price(/ES 선물) - ES_BASIS_OFFSET(5pt) 로 보정
+          → _fetch_chain_seq 와 동일한 보정 로직 적용
+        """
+        und = getattr(self, "und_price", None)
+        if not und or und <= 0:
+            return None
+        if getattr(self, "_und_is_futures", False):
+            ES_BASIS_OFFSET = 5.0
+            return und - ES_BASIS_OFFSET
+        return und
+
+    def _update_dist_pct(self, tbl, row: int, req_id: int):
+        """
+        지수대비거리% = (strike - ref_price) / ref_price * 100
+        - 부호 O: 행사가 > 현재가 → + (위쪽), 행사가 < 현재가 → - (아래쪽)
+        - 장외: /ES 선물가에서 basis 5pt 차감한 SPX 추정가 사용
+        - 소수점 2자리, 표기: +0.45% / -0.45%
+        """
+        from PyQt5.QtWidgets import QTableWidgetItem
+        from PyQt5.QtGui import QColor, QBrush
+
+        ref = self._get_spx_ref_price()
+        if ref is None:
+            return
+        if tbl.columnCount() <= COL_CHG_PCT:
+            return
+
+        # 행사가: col0 텍스트에서 읽음
+        strike_item = tbl.item(row, COL_STRIKE)
+        if strike_item is None:
+            return
+        try:
+            strike = float(strike_item.text().replace(",", ""))
+        except (ValueError, TypeError):
+            return
+
+        # 부호 있는 거리% — 콜/풋 모두 동일 기준
+        # + : 행사가가 현재가보다 위 (콜 기준 OTM, 풋 기준 ITM)
+        # - : 행사가가 현재가보다 아래 (콜 기준 ITM, 풋 기준 OTM)
+        dist_pct = (strike - ref) / ref * 100
+        sign     = "+" if dist_pct >= 0 else ""
+        new_text = f"{sign}{dist_pct:.2f}%"
+
+        item = tbl.item(row, COL_CHG_PCT)
+        if item and item.text() == new_text:
+            return
+
+        # 색상: ATM 근접(±0.5%) 노란, OTM 방향 파랑, ITM 방향 주황
+        abs_pct = abs(dist_pct)
+        if abs_pct < 0.5:
+            color = "#ffd700"   # ATM 근접
+        elif dist_pct > 0:
+            color = "#90caf9"   # 위쪽 (OTM콜/ITM풋)
+        else:
+            color = "#ffaa55"   # 아래쪽 (ITM콜/OTM풋)
+
+        it = QTableWidgetItem(new_text)
+        it.setForeground(QBrush(QColor(color)))
+        tbl.setItem(row, COL_CHG_PCT, it)
 
     def _apply_tick_price_direct(self, req_id: int, price_ticks: dict):
         """

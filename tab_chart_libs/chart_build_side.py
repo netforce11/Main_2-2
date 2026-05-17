@@ -121,11 +121,12 @@ def build_sidebar(self) -> QScrollArea:
     rt_btn_row.addWidget(self.btn_force_reload)
     rt_v.addLayout(rt_btn_row)
 
-    # IBKR 자동전환 안내 라벨
-    self.lbl_ibkr_auto = QLabel("IBKR 연결 시 자동 전환")
-    self.lbl_ibkr_auto.setStyleSheet(
-        "color:#5dade2; font-size:10px; padding-left:4px;")
-    rt_v.addWidget(self.lbl_ibkr_auto)
+    # ── [피뢰침 포착 비활성화] IBKR 자동전환 안내 라벨 ──────────
+    # self.lbl_ibkr_auto = QLabel("IBKR 연결 시 자동 전환")
+    # self.lbl_ibkr_auto.setStyleSheet(
+    #     "color:#5dade2; font-size:10px; padding-left:4px;")
+    # rt_v.addWidget(self.lbl_ibkr_auto)
+    # ── [피뢰침 포착 비활성화 끝] ─────────────────────────────
 
     crow = QHBoxLayout(); crow.addWidget(QLabel("캔들:"))
     self.candle_spin = QSpinBox()
@@ -164,54 +165,56 @@ def build_sidebar(self) -> QScrollArea:
     self.calendar.clicked.connect(self._on_memo_date_changed)  # v6.7 메모 연동
     cal_v.addWidget(self.calendar); side.addWidget(cal_grp)
 
-    # ── 수급 피크 검색 (Foldable) ────────────────────────────
-    pk_content = QWidget()
-    pk_v = QVBoxLayout(pk_content)
-    pk_v.setSpacing(3); pk_v.setContentsMargins(6, 4, 6, 4)
-
-    pk_v.addWidget(QLabel("① ±30분 최대"))
-    p1r = QHBoxLayout(); p1r.setSpacing(3)
-    self.pk1_in = QLineEdit(); self.pk1_in.setPlaceholderText("10:30 (ET)")
-    self.pk1_in.setFixedHeight(22)
-    b1 = QPushButton("검색"); b1.setFixedHeight(22); b1.setFixedWidth(44)
-    b1.clicked.connect(self._peak1)
-    p1r.addWidget(self.pk1_in); p1r.addWidget(b1)
-    pk_v.addLayout(p1r)
-
-    self.pk1_lbl = QLabel("결과: ―"); self.pk1_lbl.setWordWrap(True)
-    self.pk1_lbl.setStyleSheet(
-        "color:#c62828;font-weight:bold;font-size:11px;")
-    pk_v.addWidget(self.pk1_lbl)
-
-    pk_v.addWidget(QLabel("② 구간 합산"))
-    p2r = QHBoxLayout(); p2r.setSpacing(2)
-    self.pk2_s = QLineEdit(); self.pk2_s.setPlaceholderText("09:30")
-    self.pk2_s.setFixedHeight(22)
-    self.pk2_e = QLineEdit(); self.pk2_e.setPlaceholderText("10:30")
-    self.pk2_e.setFixedHeight(22)
-    b2 = QPushButton("합산"); b2.setFixedHeight(22); b2.setFixedWidth(44)
-    b2.clicked.connect(self._peak2)
-    p2r.addWidget(self.pk2_s); p2r.addWidget(QLabel("~"))
-    p2r.addWidget(self.pk2_e); p2r.addWidget(b2)
-    pk_v.addLayout(p2r)
-
-    self.pk2_lbl = QLabel("합산: ―"); self.pk2_lbl.setWordWrap(True)
-    self.pk2_lbl.setStyleSheet(
-        "color:#1b5e20;font-weight:bold;font-size:11px;")
-    pk_v.addWidget(self.pk2_lbl)
-
-    pk_v.addWidget(QLabel("③ 테이블 다중선택"))
-    self.pk3_lbl = QLabel("선택 합산: 0.00억")
-    self.pk3_lbl.setWordWrap(True)
-    self.pk3_lbl.setStyleSheet(
-        "font-weight:bold;font-size:12px;"
-        "border:1px solid #9c27b0;padding:3px;border-radius:4px;")
-    pk_v.addWidget(self.pk3_lbl)
-
-    # Foldable 래퍼 (기본: 접힌 상태 collapsed=True 로 공간 절약)
-    self._pk_fold = _FoldableGroup("수급 피크 검색", pk_content,
-                                   collapsed=True)
-    side.addWidget(self._pk_fold)
+    # ── [피뢰침 포착 비활성화] 수급 피크 검색 (Foldable) ────────
+    # 피뢰침 포착 기능 비활성화로 인해 관련 UI 전체 주석 처리
+    # pk_content = QWidget()
+    # pk_v = QVBoxLayout(pk_content)
+    # pk_v.setSpacing(3); pk_v.setContentsMargins(6, 4, 6, 4)
+    #
+    # pk_v.addWidget(QLabel("① ±30분 최대"))
+    # p1r = QHBoxLayout(); p1r.setSpacing(3)
+    # self.pk1_in = QLineEdit(); self.pk1_in.setPlaceholderText("10:30 (ET)")
+    # self.pk1_in.setFixedHeight(22)
+    # b1 = QPushButton("검색"); b1.setFixedHeight(22); b1.setFixedWidth(44)
+    # b1.clicked.connect(self._peak1)
+    # p1r.addWidget(self.pk1_in); p1r.addWidget(b1)
+    # pk_v.addLayout(p1r)
+    #
+    # self.pk1_lbl = QLabel("결과: ―"); self.pk1_lbl.setWordWrap(True)
+    # self.pk1_lbl.setStyleSheet(
+    #     "color:#c62828;font-weight:bold;font-size:11px;")
+    # pk_v.addWidget(self.pk1_lbl)
+    #
+    # pk_v.addWidget(QLabel("② 구간 합산"))
+    # p2r = QHBoxLayout(); p2r.setSpacing(2)
+    # self.pk2_s = QLineEdit(); self.pk2_s.setPlaceholderText("09:30")
+    # self.pk2_s.setFixedHeight(22)
+    # self.pk2_e = QLineEdit(); self.pk2_e.setPlaceholderText("10:30")
+    # self.pk2_e.setFixedHeight(22)
+    # b2 = QPushButton("합산"); b2.setFixedHeight(22); b2.setFixedWidth(44)
+    # b2.clicked.connect(self._peak2)
+    # p2r.addWidget(self.pk2_s); p2r.addWidget(QLabel("~"))
+    # p2r.addWidget(self.pk2_e); p2r.addWidget(b2)
+    # pk_v.addLayout(p2r)
+    #
+    # self.pk2_lbl = QLabel("합산: ―"); self.pk2_lbl.setWordWrap(True)
+    # self.pk2_lbl.setStyleSheet(
+    #     "color:#1b5e20;font-weight:bold;font-size:11px;")
+    # pk_v.addWidget(self.pk2_lbl)
+    #
+    # pk_v.addWidget(QLabel("③ 테이블 다중선택"))
+    # self.pk3_lbl = QLabel("선택 합산: 0.00억")
+    # self.pk3_lbl.setWordWrap(True)
+    # self.pk3_lbl.setStyleSheet(
+    #     "font-weight:bold;font-size:12px;"
+    #     "border:1px solid #9c27b0;padding:3px;border-radius:4px;")
+    # pk_v.addWidget(self.pk3_lbl)
+    #
+    # # Foldable 래퍼 (기본: 접힌 상태 collapsed=True 로 공간 절약)
+    # self._pk_fold = _FoldableGroup("수급 피크 검색", pk_content,
+    #                                collapsed=True)
+    # side.addWidget(self._pk_fold)
+    # ── [피뢰침 포착 비활성화 끝] ─────────────────────────────
 
 
     # [분리] 메모/일봉 섹션 → chart_build_side_bottom.py

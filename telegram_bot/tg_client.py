@@ -81,6 +81,18 @@ class TelegramClient:
         )
         self._polling_thread.start()
 
+        # ── Heartbeat 자동 시작 (Main_config.py 설정값 기반) ──────
+        # Main_config 가 import 가능한 경우에만 실행
+        try:
+            from Main_config import _get_heartbeat_mgr, config_store
+            interval = config_store.heartbeat_interval_min
+            if interval > 0:
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(1000, lambda: _get_heartbeat_mgr().start(interval))
+                print(f"[TG] Heartbeat 예약: {interval}분 주기")
+        except Exception as e:
+            print(f"[TG] Heartbeat 초기화 스킵 (Main_config 없음): {e}")
+
     def stop_polling(self):
         self._polling_active = False
 

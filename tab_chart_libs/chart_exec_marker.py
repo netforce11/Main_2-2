@@ -85,6 +85,9 @@ def redraw_exec_markers(self):
     buy_x,  buy_y  = [], []
     sell_x, sell_y = [], []
 
+    # 차트 반전 상태 확인 (tab_chart._on_flip_chart 에서 설정)
+    flipped = getattr(self, '_chart_flipped', False)
+
     for ts_ms, action, price in self._exec_markers:
         if not ts_list:
             break
@@ -100,10 +103,12 @@ def redraw_exec_markers(self):
 
         if action == 'BUY':
             buy_x.append(x)
-            buy_y.append(lo - offset)
+            # 반전 시: 저가 아래 → 고가 위로 위치 변경
+            buy_y.append(hi + offset if flipped else lo - offset)
         else:
             sell_x.append(x)
-            sell_y.append(hi + offset)
+            # 반전 시: 고가 위 → 저가 아래로 위치 변경
+            sell_y.append(lo - offset if flipped else hi + offset)
 
     items = []
     if buy_x:

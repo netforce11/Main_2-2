@@ -320,7 +320,6 @@ class SleepOrderMixin:
             self._log(f"[SleepOrder] ❌ 단일옵션 placeOrder 실패: {e}"); return None
         if not hasattr(self, '_exec_known_oids'): self._exec_known_oids = set()
         self._exec_known_oids.add(oid)
-        self._chaser_current_oid = oid
         return oid
 
     # ── 7. 단일 옵션 정정  [신규] ───────────────────────────────

@@ -83,17 +83,24 @@ def _build_right_panel(self, rw, rbox):
     rw.setMinimumHeight(0)
     self._right_stack.addWidget(self.table_r)       # index 0
 
-    # page 1 — 조건부 주문 WebEngine 패널
+    # page 1 — 조건부 주문 패널
+    # [피뢰침 포착 비활성화] build_condition_panel 이 None 반환 시
+    # addWidget(None) → QLayout 경고 방지: 빈 플레이스홀더로 대체
     try:
         from chart_condition_order import build_condition_panel
-        self._cond_panel = build_condition_panel(self.mw)
+        _panel = build_condition_panel(self.mw)
     except Exception as e:
         print(f"[build_main] 조건부 주문 패널 로드 실패: {e}")
-        _err = QLabel(f"⚠ chart_condition_order 로드 실패\n{e}")
-        _err.setStyleSheet("color:#ff5252;font-size:11px;padding:8px;")
-        _err.setAlignment(Qt.AlignCenter)
-        self._cond_panel = _err
+        _panel = None
 
+    if _panel is None:
+        # 피뢰침 비활성화 상태 — 빈 위젯으로 슬롯 채움
+        _panel = QLabel("⚙ 조건부 주문 패널 (비활성화)")
+        _panel.setStyleSheet(
+            "color:#444; font-size:12px; padding:16px;")
+        _panel.setAlignment(Qt.AlignCenter)
+
+    self._cond_panel = _panel
     self._right_stack.addWidget(self._cond_panel)   # index 1
     self._right_stack.setCurrentIndex(0)            # 기본: 테이블
 

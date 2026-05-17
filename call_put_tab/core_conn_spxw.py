@@ -1,17 +1,25 @@
 """
-core_conn_spxw.py — SPXW 0DTE 콤보·Zone 관리  v6.5
+core_conn_spxw.py — SPXW 0DTE 콤보·Zone 관리  v6.6
 
 【수정 2026-05】
 - _build_spxw_combo()
     ① 범위 확장: ±14 거래일 → 당일 포함 다음달 월간만기 다음날까지
        (다음달 세 번째 금요일이 14 거래일 밖에 있어도 항상 목록에 포함)
     ② 배지 추가: 월간만기 날짜에 [월간] 표시, 일반 금요일에 [W] 표시
+
+【수정 v6.6】
+- _on_spxw_select()
+    ③ Monthly 만기(세 번째 금요일) 선택 시 edit_sym="SPX" 자동 전환
+       (IBKR은 해당 날짜에 SPXW 계약을 발행하지 않으므로
+        기존 "SPXW" 고정 시 ERR 200 / 빈 체인 반환되던 버그 수정)
+    ④ _log()에 Monthly 여부 표기 추가
 """
 
 from datetime import datetime, timedelta, timezone, date
 from PyQt5.QtCore import QDate, QTimer
 from core import is_trading_day
-from core_expiry import _third_friday   # 월간만기 판별용
+from core_expiry import _third_friday                          # 월간만기 판별용
+from call_put_tab.core_expiry_utils import _is_monthly_expiry  # v6.6 Monthly 분기용 (순환 의존 없음)
 
 
 def _today_et() -> date:
@@ -100,13 +108,45 @@ class ConnSpxwMixin:
 
     def _on_spxw_select(self, idx):
         expiry = self.combo_spxw.itemData(idx)
-        if not expiry: return
-        self.edit_sym.setText("SPXW")
+        if not expiry:
+            return
+
+        # ── v6.6: Monthly 만기(세 번째 금요일) sym 분기 ─────────────
+        # SPX Monthly(AM-settled)는 마지막 거래일이 만기 전날(목요일).
+        # 만기 당일(금요일)에는 SPX Monthly 시세가 없고
+        # SPXW PM-settled만 당일 4PM까지 조회 가능.
+        is_monthly = _is_monthly_expiry(expiry)
+        if is_monthly:
+            from call_put_tab.core_conn_spxw import _today_et
+            from datetime import date as _date
+            today       = _today_et()
+            expiry_date = _date(int(expiry[:4]), int(expiry[4:6]), int(expiry[6:8]))
+            if today >= expiry_date:
+                # 만기 당일 또는 이후 → SPXW PM-settled로 조회
+                sym        = "SPXW"
+                is_monthly = False   # SPXW 처리 경로로
+            else:
+                # 만기 전 → SPX Monthly 조회 가능
+                sym = "SPX"
+        else:
+            sym = "SPXW"
+        self.edit_sym.setText(sym)
+
+        # ── Monthly 컨텍스트 플래그 ─────────────────────────────────
+        # _refresh_expiry_list() 내부에서 edit_sym을 읽어 raw_sym을 결정하는데,
+        # Monthly의 경우 edit_sym="SPX"로 바뀌어 있어 _tag_monthly_expiries()를
+        # 건너뛰게 된다. 플래그를 먼저 설정해 _refresh_expiry_list()가
+        # Monthly 태깅을 강제 적용하도록 한다.
+        self._spxw_monthly_pending = is_monthly
+
         if hasattr(self, '_refresh_expiry_list'):
             self._refresh_expiry_list()
+
+        self._spxw_monthly_pending = False   # 소비 후 초기화
+
         custom_idx = next(
-            (i for i,(_, c, _) in enumerate(self._expiry_list) if c == "CUSTOM"),
-            len(self._expiry_list)-1)
+            (i for i, (_, c, _) in enumerate(self._expiry_list) if c == "CUSTOM"),
+            len(self._expiry_list) - 1)
         self.combo_exp.blockSignals(True)
         self.combo_exp.setCurrentIndex(custom_idx)
         self.combo_exp.blockSignals(False)
@@ -117,7 +157,9 @@ class ConnSpxwMixin:
         self.date_edit.setDate(QDate(y, m, d))
         self.date_edit.blockSignals(False)
         self.date_edit.setVisible(True)
-        self._log(f"SPXW 0DTE 선택: {expiry}")
+
+        monthly_tag = "  [Monthly/SPX]" if is_monthly else ""
+        self._log(f"SPXW 0DTE 선택: {expiry}  sym={sym}{monthly_tag}")
 
     # ── Zone / 만기 ─────────────────────────────────────────────
     def _on_zone_change(self, btn):

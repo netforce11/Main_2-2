@@ -35,12 +35,26 @@ _DEFAULT_SOUND_DIRS = [
 _DEFAULT_SOUND_FILE = ""   # 선택 전 빈값
 
 _ON_BG  = "#001a00";  _ON_FG  = "#00ff88";  _ON_BD  = "#00cc66"
-_OFF_BG = "#0d0d0d";  _OFF_FG = "#444444";  _OFF_BD = "#222222"
-_BTN_BASE = (
-    "QPushButton{background:#111827;color:#778899;border:1px solid #334455;"
-    "border-radius:3px;padding:2px 7px;font-size:10px;}"
-    "QPushButton:hover{background:#1e2d3d;color:#aabbcc;}"
-)
+_OFF_BG = "#001a00";  _OFF_FG = "#444444";  _OFF_BD = "#222222"
+
+def _btn_base_ss():
+    try:
+        import core as _c
+        t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
+        return (
+            f"QPushButton{{background:{t['btn_bg']};color:{t['group_title']};"
+            f"border:1px solid {t['btn_border']};"
+            "border-radius:4px;padding:2px 7px;font-size:10px;}}"
+            f"QPushButton:hover{{background:{t['btn_hover']};color:{t['btn_hover_bdr']};}}"
+        )
+    except Exception:
+        return (
+            "QPushButton{background:#111827;color:#778899;border:1px solid #334455;"
+            "border-radius:4px;padding:2px 7px;font-size:10px;}"
+            "QPushButton:hover{background:#1e2d3d;color:#aabbcc;}"
+        )
+
+_BTN_BASE = _btn_base_ss()
 
 
 def _play_sound(path: str) -> None:
@@ -129,7 +143,7 @@ class WolfSystemBanner(QWidget):
         # 사운드 선택 버튼
         self._btn_sound = QPushButton("🔔 사운드")
         self._btn_sound.setFixedSize(72, 22)
-        self._btn_sound.setStyleSheet(_BTN_BASE)
+        self._btn_sound.setStyleSheet(_btn_base_ss())
         self._btn_sound.setToolTip("알람 사운드 파일 선택")
         self._btn_sound.clicked.connect(self._select_sound)
 
@@ -232,9 +246,16 @@ class WolfSystemBanner(QWidget):
         self._lbl_detail.setStyleSheet(f"color:#00bb66;{_ns}")
 
     def _apply_off(self) -> None:
+        try:
+            import core as _c
+            t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
+            off_bg = t['group_bg']
+            off_bd = t['group_border']
+        except Exception:
+            off_bg = "#0d0d0d"; off_bd = "#222222"
         self._row.setStyleSheet(
-            f"QWidget{{background:{_OFF_BG};border-radius:4px;"
-            f"border:1px solid {_OFF_BD};}}")
+            f"QWidget{{background:{off_bg};border-radius:4px;"
+            f"border:1px solid {off_bd};}}")
         _ns = "background:transparent;border:none;"
         self._led.setStyleSheet(f"color:{_OFF_FG};{_ns}")
         self._lbl_sys.setText("○  OFF WOLF SYSTEM")

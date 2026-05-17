@@ -38,7 +38,7 @@ from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtGui import QDesktopServices
 
-from combo_constants import SPLITTER_STYLE, mk_item
+from combo_constants import SPLITTER_STYLE, get_splitter_style, mk_item, _pal
 
 # ── [SLEEP] SleepOrderMixin ────────────────────────────────────
 try:
@@ -97,19 +97,22 @@ class LeftPanelMixin(_SleepOrderMixin):
         self._capture_spin.setSuffix(" 초")
         self._capture_spin.setFixedHeight(24)
         self._capture_spin.setFixedWidth(80)
+        _t = _pal()
         self._capture_spin.setStyleSheet(
-            "background:#0a0a1e;color:#ffd700;border:1px solid #3a3a6a;"
-            "border-radius:3px;font-size:11px;font-weight:bold;")
+            f"background:{_t['input_bg']};color:{_t['group_title']};"
+            f"border:1px solid {_t['input_border']};"
+            "border-radius:4px;font-size:11px;font-weight:bold;")
         sym_row.addWidget(self._capture_spin)
 
         # 캡쳐 토글 버튼
         self._btn_capture_toggle = QPushButton("📷 캡쳐 시작")
         self._btn_capture_toggle.setFixedHeight(26)
         self._btn_capture_toggle.setCheckable(True)
+        _t2 = _pal()
         self._btn_capture_toggle.setStyleSheet(
-            "QPushButton{background:#1a2a0a;color:#aaffaa;font-weight:bold;"
-            "padding:3px 10px;border:1px solid #3a6a2a;border-radius:3px;}"
-            "QPushButton:checked{background:#0a3a0a;color:#00ff88;"
+            f"QPushButton{{background:{_t2['group_bg']};color:#44cc88;font-weight:bold;"
+            f"padding:3px 10px;border:1px solid #3a6a2a;border-radius:6px;}}"
+            f"QPushButton:checked{{background:{_t2['group_bg']};color:#00ff88;"
             "border:2px solid #00ff88;}")
         self._btn_capture_toggle.clicked.connect(self._on_capture_toggle)
         sym_row.addWidget(self._btn_capture_toggle)
@@ -120,16 +123,16 @@ class LeftPanelMixin(_SleepOrderMixin):
         self._btn_open_folder.setFixedWidth(32)
         self._btn_open_folder.setToolTip("캡쳐 저장 폴더 열기")
         self._btn_open_folder.setStyleSheet(
-            "QPushButton{background:#1a1a2a;color:#aaaaff;font-weight:bold;"
-            "border:1px solid #3a3a6a;border-radius:3px;}"
-            "QPushButton:hover{background:#2a2a4a;color:#ccccff;}")
+            f"QPushButton{{background:{_t2['group_bg']};color:{_t2['group_title']};font-weight:bold;"
+            f"border:1px solid {_t2['input_border']};border-radius:6px;}}"
+            f"QPushButton:hover{{background:{_t2['btn_hover']};color:{_t2['btn_hover_bdr']};}}")
         self._btn_open_folder.clicked.connect(self._on_open_capture_folder)
         sym_row.addWidget(self._btn_open_folder)
 
         # 상태 라벨
         self._lbl_capture_status = QLabel("대기 중")
         self._lbl_capture_status.setStyleSheet(
-            "color:#445566;font-size:11px;border:none;")
+            f"color:{_t2['group_title']};font-size:11px;border:none;")
         sym_row.addWidget(self._lbl_capture_status)
         sym_row.addStretch()
 
@@ -143,17 +146,18 @@ class LeftPanelMixin(_SleepOrderMixin):
         # ── 헤더 행 2: 심볼·만기·델타체크박스·동기화 버튼 ────
         hdr = QHBoxLayout(); hdr.setSpacing(8)
 
+        _t3 = _pal()
         self.lbl_chain_sym = QLabel("종목: ―  |  현재가: ―")
         self.lbl_chain_sym.setStyleSheet(
-            "color:#ffd700;font-weight:bold;font-size:11px;border:none;")
+            f"color:{_t3['group_title']};font-weight:bold;font-size:11px;border:none;")
         hdr.addWidget(self.lbl_chain_sym)
 
         # [ADD-2] 만기일 고정 표시 라벨 ─────────────────────
         self._lbl_expiry = QLabel("만기: ―")
         self._lbl_expiry.setStyleSheet(
-            "color:#88ddff;font-size:11px;font-weight:bold;"
-            "border:1px solid #2a4a6a;border-radius:3px;"
-            "padding:1px 6px;background:#051525;")
+            f"color:{_t3['group_title']};font-size:11px;font-weight:bold;"
+            f"border:1px solid {_t3['input_border']};border-radius:4px;"
+            f"padding:1px 6px;background:{_t3['group_bg']};")
         hdr.addWidget(self._lbl_expiry)
 
         hdr.addStretch()
@@ -162,7 +166,7 @@ class LeftPanelMixin(_SleepOrderMixin):
         self._chk_delta = QCheckBox("Δ 델타")
         self._chk_delta.setChecked(False)
         self._chk_delta.setStyleSheet(
-            "color:#aaffaa;font-size:11px;border:none;"
+            f"color:{_t3['widget_fg']};font-size:11px;border:none;"
             "QCheckBox::indicator{width:13px;height:13px;}")
         self._chk_delta.stateChanged.connect(self._on_delta_toggle)
         hdr.addWidget(self._chk_delta)
@@ -176,7 +180,7 @@ class LeftPanelMixin(_SleepOrderMixin):
 
         # 콜/풋 체인 테이블
         inner = QSplitter(Qt.Horizontal)
-        inner.setHandleWidth(4); inner.setStyleSheet(SPLITTER_STYLE)
+        inner.setHandleWidth(4); inner.setStyleSheet(get_splitter_style())
         inner.setChildrenCollapsible(False)
         inner.addWidget(self._build_call_chain())
         inner.addWidget(self._build_put_chain())
@@ -191,11 +195,12 @@ class LeftPanelMixin(_SleepOrderMixin):
         lbl = QLabel("▲ CALL")
         lbl.setStyleSheet("color:#33aaff;font-weight:bold;border:none;")
         lbl.setAlignment(Qt.AlignCenter)
+        self._lbl_call_hdr = lbl  # refresh_theme() 에서 재적용용
         # [ADD-3] 컬럼 4→5개: 델타 컬럼 추가
         self.tbl_chain_call = QTableWidget(0, 5)
         self.tbl_chain_call.setHorizontalHeaderLabels(
             ["행사가", "현재가", "델타", "IV", "거리%"])
-        self._apply_chain_style(self.tbl_chain_call, "#90caf9")
+        self._apply_chain_style(self.tbl_chain_call)
         # 델타 컬럼 기본값: 숨김
         self.tbl_chain_call.setColumnHidden(_COL_DELTA, True)
         self.tbl_chain_call.cellClicked.connect(
@@ -209,11 +214,12 @@ class LeftPanelMixin(_SleepOrderMixin):
         lbl = QLabel("▼ PUT")
         lbl.setStyleSheet("color:#ff6666;font-weight:bold;border:none;")
         lbl.setAlignment(Qt.AlignCenter)
+        self._lbl_put_hdr = lbl  # refresh_theme() 에서 재적용용
         # [ADD-3] 컬럼 4→5개: 델타 컬럼 추가
         self.tbl_chain_put = QTableWidget(0, 5)
         self.tbl_chain_put.setHorizontalHeaderLabels(
             ["행사가", "현재가", "델타", "IV", "거리%"])
-        self._apply_chain_style(self.tbl_chain_put, "#ff9999")
+        self._apply_chain_style(self.tbl_chain_put)
         # 델타 컬럼 기본값: 숨김
         self.tbl_chain_put.setColumnHidden(_COL_DELTA, True)
         self.tbl_chain_put.cellClicked.connect(
@@ -222,17 +228,85 @@ class LeftPanelMixin(_SleepOrderMixin):
         return w
 
     @staticmethod
-    def _apply_chain_style(tbl: QTableWidget, hdr_color: str):
+    def _apply_chain_style(tbl: QTableWidget):
         tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         tbl.verticalHeader().setVisible(False)
         tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
         tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         tbl.setAlternatingRowColors(True)
+        LeftPanelMixin._refresh_chain_tbl_style(tbl)
+
+    @staticmethod
+    def _refresh_chain_tbl_style(tbl: QTableWidget):
+        """팔레트 기준으로 체인 테이블 QSS 재적용 (테마 전환 시 호출)."""
+        t = _pal()
         tbl.setStyleSheet(
-            "QTableWidget{background:#07070f;alternate-background-color:#0c0c20;"
-            "color:#ccc;gridline-color:#1a1a3a;}"
-            f"QHeaderView::section{{background:#0a0a1e;color:{hdr_color};"
-            "border:1px solid #1a1a3a;font-weight:bold;}")
+            f"QTableWidget{{background:{t['tbl_bg']};"
+            f"alternate-background-color:{t['group_bg']};"
+            f"color:{t['widget_fg']};gridline-color:{t['tbl_grid']};}}"
+            f"QHeaderView::section{{background:{t['hdr_bg']};color:{t.get('hdr_fg', t['widget_fg'])};"
+            f"border:1px solid {t['hdr_border']};font-weight:bold;}}")
+
+    def refresh_theme(self):
+        """테마 전환 시 main.py 의 _apply_theme() 에서 호출."""
+        t = _pal()
+
+        # ── 체인 테이블 QSS 재적용 ────────────────────────────
+        for tbl in (getattr(self, 'tbl_chain_call', None),
+                    getattr(self, 'tbl_chain_put',  None)):
+            if tbl:
+                self._refresh_chain_tbl_style(tbl)
+                # 모든 셀 foreground 재적용 (setForeground 로 고정된 색 덮어쓰기)
+                from PyQt5.QtGui import QBrush
+                from PyQt5.QtCore import Qt as _Qt
+                fg = QBrush(QColor(t.get("widget_fg", "#e2e8f0")))
+                for row in range(tbl.rowCount()):
+                    # 행사가 컬럼(_COL_STRIKE) — 팔레트 전경색
+                    strike_item = tbl.item(row, _COL_STRIKE)
+                    if strike_item:
+                        strike_item.setForeground(fg)
+                    # IV 컬럼(_COL_IV) — 팔레트 전경색
+                    iv_item = tbl.item(row, _COL_IV)
+                    if iv_item:
+                        iv_item.setForeground(fg)
+                    # 델타 미수신(―) 셀 — 팔레트 전경색
+                    delta_item = tbl.item(row, _COL_DELTA)
+                    if delta_item and delta_item.text() == "―":
+                        delta_item.setForeground(fg)
+                    # 거리% 셀(_COL_DIST) — 의미색(양수=파랑/음수=빨강) 보존
+                    # 현재가 셀(_COL_PRICE) — CALL파랑/PUT빨강 의미색 보존
+
+        # ── 헤더 위젯 라벨 색상 재적용 ───────────────────────
+        lbl_call = getattr(self, '_lbl_call_hdr', None)
+        if lbl_call:
+            lbl_call.setStyleSheet("color:#33aaff;font-weight:bold;border:none;")
+        lbl_put = getattr(self, '_lbl_put_hdr', None)
+        if lbl_put:
+            lbl_put.setStyleSheet("color:#ff6666;font-weight:bold;border:none;")
+
+        # ── 기타 위젯 팔레트 재적용 ──────────────────────────
+        if hasattr(self, 'lbl_chain_sym'):
+            self.lbl_chain_sym.setStyleSheet(
+                f"color:{t.get('group_title', t['widget_fg'])};font-weight:bold;"
+                f"font-size:11px;border:none;")
+        if hasattr(self, '_lbl_expiry'):
+            self._lbl_expiry.setStyleSheet(
+                f"color:{t.get('group_title', t['widget_fg'])};font-size:11px;font-weight:bold;"
+                f"border:1px solid {t['input_border']};border-radius:4px;"
+                f"padding:1px 6px;background:{t['group_bg']};")
+        if hasattr(self, '_lbl_capture_status'):
+            self._lbl_capture_status.setStyleSheet(
+                f"color:{t.get('group_title', t['widget_fg'])};font-size:11px;border:none;")
+        if hasattr(self, '_capture_spin'):
+            self._capture_spin.setStyleSheet(
+                f"background:{t['input_bg']};color:{t.get('group_title', t['widget_fg'])};"
+                f"border:1px solid {t['input_border']};"
+                "border-radius:4px;font-size:11px;font-weight:bold;")
+        if hasattr(self, '_btn_open_folder'):
+            self._btn_open_folder.setStyleSheet(
+                f"QPushButton{{background:{t['group_bg']};color:{t.get('group_title', t['widget_fg'])};font-weight:bold;"
+                f"border:1px solid {t['input_border']};border-radius:6px;}}"
+                f"QPushButton:hover{{background:{t['btn_hover']};color:{t.get('btn_hover_bdr', t['widget_fg'])};}}") 
 
     # ── [ADD-1] 폴더열기 ──────────────────────────────────────
     def _on_open_capture_folder(self):
@@ -355,15 +429,16 @@ class LeftPanelMixin(_SleepOrderMixin):
             if iv    is not None: self._chain_iv_call[st]    = iv
             r = self.tbl_chain_call.rowCount()
             self.tbl_chain_call.insertRow(r)
-            self.tbl_chain_call.setItem(r, _COL_STRIKE, mk_item(f"{int(st)}", "#ffd700"))
-            self.tbl_chain_call.setItem(r, _COL_PRICE,  mk_item(f"{lp:.2f}" if lp else "―", "#33aaff"))
+            _pc = _pal()
+            self.tbl_chain_call.setItem(r, _COL_STRIKE, mk_item(f"{int(st)}", _pc.get("widget_fg", "#ffd700")))
+            self.tbl_chain_call.setItem(r, _COL_PRICE,  mk_item(f"{lp:.2f}" if lp else "―", "#33aaff"))  # CALL 의미색 유지
             # 델타 셀: 값 있으면 표시, 콜 델타는 양수(0~1)
             if delta is not None:
                 delta_txt   = f"{delta:+.3f}"
                 delta_color = "#88ff88" if delta >= 0 else "#ff8888"
             else:
                 delta_txt   = "―"
-                delta_color = "#555577"
+                delta_color = _pal().get("widget_fg", "#888899")
             self.tbl_chain_call.setItem(r, _COL_DELTA, mk_item(delta_txt, delta_color))
             self.tbl_chain_call.setItem(r, _COL_IV,   mk_item("―"))
             self.tbl_chain_call.setItem(r, _COL_DIST, _make_dist_item(st, und_price, "C"))
@@ -418,15 +493,16 @@ class LeftPanelMixin(_SleepOrderMixin):
             if iv    is not None: self._chain_iv_put[st]    = iv
             r = self.tbl_chain_put.rowCount()
             self.tbl_chain_put.insertRow(r)
-            self.tbl_chain_put.setItem(r, _COL_STRIKE, mk_item(f"{int(st)}", "#ffd700"))
-            self.tbl_chain_put.setItem(r, _COL_PRICE,  mk_item(f"{lp:.2f}" if lp else "―", "#ff6666"))
+            _pp = _pal()
+            self.tbl_chain_put.setItem(r, _COL_STRIKE, mk_item(f"{int(st)}", _pp.get("widget_fg", "#ffd700")))
+            self.tbl_chain_put.setItem(r, _COL_PRICE,  mk_item(f"{lp:.2f}" if lp else "―", "#ff6666"))  # PUT 의미색 유지
             # 델타 셀: 풋 델타는 음수(-1~0)
             if delta is not None:
                 delta_txt   = f"{delta:+.3f}"
                 delta_color = "#ff8888" if delta < 0 else "#88ff88"
             else:
                 delta_txt   = "―"
-                delta_color = "#555577"
+                delta_color = _pal().get("widget_fg", "#888899")
             self.tbl_chain_put.setItem(r, _COL_DELTA, mk_item(delta_txt, delta_color))
             self.tbl_chain_put.setItem(r, _COL_IV,   mk_item("―"))
             self.tbl_chain_put.setItem(r, _COL_DIST, _make_dist_item(st, und_price, "P"))
@@ -462,18 +538,20 @@ class LeftPanelMixin(_SleepOrderMixin):
                 # [ADD-2] 만기 라벨 항상 갱신
                 mm = expiry_code[4:6]
                 dd = expiry_code[6:8]
+                _t4 = _pal()
                 self._lbl_expiry.setText(f"만기: {mm}/{dd}")
                 self._lbl_expiry.setStyleSheet(
-                    "color:#00ffcc;font-size:11px;font-weight:bold;"
-                    "border:1px solid #2a6a5a;border-radius:3px;"
-                    "padding:1px 6px;background:#051a15;")
+                    f"color:#00ffcc;font-size:11px;font-weight:bold;"
+                    f"border:1px solid {_t4['btn_hover_bdr']};border-radius:4px;"
+                    f"padding:1px 6px;background:{_t4['group_bg']};")
             else:
-                # 만기 미확인 시 회색 표시
+                # 만기 미확인 시
+                _t4 = _pal()
                 self._lbl_expiry.setText("만기: ―")
                 self._lbl_expiry.setStyleSheet(
-                    "color:#88ddff;font-size:11px;font-weight:bold;"
-                    "border:1px solid #2a4a6a;border-radius:3px;"
-                    "padding:1px 6px;background:#051525;")
+                    f"color:{_t4['group_title']};font-size:11px;font-weight:bold;"
+                    f"border:1px solid {_t4['input_border']};border-radius:4px;"
+                    f"padding:1px 6px;background:{_t4['group_bg']};")
         except Exception:
             pass
 

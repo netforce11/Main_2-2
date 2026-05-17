@@ -57,6 +57,20 @@ def build_chart_area(self) -> QWidget:
         self.btn_capture.clicked.connect(self.capture_chart)
         line_bar.addWidget(self.btn_capture)
 
+        # ── 🙃 차트 반전 버튼 ────────────────────────────
+        self.btn_flip = QPushButton("🙃 반전")
+        self.btn_flip.setCheckable(True); self.btn_flip.setFixedHeight(24)
+        self.btn_flip.setFixedWidth(64)
+        self.btn_flip.setToolTip("차트 위·아래 반전 (Y축 뒤집기)")
+        self.btn_flip.setStyleSheet(
+            "QPushButton{background:#1c1c3a;color:#aaa;"
+            "border:1px solid #3a3a7a;border-radius:3px;padding:2px 8px;}"
+            "QPushButton:checked{background:#2a1a3a;color:#cc88ff;"
+            "border-color:#cc88ff;font-weight:bold;}")
+        self.btn_flip.toggled.connect(self._on_flip_chart)
+        line_bar.addWidget(self.btn_flip)
+        # ── 반전 버튼 끝 ─────────────────────────────────
+
         # ── 🔤 레이블 버튼 + 콤보 + 전체삭제 ─────────────
         self.btn_label = QPushButton("🔤 레이블")
         self.btn_label.setCheckable(True); self.btn_label.setFixedHeight(24)
@@ -144,6 +158,7 @@ def build_chart_area(self) -> QWidget:
         self._hlines:       dict = {}
         self._time_markers: dict = {}
         self._chart_labels: dict = {}
+        self._chart_flipped: bool = False  # 차트 반전 상태
 
         self.gfx = pg.GraphicsLayoutWidget()
         self.p1  = self.gfx.addPlot(row=0, col=0)

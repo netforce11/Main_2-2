@@ -14,25 +14,71 @@ from PyQt5.QtWidgets import QTableWidgetItem
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QBrush
 
-# ── 스플리터 핸들 스타일 ───────────────────────────────────────
-SPLITTER_STYLE = (
-    "QSplitter::handle:horizontal{background:#5a5a9a;"
-    "border-left:1px solid #00aaff;border-right:1px solid #00aaff;margin:4px 0;}"
-    "QSplitter::handle:horizontal:hover{background:#5dade2;"
-    "border-left:1px solid #00e676;border-right:1px solid #00e676;}"
-    "QSplitter::handle:vertical{background:#5a5a9a;"
-    "border-top:1px solid #00aaff;border-bottom:1px solid #00aaff;margin:0 4px;}"
-    "QSplitter::handle:vertical:hover{background:#5dade2;"
-    "border-top:1px solid #00e676;border-bottom:1px solid #00e676;}"
-)
+# ── 테마 팔레트 참조 헬퍼 ─────────────────────────────────────
+def _pal() -> dict:
+    """현재 CURRENT_THEME 팔레트 반환 (런타임 참조 → 테마 전환 즉시 반영)."""
+    try:
+        import core as _core
+        return _core.THEME_PALETTES.get(_core.CURRENT_THEME,
+                                        _core.THEME_PALETTES["light"])
+    except Exception:
+        # core 미로드 시 기본 라이트 팔레트 폴백
+        return {
+            "splitter": "#cbd5e1", "btn_hover_bdr": "#94a3b8",
+            "tbl_bg": "#ffffff", "group_bg": "#e5e7eb",
+            "widget_fg": "#111827", "tbl_grid": "#e5e7eb",
+            "tbl_border": "#9ca3af", "tbl_sel_bg": "#dbeafe",
+            "tbl_sel_fg": "#1e40af", "hdr_bg": "#e5e7eb",
+            "hdr_fg": "#111827", "hdr_border": "#cbd5e1",
+        }
 
-# ── 테이블 공통 스타일 ──────────────────────────────────────────
-TBL_STYLE = (
-    "QTableWidget{background:#07070f;alternate-background-color:#0c0c20;"
-    "color:#ccc;gridline-color:#1a1a3a;}"
-    "QHeaderView::section{background:#0a0a1e;color:#90caf9;"
-    "border:1px solid #1a1a3a;font-weight:bold;}"
-)
+def _pal() -> dict:
+    """현재 CURRENT_THEME 팔레트 반환 (combo 모듈용 편의 함수)."""
+    try:
+        import core as _core
+        return _core.THEME_PALETTES.get(_core.CURRENT_THEME,
+                                        _core.THEME_PALETTES["light"])
+    except Exception:
+        return {
+            "win_bg": "#ffffff", "group_bg": "#e5e7eb",
+            "widget_fg": "#111827", "group_border": "#a1a1aa",
+            "group_title": "#1e40af", "input_bg": "#ffffff",
+            "input_border": "#cbd5e1", "splitter": "#cbd5e1",
+            "btn_hover_bdr": "#94a3b8",
+        }
+
+# ── 스플리터 핸들 스타일 (테마 연동) ─────────────────────────
+def get_splitter_style() -> str:
+    """현재 테마에 맞는 스플리터 QSS 반환."""
+    t = _pal()
+    c  = t["splitter"]
+    ch = t["btn_hover_bdr"]
+    return (
+        f"QSplitter::handle:horizontal{{background:{c};"
+        f"border-left:1px solid {ch};border-right:1px solid {ch};margin:4px 0;border-radius:2px;}}"
+        f"QSplitter::handle:horizontal:hover{{background:{ch};}}"
+        f"QSplitter::handle:vertical{{background:{c};"
+        f"border-top:1px solid {ch};border-bottom:1px solid {ch};margin:0 4px;border-radius:2px;}}"
+        f"QSplitter::handle:vertical:hover{{background:{ch};}}"
+    )
+
+# ── 테이블 공통 스타일 (테마 연동) ───────────────────────────
+def get_tbl_style() -> str:
+    """현재 테마에 맞는 테이블 QSS 반환."""
+    t = _pal()
+    return (
+        f"QTableWidget{{background:{t['tbl_bg']};alternate-background-color:{t['group_bg']};"
+        f"color:{t['widget_fg']};gridline-color:{t['tbl_grid']};"
+        f"border:1px solid {t['tbl_border']};}}"
+        f"QTableWidget::item:selected{{background:{t['tbl_sel_bg']};color:{t['tbl_sel_fg']};}}"
+        f"QHeaderView::section{{background:{t['hdr_bg']};color:{t['hdr_fg']};"
+        f"border:1px solid {t['hdr_border']};font-weight:bold;}}"
+    )
+
+# ── 하위 호환: 기존 코드에서 SPLITTER_STYLE / TBL_STYLE 을 직접 참조하는 경우
+# 모듈 로드 시 한 번 생성됩니다. 테마 전환 후엔 get_splitter_style() / get_tbl_style() 을 호출하세요.
+SPLITTER_STYLE = get_splitter_style()
+TBL_STYLE      = get_tbl_style()
 
 # ── 레그 제한 ──────────────────────────────────────────────────
 MAX_LEGS = 8   # 기본 전략 최대 4 + 사용자 추가 최대 4

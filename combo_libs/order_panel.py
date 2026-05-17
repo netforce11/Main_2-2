@@ -75,13 +75,31 @@ class OrderPanelMixin:
         gb_v = QVBoxLayout(gb)
         gb_v.setSpacing(3); gb_v.setContentsMargins(4,6,4,4)
 
+        try:
+            import core as _c
+            _t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
+        except Exception:
+            _t = {"group_bg": "#e5e7eb", "group_border": "#a1a1aa",
+                  "group_title": "#1e40af", "widget_fg": "#111827",
+                  "input_bg": "#ffffff", "input_border": "#cbd5e1",
+                  "btn_bg": "#f3f4f6", "btn_hover": "#e2e8f0",
+                  "tbl_bg": "#ffffff", "tbl_grid": "#e5e7eb",
+                  "hdr_bg": "#e5e7eb", "hdr_fg": "#111827",
+                  "hdr_border": "#cbd5e1", "pane_bg": "#ffffff",
+                  "pane_border": "#cbd5e1", "tab_bg": "#e5e7eb",
+                  "tab_fg": "#4b5563", "tab_border": "#cbd5e1",
+                  "tab_sel_bg": "#ffffff", "tab_sel_fg": "#1d4ed8",
+                  "btn_hover_bdr": "#94a3b8"}
         _tab_s = (
-            "QTabWidget::pane{border:1px solid #2a2a4a;background:#07070f;}"
-            "QTabBar::tab{background:#0a0a1e;color:#aaa;padding:4px 8px;"
-            "border:1px solid #2a2a4a;border-bottom:none;font-size:13px;}"
-            "QTabBar::tab:selected{background:#12122a;color:#ffd700;"
-            "border-bottom:1px solid #12122a;}"
-            "QTabBar::tab:hover{background:#1a1a3a;color:#fff;}")
+            f"QTabWidget::pane{{border:1px solid {_t['pane_border']};"
+            f"background:{_t['pane_bg']};border-radius:0 6px 6px 6px;}}"
+            f"QTabBar::tab{{background:{_t['tab_bg']};color:{_t['tab_fg']};"
+            "padding:4px 8px;"
+            f"border:1px solid {_t['tab_border']};border-bottom:none;font-size:13px;"
+            "border-top-left-radius:6px;border-top-right-radius:6px;}}"
+            f"QTabBar::tab:selected{{background:{_t['tab_sel_bg']};color:{_t['tab_sel_fg']};"
+            f"border-bottom:1px solid {_t['tab_sel_bg']};}}"
+            f"QTabBar::tab:hover{{background:{_t['btn_hover']};color:{_t['btn_hover_bdr']};}}")
         tab_w = QTabWidget(); tab_w.setStyleSheet(_tab_s)
         self._qord_tab_widget = tab_w
 
@@ -95,13 +113,13 @@ class OrderPanelMixin:
         self.qord_side = QLineEdit(); self.qord_side.setReadOnly(True)
         self.qord_side.setFixedWidth(28)
         self.qord_side.setStyleSheet(
-            "color:#ffd700;font-weight:bold;font-size:15px;"
-            "background:#0a0a1e;border:1px solid #333;")
+            f"color:{_t['group_title']};font-weight:bold;font-size:15px;"
+            f"background:{_t['input_bg']};border:1px solid {_t['input_border']};border-radius:4px;")
         self.qord_strike = QLineEdit(); self.qord_strike.setReadOnly(True)
         self.qord_strike.setFixedWidth(62)
         self.qord_strike.setStyleSheet(
-            "color:#ffd700;font-weight:bold;font-size:15px;"
-            "background:#0a0a1e;border:1px solid #333;")
+            f"color:{_t['group_title']};font-weight:bold;font-size:15px;"
+            f"background:{_t['input_bg']};border:1px solid {_t['input_border']};border-radius:4px;")
         tgt_row.addWidget(self.qord_side); tgt_row.addWidget(self.qord_strike)
 
         # ── 주문 확인창 체크박스 (행사가 우측) ───────────────────
@@ -124,8 +142,8 @@ class OrderPanelMixin:
         # ── [S11] 계좌번호 / 모드 표시 라벨 ─────────────────────
         self.lbl_acct_mode = QLabel("계좌: ―")
         self.lbl_acct_mode.setStyleSheet(
-            "color:#666;font-size:11px;font-weight:bold;border:none;"
-            "background:#0a0a1e;border-radius:3px;padding:1px 5px;")
+            f"color:{_t['group_title']};font-size:11px;font-weight:bold;border:none;"
+            f"background:{_t['group_bg']};border-radius:4px;padding:1px 5px;")
         self.lbl_acct_mode.setToolTip("연결된 계좌번호 / 모드 (DU=모의투자)")
         tgt_row.addStretch()
         tgt_row.addWidget(self.lbl_acct_mode)
@@ -206,19 +224,21 @@ class OrderPanelMixin:
 
         self.qord_price = QLineEdit(); self.qord_price.setPlaceholderText("가격 입력")
         self.qord_price.setStyleSheet(
-            "color:#ffd700;font-weight:bold;font-size:15px;"
-            "background:#0a0a1e;border:1px solid #444;")
+            f"color:{_t['group_title']};font-weight:bold;font-size:15px;"
+            f"background:{_t['input_bg']};border:1px solid {_t['input_border']};border-radius:4px;")
 
         qty_w = QWidget(); qty_h = QHBoxLayout(qty_w)
         qty_h.setContentsMargins(0,0,0,0); qty_h.setSpacing(3)
         self.qord_qty = QSpinBox(); self.qord_qty.setRange(1,9999); self.qord_qty.setValue(1)
         self.qord_qty.setFixedHeight(26)
         self.qord_qty.setStyleSheet(
-            "background:#0a0a1e;color:#fff;border:1px solid #444;font-size:14px;")
-        _QS = ("QPushButton{background:#2d2d5e;color:#ffd700;"
-               "border:1px solid #4a4a8a;border-radius:3px;font-size:13px;font-weight:bold;}"
-               "QPushButton:hover{background:#3d4d6e;}"
-               "QPushButton:pressed{background:#1d1d4e;}")
+            f"background:{_t['input_bg']};color:{_t['widget_fg']};"
+            f"border:1px solid {_t['input_border']};border-radius:4px;font-size:14px;")
+        _QS = (f"QPushButton{{background:{_t['group_bg']};color:{_t['group_title']};"
+               f"border:1px solid {_t['input_border']};border-radius:4px;"
+               "font-size:13px;font-weight:bold;}}"
+               f"QPushButton:hover{{background:{_t['btn_hover']};color:{_t['btn_hover_bdr']};}}"
+               f"QPushButton:pressed{{background:{_t['btn_hover']};}}")
         for lbl2,v2 in [("1",1),("5",5),("10",10)]:
             bq=QPushButton(lbl2); bq.setFixedWidth(28); bq.setFixedHeight(26)
             bq.setStyleSheet(_QS)
@@ -245,9 +265,11 @@ class OrderPanelMixin:
         self.qord_tif = QComboBox(); self.qord_tif.addItems(["DAY","GTC","IOC","GTD"])
         self.qord_tif.setFixedHeight(24)
         self.qord_tif.setStyleSheet(
-            "QComboBox{background:#0a0a1e;color:#ffd700;border:1px solid #444;"
-            "font-size:13px;padding:1px;}"
-            "QComboBox QAbstractItemView{background:#0a0a1e;color:#ffd700;font-size:13px;}"
+            f"QComboBox{{background:{_t['input_bg']};color:{_t['group_title']};"
+            f"border:1px solid {_t['input_border']};"
+            "border-radius:6px;font-size:13px;padding:1px;}}"
+            f"QComboBox QAbstractItemView{{background:{_t['combo_popup_bg']};"
+            f"color:{_t['combo_popup_fg']};font-size:13px;}}"
             "QComboBox::drop-down{border:none;}")
         tif_row.addWidget(self.qord_tif); tif_row.addStretch()
         root_v.addLayout(tif_row)
@@ -330,15 +352,16 @@ class OrderPanelMixin:
 
         # ── 정정/취소 공통 ────────────────────────────────────
         _tbl_s = (
-            "QTableWidget{background:#05050f;color:#ccc;"
-            "gridline-color:#1a1a3a;font-size:13px;}"
-            "QHeaderView::section{background:#0a0a1e;color:#90caf9;"
-            "border:1px solid #1a1a3a;font-size:12px;}"
-            "QTableWidget::item:selected{background:#1a3a6b;color:#ffd700;}")
-        _es  = "background:#0a0a1e;color:#ffd700;border:1px solid #444;font-size:15px;"
-        _ls2 = "color:#aaa;font-size:13px;border:none;"
-        _fetch_s = ("background:#1a3a1a;color:#00ff88;font-size:13px;font-weight:bold;"
-                    "padding:5px;border-radius:3px;border:1px solid #2a6a2a;")
+            f"QTableWidget{{background:{_t['tbl_bg']};color:{_t['widget_fg']};"
+            f"gridline-color:{_t['tbl_grid']};font-size:13px;}}"
+            f"QHeaderView::section{{background:{_t['hdr_bg']};color:{_t['hdr_fg']};"
+            f"border:1px solid {_t['hdr_border']};font-size:12px;}}"
+            f"QTableWidget::item:selected{{background:{_t['tbl_sel_bg']};color:{_t['tbl_sel_fg']};}}")
+        _es  = (f"background:{_t['input_bg']};color:{_t['group_title']};"
+                f"border:1px solid {_t['input_border']};border-radius:4px;font-size:15px;")
+        _ls2 = f"color:{_t['widget_fg']};font-size:13px;border:none;"
+        _fetch_s = (f"background:{_t['group_bg']};color:#00ff88;font-size:13px;font-weight:bold;"
+                    "padding:5px;border-radius:6px;border:1px solid #2a6a2a;")
 
         def _make_order_tbl(sel_color="#1a3a6b"):
             tbl=QTableWidget(0,4)

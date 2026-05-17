@@ -144,13 +144,15 @@ class NetPriceDisplay(QWidget):
         root.addWidget(self._manual_row)
 
         # 전체 위젯 스타일
-        self.setStyleSheet("""
-            NetPriceDisplay {
-                background: #141d2b;
-                border: 1px solid #2a3a50;
-                border-radius: 6px;
-            }
-        """)
+        try:
+            import core as _c
+            _t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
+            _bg = _t['group_bg']; _bd = _t['group_border']
+        except Exception:
+            _bg = "#141d2b"; _bd = "#2a3a50"
+        self.setStyleSheet(
+            f"NetPriceDisplay{{background:{_bg};"
+            f"border:1px solid {_bd};border-radius:6px;}}")
         self.setMinimumHeight(80)
 
     def _build_mode_toggle_row(self) -> QHBoxLayout:
@@ -182,11 +184,20 @@ class NetPriceDisplay(QWidget):
 
     @staticmethod
     def _toggle_style(active: bool) -> str:
-        if active:
-            return ("background:#1a3a5a; color:#4ca8ff; "
-                    "border:1px solid #4ca8ff; border-radius:3px; padding:1px 6px;")
-        return ("background:#1a1a2a; color:#556; "
-                "border:1px solid #334; border-radius:3px; padding:1px 6px;")
+        try:
+            import core as _c
+            t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
+            if active:
+                return (f"background:{t['group_bg']}; color:{t['group_title']}; "
+                        f"border:1px solid {t['btn_hover_bdr']}; border-radius:6px; padding:1px 6px;")
+            return (f"background:{t['group_bg']}; color:{t['input_border']}; "
+                    f"border:1px solid {t['input_border']}; border-radius:6px; padding:1px 6px;")
+        except Exception:
+            if active:
+                return ("background:#1a3a5a; color:#4ca8ff; "
+                        "border:1px solid #4ca8ff; border-radius:6px; padding:1px 6px;")
+            return ("background:#1a1a2a; color:#556; "
+                    "border:1px solid #334; border-radius:6px; padding:1px 6px;")
 
     # ──────────────────────────────────────────────
     # 모드 전환

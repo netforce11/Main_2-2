@@ -181,6 +181,12 @@ def update_display(self, force_regular=False):
     except Exception as _e:
         pass
 
+    # ── 일봉 오버레이 (우측 상단 인셋) ───────────────────────
+    try:
+        from chart_daily_overlay import update_daily_overlay
+        update_daily_overlay(self)
+    except Exception as _e:
+        pass
 
     # [분리] 테이블 렌더링
     from chart_data_render import _render_left_table

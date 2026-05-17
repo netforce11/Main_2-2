@@ -1,12 +1,17 @@
 """
-core_conn_expiry.py — 만기 목록 조회·Zone·행사가 계산  v6.5
+core_conn_expiry.py — 만기 목록 조회·Zone·행사가 계산  v6.6
 CL/VIX: IBKR reqContractDetails로 실제 만기 조회
+v6.6 변경:
+  · _is_monthly_expiry() 유틸 추가
+  · SPXW 요청 시 Monthly 만기일(매월 세 번째 금요일)은
+    자동으로 SPX 로 분기하여 체인 조회 가능하게 수정
+  · combo_spxw / _apply_ibkr_expiry 라벨에 [Monthly] 표기 추가
 """
 
 from datetime import datetime, timedelta, timezone, date
 from PyQt5.QtCore import QDate, QTimer
 from call_put_tab.core_conn_spxw import _today_et
-# core_conn_expiry.py 상단에 추가
+from call_put_tab.core_expiry_utils import _is_monthly_expiry  # 순환 의존 없는 유틸
 from core import build_expiry_list
 
 class ConnExpiryMixin:
@@ -22,16 +27,30 @@ class ConnExpiryMixin:
     _LOCAL_EXPIRY_SYMS = {"SPX", "SPXW", "NDX", "RUT", "XSP", "DJX"}
 
     def _refresh_expiry_list(self):
-        sym = self.edit_sym.text().strip().upper().replace("SPXW", "SPX")
+        """
+        종목별 만기 목록 조회.
+
+        SPXW 요청이라도 날짜가 Monthly 만기(세 번째 금요일)이면
+        내부적으로 SPX로 처리해야 하므로, build_expiry_list 결과의
+        각 날짜를 검사해 Monthly 항목에 [Monthly/SPX] 태그를 부여한다.
+        실제 체인 조회(edit_sym 설정)는 core_conn_spxw._on_spxw_select()
+        에서 _is_monthly_expiry()로 분기한다.
+        """
+        raw_sym = self.edit_sym.text().strip().upper()
+        sym     = raw_sym.replace("SPXW", "SPX")
 
         # ── CL / VIX: IBKR reqContractDetails로 실제 만기 조회 ──
         if sym in self._IBKR_EXPIRY_SYMS:
             self._fetch_expiry_from_ibkr(sym)
             return   # 콜백(_apply_ibkr_expiry)에서 combo_exp 갱신
 
-        # ── SPX 등 지수: 기존 로컬 달력 계산 ────────────────────
+        # ── SPX/SPXW 등 지수: 기존 로컬 달력 계산 ──────────────
         if sym in self._LOCAL_EXPIRY_SYMS:
             self._expiry_list = build_expiry_list(sym)
+            # SPXW 요청이거나 Monthly pending 플래그가 설정된 경우 태깅
+            # (Monthly 만기일에 edit_sym="SPX"로 바뀐 뒤 호출되는 경우 포함)
+            if raw_sym == "SPXW" or getattr(self, '_spxw_monthly_pending', False):
+                self._expiry_list = self._tag_monthly_expiries(self._expiry_list)
             self._apply_expiry_combo()
             return
 
@@ -43,6 +62,24 @@ class ConnExpiryMixin:
             # TWS 미연결 시 로컬 달력 fallback
             self._expiry_list = build_expiry_list(sym)
             self._apply_expiry_combo()
+
+    def _tag_monthly_expiries(self, expiry_list: list) -> list:
+        """
+        _expiry_list 항목 중 Monthly 만기(세 번째 금요일)에
+        라벨 뒤에 "[Monthly]" 표기와 태그 "MONTHLY"를 부여해 반환.
+
+        반환 형식: [(label, code, tag), ...]
+          tag == "MONTHLY"  → _on_spxw_select()에서 edit_sym="SPX" 로 분기
+          tag == ""         → 일반 SPXW
+        """
+        result = []
+        for label, code, tag in expiry_list:
+            if code not in ("CUSTOM",) and len(code) == 8 and code.isdigit():
+                if _is_monthly_expiry(code):
+                    label = label + "  [Monthly]"
+                    tag   = "MONTHLY"
+            result.append((label, code, tag))
+        return result
 
     def _fetch_expiry_secdef(self, sym: str):
         """
@@ -202,6 +239,7 @@ class ConnExpiryMixin:
         """
         IBKR 콜백에서 수집한 만기 문자열(YYYYMMDD)을
         _expiry_list 형식으로 변환하고 combo_exp에 반영한다.
+        SPXW 요청 컨텍스트에서는 Monthly 만기 항목에 [Monthly] 태그 부여.
         """
         today_str = _today_et().strftime("%Y%m%d")
 
@@ -216,6 +254,13 @@ class ConnExpiryMixin:
 
         from datetime import datetime as _dt
         today_obj = _today_et()
+
+        # SPXW 요청 컨텍스트 여부 확인 (edit_sym 현재값 기준)
+        is_spxw_ctx = (
+            getattr(self, 'edit_sym', None) is not None
+            and self.edit_sym.text().strip().upper() == "SPXW"
+        )
+
         built = []
         for e in exps:
             try:
@@ -226,7 +271,13 @@ class ConnExpiryMixin:
                 elif diff <= 7:  pfx = f"D+{diff} "
                 else:            pfx = ""
                 label = pfx + d.strftime("%m/%d(%a)")
-                built.append((label, e, ""))
+                # SPXW 컨텍스트에서 Monthly 만기 표기
+                if is_spxw_ctx and _is_monthly_expiry(e):
+                    label += "  [Monthly]"
+                    tag = "MONTHLY"
+                else:
+                    tag = ""
+                built.append((label, e, tag))
             except Exception:
                 built.append((e, e, ""))
 
@@ -380,6 +431,10 @@ class ConnExpiryMixin:
         현재 선택된 만기일 (code, tag) 반환.
         silent=True 또는 UI 초기화 중일 때는 QMessageBox 없이
         None 반환만 하고 로그에만 기록한다 (시작 시 랙 방지).
+
+        tag 값:
+          ""         : 일반 만기 (SPXW 티커로 조회)
+          "MONTHLY"  : Monthly 만기(세 번째 금요일) → SPX 티커로 조회해야 함
         """
         if not getattr(self, '_expiry_list', None):
             return None, ""
@@ -395,7 +450,9 @@ class ConnExpiryMixin:
                    else self.edit_custom.text().strip())
             if len(raw) == 8 and raw.isdigit():
                 self._current_expiry = raw   # ← chain_saver 연동용
-                return raw, ""
+                # CUSTOM 날짜도 Monthly 여부 체크
+                custom_tag = "MONTHLY" if _is_monthly_expiry(raw) else ""
+                return raw, custom_tag
             if not silent:
                 self._log("⚠ 만기일 형식 오류 (YYYYMMDD). 날짜를 다시 선택하세요.")
             return None, ""
@@ -416,8 +473,37 @@ class ConnExpiryMixin:
             skip = max(1, round(dynamic_skip_pt / step))
             return ([atm + (skip+i)*step for i in range(n)],
                     [atm - (skip+i)*step for i in range(n)])
-        # ═══════════════════════════════════════════════════════════
-        # [S11] 모의/실제 모드 포트 전환 지원
-        # ═══════════════════════════════════════════════════════════
 
-        # 포트 매핑 상수
+    # ═══════════════════════════════════════════════════════════════
+    # core_conn_spxw.py 의 _on_spxw_select() 수정 가이드
+    # ═══════════════════════════════════════════════════════════════
+    #
+    # combo_spxw 에서 날짜를 선택할 때 Monthly 만기이면 edit_sym="SPX",
+    # 그 외에는 "SPXW" 로 설정해야 체인 조회가 정상 동작한다.
+    #
+    # core_conn_spxw.py 의 _on_spxw_select() 안에 아래 로직을 적용:
+    #
+    #   from call_put_tab.core_conn_expiry import _is_monthly_expiry
+    #
+    #   def _on_spxw_select(self, idx: int) -> None:
+    #       date_str = self.combo_spxw.itemData(idx)   # "YYYYMMDD"
+    #       if not date_str:
+    #           return
+    #       # Monthly 만기(세 번째 금요일)는 SPX, 나머지는 SPXW
+    #       sym = "SPX" if _is_monthly_expiry(date_str) else "SPXW"
+    #       self.edit_sym.setText(sym)
+    #       # combo_exp → CUSTOM + date_edit 설정 (기존 로직 그대로 유지)
+    #       ...
+    #
+    # ───────────────────────────────────────────────────────────────
+    # _fetch() 내부에서 _get_expiry() 의 tag 를 활용하는 방법 (대안):
+    #
+    #   expiry, tag = self._get_expiry()
+    #   if tag == "MONTHLY":
+    #       sym = "SPX"
+    #   elif self.edit_sym.text().strip().upper() == "SPXW":
+    #       sym = "SPXW"
+    #   else:
+    #       sym = self.edit_sym.text().strip().upper()
+    #
+    # ═══════════════════════════════════════════════════════════════

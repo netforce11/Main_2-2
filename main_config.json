@@ -1,0 +1,10 @@
+{
+  "theme": {
+    "preset": "dark",
+    "overrides": {
+      "tbl_bg": "#ffffff",
+      "input_bg": "#ffaaff",
+      "group_bg": "#525b7f"
+    }
+  }
+}

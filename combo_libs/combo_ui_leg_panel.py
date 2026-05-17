@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QFrame,
 )
 from PyQt5.QtCore import QTimer
-from combo_constants import STRATEGIES, MAX_LEGS, STRATEGY_SETUP_GUIDE
+from combo_constants import STRATEGIES, MAX_LEGS, STRATEGY_SETUP_GUIDE, _pal
 from combo_ui_net_price_display import NetPriceDisplay
 
 _TICKER_BASE = 8800
@@ -41,11 +41,14 @@ def _build_leg_left(self) -> QWidget:
     row.addWidget(QLabel("전략 유형:"))
     self.combo_strat = QComboBox()
     self.combo_strat.addItems(STRATEGIES)
+    _t = _pal()
     self.combo_strat.setStyleSheet(
-        "QComboBox{background:#12122a;color:#ffd700;border:1px solid #3a3a6a;"
-        "border-radius:3px;font-size:14px;padding:3px;}"
-        "QComboBox QAbstractItemView{background:#12122a;color:#ffd700;"
-        "selection-background-color:#1c3a6a;font-size:14px;}"
+        f"QComboBox{{background:{_t['input_bg']};color:{_t['group_title']};"
+        f"border:1px solid {_t['input_border']};"
+        "border-radius:6px;font-size:14px;padding:3px;}}"
+        f"QComboBox QAbstractItemView{{background:{_t['combo_popup_bg']};"
+        f"color:{_t['combo_popup_fg']};"
+        f"selection-background-color:{_t['combo_sel_bg']};font-size:14px;}}"
         "QComboBox::drop-down{border:none;}")
     self.combo_strat.currentIndexChanged.connect(self._on_strat_change)
     row.addWidget(self.combo_strat, 1)
@@ -55,9 +58,10 @@ def _build_leg_left(self) -> QWidget:
     btn_info.setFixedSize(26, 26)
     btn_info.setToolTip("전략 설명 보기")
     btn_info.setStyleSheet(
-        "QPushButton{background:#1a2a4a;color:#90caf9;border:1px solid #3a3a6a;"
-        "border-radius:4px;font-size:14px;font-weight:bold;}"
-        "QPushButton:hover{background:#2a3a6a;color:#ffd700;}")
+        f"QPushButton{{background:{_t['group_bg']};color:{_t['group_title']};"
+        f"border:1px solid {_t['input_border']};"
+        "border-radius:6px;font-size:14px;font-weight:bold;}}"
+        f"QPushButton:hover{{background:{_t['btn_hover']};color:{_t['btn_hover_bdr']};}}")
     btn_info.clicked.connect(self._show_strat_desc)
     row.addWidget(btn_info)
 
@@ -66,10 +70,12 @@ def _build_leg_left(self) -> QWidget:
     btn_guide.setFixedSize(26, 26)
     btn_guide.setToolTip("전략 구성 가이드 보기")
     btn_guide.setStyleSheet(
-        "QPushButton{background:#1a3a1a;color:#44cc88;border:1px solid #2a6a2a;"
-        "border-radius:4px;font-size:14px;}"
+        f"QPushButton{{background:{_t['group_bg']};color:#44cc88;"
+        f"border:1px solid {_t['input_border']};"
+        "border-radius:6px;font-size:14px;}}"
         "QPushButton:hover{background:#2a5a2a;color:#88ff44;}"
-        "QPushButton:disabled{background:#0a0a1a;color:#333;border-color:#222;}")
+        f"QPushButton:disabled{{background:{_t['group_bg']};color:{_t['input_border']};"
+        f"border-color:{_t['input_border']};}}")
     btn_guide.clicked.connect(lambda: _show_guide_popup(self))
     self._btn_guide = btn_guide
     row.addWidget(btn_guide)
@@ -79,14 +85,16 @@ def _build_leg_left(self) -> QWidget:
     mode_row = QHBoxLayout(); mode_row.setSpacing(4)
     mode_row.addWidget(QLabel("레그 설정"))
     mode_row.addStretch()
-    _on  = ("QPushButton{background:#1a5c2e;color:#00ff88;font-size:10px;"
-            "font-weight:bold;padding:2px 8px;border-radius:3px;border:1px solid #00ff88;}"
-            "QPushButton:!checked{background:#0a0a1e;color:#555;border:1px solid #333;}"
-            "QPushButton:hover{background:#2a8a4a;}")
-    _off = ("QPushButton{background:#0a0a1e;color:#555;font-size:10px;"
-            "font-weight:bold;padding:2px 8px;border-radius:3px;border:1px solid #333;}"
-            "QPushButton:checked{background:#2a1a5a;color:#ffd700;border:1px solid #ffd700;}"
-            "QPushButton:hover{background:#1a1a3a;}")
+    _t2 = _pal()
+    _on  = (f"QPushButton{{background:{_t2['group_bg']};color:#00ff88;font-size:10px;"
+            f"font-weight:bold;padding:2px 8px;border-radius:6px;border:1px solid #00ff88;}}"
+            f"QPushButton:!checked{{background:{_t2['group_bg']};color:{_t2['input_border']};"
+            f"border:1px solid {_t2['input_border']};}}"
+            f"QPushButton:hover{{background:{_t2['btn_hover']};}}")
+    _off = (f"QPushButton{{background:{_t2['group_bg']};color:{_t2['input_border']};font-size:10px;"
+            f"font-weight:bold;padding:2px 8px;border-radius:6px;border:1px solid {_t2['input_border']};}}"
+            f"QPushButton:checked{{background:{_t2['group_bg']};color:#ffd700;border:1px solid #ffd700;}}"
+            f"QPushButton:hover{{background:{_t2['btn_hover']};}}")
     self._btn_leg_auto   = QPushButton("🔗 자동 입력")
     self._btn_leg_manual = QPushButton("✏ 수동 입력")
     for btn, style, checked in [
@@ -109,11 +117,13 @@ def _build_leg_left(self) -> QWidget:
     self.tbl_legs.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
     self.tbl_legs.verticalHeader().setVisible(False)
     self.tbl_legs.setAlternatingRowColors(True)
+    _t3 = _pal()
     self.tbl_legs.setStyleSheet(
-        "QTableWidget{background:#07070f;alternate-background-color:#0c0c20;"
-        "color:#ccc;gridline-color:#1a1a3a;}"
-        "QHeaderView::section{background:#0a0a1e;color:#90caf9;"
-        "border:1px solid #1a1a3a;font-weight:bold;}")
+        f"QTableWidget{{background:{_t3['tbl_bg']};"
+        f"alternate-background-color:{_t3['group_bg']};"
+        f"color:{_t3['widget_fg']};gridline-color:{_t3['tbl_grid']};}}"
+        f"QHeaderView::section{{background:{_t3['hdr_bg']};color:{_t3['hdr_fg']};"
+        f"border:1px solid {_t3['hdr_border']};font-weight:bold;}}")
     v.addWidget(self.tbl_legs, 1)
 
     # ── 수동 모드 버튼 행 ─────────────────────────────────────
@@ -121,18 +131,18 @@ def _build_leg_left(self) -> QWidget:
     mbh = QHBoxLayout(self._manual_btn_row)
     mbh.setContentsMargins(0, 1, 0, 1); mbh.setSpacing(4)
     from combo_ui_leg_extra import _manual_add_leg, _manual_del_leg
-    for text, style, fn in [
-        ("➕ 레그 추가",
-         "background:#1a2a4a;color:#90caf9;font-size:10px;font-weight:bold;"
-         "padding:2px 8px;border-radius:3px;border:1px solid #3a5a9a;",
+    _t4 = _pal()
+    for text, fg, border, fn in [
+        ("➕ 레그 추가",  "#90caf9", _t4['input_border'],
          lambda: _manual_add_leg(self)),
-        ("➖ 레그 제거",
-         "background:#2a0a1a;color:#ff6666;font-size:10px;font-weight:bold;"
-         "padding:2px 8px;border-radius:3px;border:1px solid #5a1a1a;",
+        ("➖ 레그 제거",  "#ff6666", "#5a1a1a",
          lambda: _manual_del_leg(self)),
     ]:
         btn = QPushButton(text); btn.setFixedHeight(22)
-        btn.setStyleSheet(style); btn.clicked.connect(fn)
+        btn.setStyleSheet(
+            f"background:{_t4['group_bg']};color:{fg};font-size:10px;font-weight:bold;"
+            f"padding:2px 8px;border-radius:6px;border:1px solid {border};")
+        btn.clicked.connect(fn)
         mbh.addWidget(btn)
     mbh.addWidget(QLabel("방향·C/P·행사가·프리미엄·수량·만기 직접 입력"))
     mbh.addStretch()
@@ -142,24 +152,27 @@ def _build_leg_left(self) -> QWidget:
     # ── ➕ 추가 레그 버튼 행 (자동/수동 공용) ─────────────────
     extra_row = QHBoxLayout(); extra_row.setSpacing(6)
     from combo_ui_leg_extra import _extra_add_leg, _extra_del_leg
+    _t5 = _pal()
     self._btn_extra_add = QPushButton(f"➕ 레그 추가  (최대 {MAX_LEGS}개)")
     self._btn_extra_add.setFixedHeight(24)
     self._btn_extra_add.setStyleSheet(
-        "QPushButton{background:#0d2a1a;color:#44cc88;font-size:11px;"
-        "font-weight:bold;padding:2px 10px;border-radius:3px;"
-        "border:1px solid #1a6a3a;}"
-        "QPushButton:hover{background:#1a4a2a;}"
-        "QPushButton:disabled{background:#0a0a1a;color:#333;border-color:#222;}")
+        f"QPushButton{{background:{_t5['group_bg']};color:#44cc88;font-size:11px;"
+        "font-weight:bold;padding:2px 10px;border-radius:6px;"
+        "border:1px solid #1a6a3a;}}"
+        f"QPushButton:hover{{background:{_t5['btn_hover']};}}"
+        f"QPushButton:disabled{{color:{_t5['input_border']};"
+        f"border-color:{_t5['input_border']};}}")
     self._btn_extra_add.clicked.connect(lambda: _extra_add_leg(self))
 
     self._btn_extra_del = QPushButton("➖ 마지막 레그 제거")
     self._btn_extra_del.setFixedHeight(24)
     self._btn_extra_del.setStyleSheet(
-        "QPushButton{background:#2a0d0d;color:#cc4444;font-size:11px;"
-        "font-weight:bold;padding:2px 10px;border-radius:3px;"
-        "border:1px solid #6a1a1a;}"
-        "QPushButton:hover{background:#4a1a1a;}"
-        "QPushButton:disabled{background:#0a0a1a;color:#333;border-color:#222;}")
+        f"QPushButton{{background:{_t5['group_bg']};color:#cc4444;font-size:11px;"
+        "font-weight:bold;padding:2px 10px;border-radius:6px;"
+        "border:1px solid #6a1a1a;}}"
+        f"QPushButton:hover{{background:{_t5['btn_hover']};}}"
+        f"QPushButton:disabled{{color:{_t5['input_border']};"
+        f"border-color:{_t5['input_border']};}}")
     self._btn_extra_del.clicked.connect(lambda: _extra_del_leg(self))
 
     extra_row.addWidget(self._btn_extra_add)

@@ -79,12 +79,26 @@ _LEVELS          = _build_levels(_thr["t1"], _thr["t2"], _thr["t3"])
 _ALERT_THRESHOLD = _thr["t1"]   # L1 이상부터 알림 시작
 _ALERT_INTERVAL  = 5_000         # 5초
 
-_BTN_BASE = (
-    "QPushButton{background:#111827;color:#778899;border:1px solid #334455;"
-    "border-radius:3px;padding:2px 7px;font-size:10px;}"
-    "QPushButton:hover{background:#1e2d3d;color:#aabbcc;}"
-    "QPushButton:pressed{background:#0d1a26;}"
-)
+def _btn_base_ss():
+    try:
+        import core as _c
+        t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
+        return (
+            f"QPushButton{{background:{t['btn_bg']};color:{t['group_title']};"
+            f"border:1px solid {t['btn_border']};"
+            "border-radius:4px;padding:2px 7px;font-size:10px;}}"
+            f"QPushButton:hover{{background:{t['btn_hover']};color:{t['btn_hover_bdr']};}}"
+            f"QPushButton:pressed{{background:{t['btn_press']};}}"
+        )
+    except Exception:
+        return (
+            "QPushButton{background:#111827;color:#778899;border:1px solid #334455;"
+            "border-radius:3px;padding:2px 7px;font-size:10px;}"
+            "QPushButton:hover{background:#1e2d3d;color:#aabbcc;}"
+            "QPushButton:pressed{background:#0d1a26;}"
+        )
+
+_BTN_BASE = _btn_base_ss()
 
 _DEFAULT_SOUND_DIRS = [
     "/usr/share/sounds/freedesktop/stereo",
@@ -201,13 +215,13 @@ class ProfitAlertBanner(QWidget):
         # 사운드 선택
         self._btn_sound = QPushButton("🔔")
         self._btn_sound.setFixedSize(30, 22)
-        self._btn_sound.setStyleSheet(_BTN_BASE)
+        self._btn_sound.setStyleSheet(_btn_base_ss())
         self._btn_sound.setToolTip("알람 사운드 파일 선택")
         self._btn_sound.clicked.connect(self._select_sound)
 
         self._btn_test_toggle = QPushButton("▶ TEST")
         self._btn_test_toggle.setFixedSize(62, 22)
-        self._btn_test_toggle.setStyleSheet(_BTN_BASE)
+        self._btn_test_toggle.setStyleSheet(_btn_base_ss())
         self._btn_test_toggle.clicked.connect(self._toggle_test)
 
         hl.addWidget(self._lbl_icon)
@@ -219,8 +233,14 @@ class ProfitAlertBanner(QWidget):
         # ── 테스트 패널 (접이식) ─────────────────────────────────
         self._test_panel = QWidget()
         self._test_panel.setMaximumHeight(0)
+        try:
+            import core as _c
+            _t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
+            _tp_bg = _t['group_bg']; _tp_bd = _t['group_border']
+        except Exception:
+            _tp_bg = "#080e18"; _tp_bd = "#1a2a3a"
         self._test_panel.setStyleSheet(
-            "QWidget{background:#080e18;border:1px solid #1a2a3a;border-radius:4px;}")
+            f"QWidget{{background:{_tp_bg};border:1px solid {_tp_bd};border-radius:6px;}}")
         tl = QHBoxLayout(self._test_panel)
         tl.setContentsMargins(8, 4, 8, 4)
         tl.setSpacing(5)
@@ -254,7 +274,7 @@ class ProfitAlertBanner(QWidget):
         ]:
             btn = QPushButton(label)
             btn.setFixedSize(52, 22)
-            btn.setStyleSheet(_BTN_BASE)
+            btn.setStyleSheet(_btn_base_ss())
             btn.setToolTip(tip)
             btn.clicked.connect(fn)
             tl.addWidget(btn)
@@ -262,7 +282,7 @@ class ProfitAlertBanner(QWidget):
         tl.addStretch()
         btn_reset = QPushButton("↺ 리셋")
         btn_reset.setFixedSize(52, 22)
-        btn_reset.setStyleSheet(_BTN_BASE)
+        btn_reset.setStyleSheet(_btn_base_ss())
         btn_reset.clicked.connect(self.clear)
         tl.addWidget(btn_reset)
 
