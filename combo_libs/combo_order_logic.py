@@ -198,13 +198,17 @@ def _on_cancel_bag_order(self):
 # 청산 주문
 # ══════════════════════════════════════════════════════════════
 
-def _on_close_position_order(self, pos: dict, lmt_price: float = None):
+def _on_close_position_order(self, pos: dict, lmt_price: float = None,
+                              _auto: bool = False):
     """
     잔고 탭 청산 버튼 핸들러.
 
     [FIX-J] lmt_price 파라미터 추가.
       lmt_price=None  → MKT 청산
       lmt_price=float → LMT 지정가 청산
+    [FIX-AUTO] _auto=True → PositionCloseWatcher 자동 발사 경로
+      · _close_ib_position 확인 팝업 스킵
+      · legs 없을 때 synthetic_panel._positions 에서 재조회
     [FIX-A] remove_position 은 Submitted 콜백 수신 후 제거
     [FIX-B] _close_oid_set 에 청산 oid 사전 등록
     [FIX-C] 수량 불일치 경고
@@ -223,9 +227,26 @@ def _on_close_position_order(self, pos: dict, lmt_price: float = None):
     # → IB 단건 경로: _close_ib_position 의 placeOrder 성공 후 해제
 
     legs = pos.get("legs", [])
+
+    # [FIX-AUTO] legs 없을 때 synthetic_panel._positions 에서 재조회
+    if not legs and _auto:
+        oid = pos.get("oid")
+        try:
+            panel     = getattr(self, "synthetic_panel", None)
+            positions = getattr(panel, "_positions", []) if panel else []
+            for p in positions:
+                if p.get("oid") == oid and p.get("legs"):
+                    legs = p["legs"]
+                    pos  = dict(pos)
+                    pos["legs"] = legs
+                    self._log(f"  [FIX-AUTO] legs 재조회 성공: {len(legs)}개")
+                    break
+        except Exception as e:
+            self._log(f"  [FIX-AUTO] legs 재조회 실패: {e}")
+
     if not legs:
         self._log(f"  → legs 없음 — IB 단건 청산 경로")
-        _close_ib_position(self, pos, lmt_price=lmt_price)
+        _close_ib_position(self, pos, lmt_price=lmt_price, _auto=_auto)
         return
 
     # legs 키 유효성 검사
@@ -277,10 +298,12 @@ def _on_close_position_order(self, pos: dict, lmt_price: float = None):
         _place_combo_legs(self, close_legs, strat_name)
 
 
-def _close_ib_position(self, pos: dict, lmt_price: float = None):
+def _close_ib_position(self, pos: dict, lmt_price: float = None,
+                        _auto: bool = False):
     """
     IB reqPositions 로 불러온 포지션 단건 청산.
-    [FIX-J] lmt_price 있으면 LMT, 없으면 MKT.
+    [FIX-J]    lmt_price 있으면 LMT, 없으면 MKT.
+    [FIX-AUTO] _auto=True 이면 확인 팝업 스킵 (예약 자동 청산 경로).
     """
     from PyQt5.QtWidgets import QMessageBox as _MB
     ib = getattr(getattr(self, 'mw', None), 'ib', None)
@@ -294,19 +317,21 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None):
     current      = pos.get("current", pos.get("entry", 0))
     order_type   = "LMT" if lmt_price is not None else "MKT"
 
-    dlg = _MB(self)
-    dlg.setWindowTitle("🔴 포지션 청산")
-    price_line = f"지정가:  ${lmt_price:.2f}" if lmt_price else f"현재가:  ${current:.2f}"
-    dlg.setText(
-        f"포지션 청산\n─────────────────────────\n"
-        f"종목:  {strategy}\n수량:  {qty}계약\n"
-        f"{price_line}\n청산 방향:  {close_action}  [{order_type}]\n"
-        f"─────────────────────────\n청산 주문을 전송하시겠습니까?")
-    dlg.setStandardButtons(_MB.Ok | _MB.Cancel)
-    dlg.button(_MB.Ok).setText("청산 전송")
-    dlg.button(_MB.Cancel).setText("취소")
-    if dlg.exec_() != _MB.Ok:
-        return
+    # [FIX-AUTO] 자동화 경로는 팝업 없이 즉시 전송
+    if not _auto:
+        dlg = _MB(self)
+        dlg.setWindowTitle("🔴 포지션 청산")
+        price_line = f"지정가:  ${lmt_price:.2f}" if lmt_price else f"현재가:  ${current:.2f}"
+        dlg.setText(
+            f"포지션 청산\n─────────────────────────\n"
+            f"종목:  {strategy}\n수량:  {qty}계약\n"
+            f"{price_line}\n청산 방향:  {close_action}  [{order_type}]\n"
+            f"─────────────────────────\n청산 주문을 전송하시겠습니까?")
+        dlg.setStandardButtons(_MB.Ok | _MB.Cancel)
+        dlg.button(_MB.Ok).setText("청산 전송")
+        dlg.button(_MB.Cancel).setText("취소")
+        if dlg.exec_() != _MB.Ok:
+            return
 
     from ibapi.contract import Contract
     from ibapi.order import Order as IbOrder

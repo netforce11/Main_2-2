@@ -57,10 +57,33 @@ class SleepOrderWatcher(QObject):
         SingleOptSpikeWatcher.get().reset_all()
         if hasattr(ref, '_sleep_subscribe_chain'): ref._sleep_subscribe_chain()
         self.status_changed.emit(f"🟢 감시중  {sleep_cfg.schedule_start}~{sleep_cfg.schedule_end}")
-        tg(f"🌙 감시 시작\n예약: {sleep_cfg.schedule_start}~{sleep_cfg.schedule_end}"
-           f"  D+{sleep_cfg.expiry_offset}\n"
-           f"Debit캐치: {'ON' if sleep_cfg.spike_enabled else 'OFF'}"
-           f"  단일캐치: {'ON' if sleep_cfg.single_spike_enabled else 'OFF'}")
+        _d = sleep_cfg.combo_direction
+        if _d == "both":
+            _pri = getattr(sleep_cfg, 'primary_direction', 'put')
+            _sec_tp = getattr(sleep_cfg, 'secondary_target_price', 0.65)
+            _pri_label = "풋 기준" if _pri == "put" else "콜 기준"
+            tg(f"🌙 감시 시작\n"
+               f"예약: {sleep_cfg.schedule_start}~{sleep_cfg.schedule_end}  D+{sleep_cfg.expiry_offset}\n"
+               f"────────────────────\n"
+               f"📈 콜 예산: ${sleep_cfg.combo_call_budget:,}  목표 ≤${sleep_cfg.call_target_price:.2f}\n"
+               f"📉 풋 예산: ${sleep_cfg.combo_put_budget:,}  목표 ≤${sleep_cfg.target_price_1:.2f}\n"
+               f"🔀 조건B: 선호={_pri_label}  반대쪽 허용 ≤${_sec_tp:.2f}\n"
+               f"Debit캐치: {'ON' if sleep_cfg.spike_enabled else 'OFF'}"
+               f"  단일캐치: {'ON' if sleep_cfg.single_spike_enabled else 'OFF'}")
+        elif _d == "call_only":
+            tg(f"🌙 감시 시작\n"
+               f"예약: {sleep_cfg.schedule_start}~{sleep_cfg.schedule_end}  D+{sleep_cfg.expiry_offset}\n"
+               f"────────────────────\n"
+               f"📈 콜 방향만  예산: ${sleep_cfg.combo_call_budget:,}  목표 ≤${sleep_cfg.call_target_price:.2f}\n"
+               f"Debit캐치: {'ON' if sleep_cfg.spike_enabled else 'OFF'}"
+               f"  단일캐치: {'ON' if sleep_cfg.single_spike_enabled else 'OFF'}")
+        else:  # put_only
+            tg(f"🌙 감시 시작\n"
+               f"예약: {sleep_cfg.schedule_start}~{sleep_cfg.schedule_end}  D+{sleep_cfg.expiry_offset}\n"
+               f"────────────────────\n"
+               f"📉 풋 방향만  예산: ${sleep_cfg.combo_put_budget:,}  목표 ≤${sleep_cfg.target_price_1:.2f}\n"
+               f"Debit캐치: {'ON' if sleep_cfg.spike_enabled else 'OFF'}"
+               f"  단일캐치: {'ON' if sleep_cfg.single_spike_enabled else 'OFF'}")
         self._timer.start()
 
     def stop(self, reason: str = "수동 중지") -> None:

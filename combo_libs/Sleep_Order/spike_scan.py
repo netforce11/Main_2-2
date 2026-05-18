@@ -1,14 +1,16 @@
 """
-spike_scan.py — 체인 스캔 + 주문 발사 로직  v1.4
+spike_scan.py — 체인 스캔 + 주문 발사 로직  v1.5
 ════════════════════════════════════════
-v1.4 변경 (핵심 리팩토링):
-  · both 모드 scan_and_check() 루프 완전 분리
-    - 풋 루프: put_chain 순회 → 풋 조건 독립 평가 → _fire_put()
-    - 콜 루프: _chain_call 직접 순회 → 콜 조건 독립 평가 → _fire_call()
-    - 풋 조건이 안 맞아도 콜 조건이 맞으면 콜 발사 (예시3 해결)
-    - 이미 발사된 쪽 루프는 아예 실행 안 함
-  · fire_order_both() 제거 → _fire_put() / _fire_call() 로 교체
-  · _check_call_conditions() 콜 루프 내부로 인라인
+v1.5 변경 (조건 B — AND 동시 체결):
+  · both 모드에 조건 B 적용
+    - primary_direction(선호 방향) 기준으로 엄격 조건 평가
+    - 선호 방향 통과 시 반대쪽 secondary_target_price(느슨) 즉시 체크
+    - 양쪽 모두 통과해야만 동시 발사 — 한쪽 미달 시 이번 틱 대기
+  · _fire_call_from_peek() 신규 — 보조 조건 통과 콜을 엄격 조건 재평가 없이 직접 발사
+  · _peek_call_net() ROI 조건 추가 — 실제 발사 조건과 일치
+  · _fire_put_from_chain() 매칭 실패 시 tg 알림 추가
+  · 콜 발사 실패 시 풋 후속 발사 차단
+  · _fire_call() tg 메시지 정리
 """
 from __future__ import annotations
 import time as _time
@@ -21,6 +23,17 @@ def calc_entry_price(net: float, sleep_cfg) -> float:
         return net
     tick = 0.10 if net >= 3.00 else 0.05
     return round(net + tick * max(1, int(sleep_cfg.aggressive_ticks)), 2)
+
+
+def _now_str() -> str:
+    """현재 시각 문자열 (ET 기준)."""
+    from datetime import datetime
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/New_York"))
+    except Exception:
+        now = datetime.utcnow()
+    return now.strftime("%H:%M:%S")
 
 
 def scan_and_check(watcher) -> None:
@@ -102,25 +115,22 @@ def scan_and_check(watcher) -> None:
 
                 net_r = round(net_price * 20) / 20
 
-                # ── [조건 B] 풋이 주력인 경우 ────────────────
-                if primary == "put":
-                    if net_r <= sleep_cfg.target_price_1:
-                        # 풋 주력 조건 통과 → 콜 보조 조건 즉시 체크
-                        call_net = _peek_call_net(ref, und, sleep_cfg)
-                        if call_net is not None and call_net <= sec_tp:
-                            # 둘 다 통과 → 동시 발사
-                            _fire_put(watcher, ref, legs, net_r, strat, sleep_cfg)
-                            if not watcher._call_fired:
-                                _scan_and_fire_call(watcher, ref, und, sleep_cfg)
-                        else:
-                            # 콜이 보조 조건 미달 → 이번 틱 대기
-                            _tg_wait_secondary("콜", call_net, sec_tp, watcher)
-                        break
-                # ── [조건 B] 콜이 주력인 경우: 풋은 보조 조건으로 ─
-                else:
-                    if net_r <= sec_tp and not call_done:
-                        # 콜 루프에서 발사 판단 — 여기선 등록만
-                        pass
+                # ── [조건 B] 풋이 주력인 경우만 풋 루프에서 발사 판단 ─
+                # primary == "call" 이면 풋 루프는 DebitSpikeWatcher 등록만 하고 스킵
+                if primary != "put":
+                    continue
+
+                if net_r <= sleep_cfg.target_price_1:
+                    # 풋 주력 조건 통과 → 콜 보조 조건 즉시 체크
+                    call_net = _peek_call_net(ref, und, sleep_cfg)
+                    if call_net is not None and call_net <= sec_tp:
+                        # 둘 다 통과 → 풋 먼저 발사, 콜은 이미 확인된 가격으로 직접 발사
+                        _fire_put(watcher, ref, legs, net_r, strat, sleep_cfg)
+                        if not watcher._call_fired:
+                            _fire_call_from_peek(watcher, ref, und, sleep_cfg)
+                    else:
+                        # 콜이 보조 조건 미달 → 이번 틱 대기
+                        _tg_wait_secondary("콜", call_net, sec_tp, watcher)
                     break
 
         # ── 콜 루프 ──────────────────────────────────────────
@@ -306,12 +316,24 @@ def _fire_put(watcher, ref, legs: list, net: float,
         "current": put_lmt, "side": "BUY",
         "oid": put_oid, "legs": legs, "status": "미체결", "tag": "SLEEP_ORDER_PUT",
     }
-    tg(f"🌙 [BOTH] PUT 발사\n{strat}\n"
-       f"${net:.2f}→${put_lmt:.2f}{agg} qty={put_qty} OID={put_oid}"
-       f"{'  (CALL 대기중)' if not watcher._call_fired else ''}")
+    used    = round(put_lmt * put_qty * 100, 2)
+    remain  = round(sleep_cfg.combo_put_budget - used, 2)
+    tg(f"✅ [체결] 풋 스프레드 매수\n"
+       f"────────────────────\n"
+       f"📋 {strat}\n"
+       f"🔢 수량: {put_qty}계약\n"
+       f"💰 체결가: ${put_lmt:.2f}{agg}  (net ${net:.2f})\n"
+       f"💵 총 매수금액: ${used:,.0f}\n"
+       f"🪙 잔액: ${remain:,.0f}\n"
+       f"🔖 OID: {put_oid}\n"
+       f"🕐 {_now_str()} ET"
+       f"{'  ⏳ CALL 대기중…' if not watcher._call_fired else ''}")
+    # 양방향 모두 완료 시 합산 요약
+    if watcher._fired:
+        _tg_both_summary(ref, sleep_cfg)
     watcher.status_changed.emit(
         f"✅ PUT×{put_qty}"
-        f"{'  CALL대기…' if not watcher._call_fired else '  BOTH완료'}")
+        f"{'  CALL대기…' if not watcher._call_fired else '  BOTH완료'}") 
 
 
 # ── both 모드 콜 발사 ────────────────────────────────────────────
@@ -352,9 +374,21 @@ def _fire_call(watcher, ref, call_item: dict, sleep_cfg) -> None:
         'call_oid': call_oid, 'call_strat': strat,
         'call_lmt': call_lmt, 'call_qty':   call_qty, 'call_status': '미체결',
     })
-    tg(f"🌙 [BOTH] CALL 발사\n{strat}\n"
-       f"${net:.2f}→${call_lmt:.2f}{agg} qty={call_qty} OID={call_oid}"
-       f"{'  (PUT 대기중)' if not watcher._put_fired else ''}")
+    used   = round(call_lmt * call_qty * 100, 2)
+    remain = round(sleep_cfg.combo_call_budget - used, 2)
+    tg(f"✅ [체결] 콜 스프레드 매수\n"
+       f"────────────────────\n"
+       f"📋 {strat}\n"
+       f"🔢 수량: {call_qty}계약\n"
+       f"💰 체결가: ${call_lmt:.2f}{agg}  (net ${net:.2f})\n"
+       f"💵 총 매수금액: ${used:,.0f}\n"
+       f"🪙 잔액: ${remain:,.0f}\n"
+       f"🔖 OID: {call_oid}\n"
+       f"🕐 {_now_str()} ET"
+       f"{'  ⏳ PUT 대기중…' if not watcher._put_fired else ''}")
+    # 양방향 모두 완료 시 합산 요약
+    if watcher._fired:
+        _tg_both_summary(ref, sleep_cfg)
     watcher.status_changed.emit(
         f"✅ CALL×{call_qty}"
         f"{'  PUT대기…' if not watcher._put_fired else '  BOTH완료'}")
@@ -391,8 +425,16 @@ def _peek_call_net(ref, und: float, sleep_cfg) -> float | None:
         if buy_prem <= 0 or sell_prem <= 0 or buy_prem <= sell_prem:
             continue
         net = round(buy_prem - sell_prem, 2)
-        if net > 0:
-            return round(net * 20) / 20   # 틱 반올림 후 반환
+        if net <= 0:
+            continue
+        # ROI 조건 (실제 발사 조건과 일치시킴)
+        mp = (sleep_cfg.spread_width - net) * 100
+        if mp <= 0:
+            continue
+        roi = mp / (net * 100) * 100
+        if not (sleep_cfg.call_roi_min <= roi <= sleep_cfg.call_roi_max):
+            continue
+        return round(net * 20) / 20   # 틱 반올림 후 반환
     return None
 
 
@@ -470,8 +512,8 @@ def _scan_and_fire_call_b(watcher, ref, und: float, sleep_cfg,
         }
         _fire_call(watcher, ref, call_item, sleep_cfg)
 
-        # 풋 후속 발사 (보조 조건 이미 통과 확인됨)
-        if not watcher._put_fired:
+        # 풋 후속 발사 — 콜이 실제로 성공했을 때만
+        if watcher._call_fired and not watcher._put_fired:
             _fire_put_from_chain(watcher, ref, put_chain, put_net, und, sleep_cfg)
         break
 
@@ -510,10 +552,74 @@ def _fire_put_from_chain(watcher, ref, put_chain: list,
         if abs(net_r - target_net) < 0.01:
             strat = f"PUT_SPREAD D+{sleep_cfg.expiry_offset} {strike}"
             _fire_put(watcher, ref, legs, net_r, strat, sleep_cfg)
-            break
+            return
+    # 매칭 실패 — 콜만 체결된 상태이므로 텔레그램 알림
+    tg(f"⚠️ [조건B] 콜 체결 후 풋 항목 매칭 실패\n"
+       f"target_net=${target_net:.2f} — put_chain 재조회 필요")
 
 
-def _tg_wait_secondary(side: str, current_net, threshold: float, watcher) -> None:
+def _fire_call_from_peek(watcher, ref, und: float, sleep_cfg) -> None:
+    """
+    _peek_call_net() 으로 이미 보조 조건 통과 확인된 콜을
+    call_item 구성 후 _fire_call() 로 직접 발사.
+    _scan_and_fire_call() 의 엄격 조건(call_target_price) 재평가 없이
+    sec_tp 기준으로 이미 통과된 가격을 그대로 사용.
+    """
+    chain_call   = getattr(ref, '_chain_call', {})
+    call_strikes = getattr(ref, '_call_strikes', [])
+    expiry       = getattr(ref, '_current_expiry', '') or ''
+    if not call_strikes or not chain_call:
+        tg("⚠️ [조건B] 콜 발사 실패 — _chain_call 데이터 없음"); return
+
+    width = sleep_cfg.spread_width
+    dmin  = sleep_cfg.call_dist_min / 100.0
+    dmax  = sleep_cfg.call_dist_max / 100.0
+    sorted_strikes = sorted(call_strikes, key=lambda s: abs(und - s))
+
+    for buy_strike in sorted_strikes:
+        if und > 0:
+            dist_pct = abs(und - buy_strike) / und
+            if not (dmin <= dist_pct <= dmax):
+                continue
+        sell_strike = min(call_strikes, key=lambda s: abs(s - (buy_strike + width)))
+        if sell_strike == buy_strike:
+            continue
+        buy_prem  = float(chain_call.get(buy_strike)  or 0)
+        sell_prem = float(chain_call.get(sell_strike) or 0)
+        if buy_prem <= 0 or sell_prem <= 0 or buy_prem <= sell_prem:
+            continue
+        net = round(buy_prem - sell_prem, 2)
+        if net <= 0:
+            continue
+        mp = (sleep_cfg.spread_width - net) * 100
+        if mp <= 0: continue
+        roi = mp / (net * 100) * 100
+        if not (sleep_cfg.call_roi_min <= roi <= sleep_cfg.call_roi_max):
+            continue
+
+        try:
+            from combo_order_bag import _CONID_CACHE, _conid_key
+            sym_w  = getattr(ref, 'edit_sym_combo', None)
+            symbol = (sym_w.text().strip().upper() if sym_w else "SPX").replace("SPXW", "SPX")
+            def _cid(s): return int(_CONID_CACHE.get(_conid_key(symbol, "C", s, expiry), 0))
+        except ImportError:
+            _cid = lambda s: 0
+
+        tick = 0.10 if net >= 3.0 else 0.05
+        call_item = {
+            "net":   net,
+            "ask":   round(net + tick, 2),
+            "strat": f"CALL_SPREAD D+{sleep_cfg.expiry_offset} {buy_strike}",
+            "legs": [
+                {"cp": "C", "strike": buy_strike,  "expiry": expiry,
+                 "dir": "BUY",  "qty": 1, "prem": buy_prem,  "con_id": _cid(buy_strike)},
+                {"cp": "C", "strike": sell_strike, "expiry": expiry,
+                 "dir": "SELL", "qty": 1, "prem": sell_prem, "con_id": _cid(sell_strike)},
+            ],
+        }
+        _fire_call(watcher, ref, call_item, sleep_cfg)
+        return
+    tg("⚠️ [조건B] 콜 발사 실패 — 보조 조건 통과 행사가 재탐색 실패")
     """보조 조건 미달 시 텔레그램 대기 메시지 (과도한 전송 방지: 30초에 1번)."""
     import time as _t
     attr = f"_sec_wait_sent_{side}"
@@ -526,6 +632,31 @@ def _tg_wait_secondary(side: str, current_net, threshold: float, watcher) -> Non
     tg(f"⏳ [조건B 대기] {side} 보조조건 미달\n"
        f"현재가: {net_str}  목표: ≤${threshold:.2f}\n"
        f"주력 조건 통과 — {side} 대기 중…")
+
+
+# ── 양방향 체결 합산 요약 ────────────────────────────────────────
+
+def _tg_both_summary(ref, sleep_cfg) -> None:
+    """풋+콜 양방향 모두 체결 완료 시 합산 요약 메시지."""
+    pb = getattr(ref, '_pending_both', {})
+    call_lmt  = pb.get('call_lmt', 0)
+    call_qty  = pb.get('call_qty', 0)
+    put_lmt   = pb.get('put_lmt',  0)
+    put_qty   = pb.get('put_qty',  0)
+    call_used = round(call_lmt * call_qty * 100, 2)
+    put_used  = round(put_lmt  * put_qty  * 100, 2)
+    total     = round(call_used + put_used, 2)
+    call_rem  = round(sleep_cfg.combo_call_budget - call_used, 2)
+    put_rem   = round(sleep_cfg.combo_put_budget  - put_used,  2)
+    tg(f"🎯 [양방향 체결 완료]\n"
+       f"════════════════════\n"
+       f"📈 콜: {pb.get('call_strat', '')}\n"
+       f"   {call_qty}계약 × ${call_lmt:.2f} = ${call_used:,.0f}  (잔액 ${call_rem:,.0f})\n"
+       f"📉 풋: {pb.get('put_strat', '')}\n"
+       f"   {put_qty}계약 × ${put_lmt:.2f} = ${put_used:,.0f}  (잔액 ${put_rem:,.0f})\n"
+       f"────────────────────\n"
+       f"💵 합계 투입: ${total:,.0f}\n"
+       f"🕐 {_now_str()} ET")
 
 
 # ── 단방향 발주 ──────────────────────────────────────────────────
@@ -559,6 +690,15 @@ def fire_order(watcher, legs: list, net: float,
     watcher._fired = True
     if hasattr(ref, '_pending_position') and isinstance(ref._pending_position, dict):
         ref._pending_position['tag'] = 'SLEEP_ORDER'
-    tg(f"🌙 예약주문 [{side_tag}]\n{strat}\n"
-       f"${net:.2f}→${lmt:.2f}{agg} qty={qty} OID={oid}")
+    remain = round(budget - total, 2)
+    side_label = "📈 콜" if side == "call" else "📉 풋"
+    tg(f"✅ [체결] {side_label} 스프레드 매수\n"
+       f"────────────────────\n"
+       f"📋 {strat}\n"
+       f"🔢 수량: {qty}계약\n"
+       f"💰 체결가: ${lmt:.2f}{agg}  (net ${net:.2f})\n"
+       f"💵 총 매수금액: ${total:,.0f}\n"
+       f"🪙 잔액: ${remain:,.0f}\n"
+       f"🔖 OID: {oid}\n"
+       f"🕐 {_now_str()} ET")
     watcher.status_changed.emit(f"✅ 주문완료 {side_tag}  ${lmt:.2f}×{qty}")

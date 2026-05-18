@@ -311,16 +311,16 @@ class _SyntheticPanelBuildMixin:
             f"color:{t['group_title']};padding:14px;")
         lay.addWidget(self._lbl_no_pos)
 
-        self._tbl_pos = QTableWidget(0, 9)
+        self._tbl_pos = QTableWidget(0, 10)
         self._tbl_pos.setHorizontalHeaderLabels(
-            ["만기", "전략명", "수량", "진입가", "현재가", "손익", "수익률", "5P손익(%)", "상태"])
+            ["만기", "전략명", "수량", "진입가", "현재가", "손익", "수익률", "5P손익(%)", "상태", "청산예약"])
         self._tbl_pos.setFont(_f(12))
         self._tbl_pos.horizontalHeader().setFont(_f(11, bold=True))
         self._tbl_pos.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeToContents)
         self._tbl_pos.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.Stretch)
-        for c in range(2, 9):
+        for c in range(2, 10):
             self._tbl_pos.horizontalHeader().setSectionResizeMode(
                 c, QHeaderView.ResizeToContents)
         self._tbl_pos.verticalHeader().setVisible(False)

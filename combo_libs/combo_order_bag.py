@@ -689,6 +689,11 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             self._close_oid_set = set()
         self._close_oid_set.add(oid)
         self._log(f"  [FIX-CLOSE] 청산 주문 oid 사전 등록: {oid}")
+        # [FIX-OIDLEAK] 체결/취소 후 자동 정리 (30초 후 안전망)
+        def _discard_close_oid(target_oid=oid):
+            if hasattr(self, '_close_oid_set'):
+                self._close_oid_set.discard(target_oid)
+        QTimer.singleShot(30000, _discard_close_oid)
 
     # ── 주문 객체 ────────────────────────────────────────────
     from ibapi.order import Order as IbOrder
@@ -720,6 +725,13 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         self._chaser_bag_order    = ibord
         self._chaser_current_oid  = oid
         self._chaser_oid          = oid
+
+        # [FIX-ACTIVE-OID] watcher 에 OID 직접 통보 — 비동기 타이밍 문제 완전 차단
+        try:
+            from Sleep_Order.position_close_watcher import PositionCloseWatcher
+            PositionCloseWatcher.get().on_order_placed(oid)
+        except Exception:
+            pass
 
         if not hasattr(self, '_exec_known_oids'):
             self._exec_known_oids = set()

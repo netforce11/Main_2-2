@@ -27,6 +27,85 @@ from PyQt5.QtGui import QFont
 from combo_ui_net_price_input import ManualPriceRow   # 파트2 임포트
 
 
+def _pal() -> dict:
+    """현재 테마 팔레트 반환. 실패 시 dark 폴백."""
+    try:
+        import core_theme as _ct
+        return _ct.THEME_PALETTES.get(_ct.CURRENT_THEME, _ct.THEME_PALETTES["dark"])
+    except Exception:
+        return {
+            "group_bg":     "#141d2b",
+            "group_border": "#2a3a50",
+            "group_title":  "#7ec8e3",
+            "btn_hover_bdr":"#4ca8ff",
+            "input_border": "#334455",
+            # debit/credit 전용 폴백
+            "_debit_bg":    "#1a3a1a",
+            "_debit_fg":    "#4caf50",
+            "_credit_bg":   "#1a1a3a",
+            "_credit_fg":   "#4c9fff",
+            "_delta_pos":   "#c8b400",
+            "_delta_neg":   "#e06060",
+        }
+
+
+def _debit_colors(t: dict) -> tuple[str, str]:
+    """(bg, fg) for DEBIT badge & price — 테마별 비형광 초록 계열."""
+    # 팔레트에 전용 키가 있으면 우선 사용, 없으면 group_title 기반 유도
+    bg = t.get("_debit_bg") or t.get("group_bg", "#1a3a1a")
+    fg = t.get("_debit_fg") or t.get("group_title", "#4caf50")
+    return bg, fg
+
+
+def _credit_colors(t: dict) -> tuple[str, str]:
+    """(bg, fg) for CREDIT badge & price."""
+    bg = t.get("_credit_bg") or t.get("group_bg", "#1a1a3a")
+    fg = t.get("_credit_fg") or t.get("btn_hover_bdr", "#4c9fff")
+    return bg, fg
+
+
+def _delta_colors(t: dict) -> tuple[str, str]:
+    """(pos_color, neg_color) for 5P 손익률 라벨 — 눈에 편한 채도."""
+    pos = t.get("_delta_pos") or t.get("group_title", "#b8a000")
+    neg = t.get("_delta_neg") or t.get("tab_sel_fg",  "#d05050")
+    return pos, neg
+
+
+# ── 테마별 debit/credit/delta 색상 정의 ───────────────────────────────────
+# core_theme.THEME_PALETTES 에 직접 넣기 어려울 때 이 매핑을 보조로 사용.
+# 키: core_theme 의 테마 이름 / 값: (_debit_bg, _debit_fg, _credit_bg, _credit_fg, _delta_pos, _delta_neg)
+_THEME_OVERRIDES: dict[str, tuple] = {
+    # 테마      debit_bg     debit_fg    credit_bg    credit_fg   delta_pos   delta_neg
+    "light":   ("#d4edda", "#276b33",  "#cce5ff",  "#1a4a8a",  "#5a7a00",  "#b03030"),
+    "dark":    ("#1a3a1a", "#4caf50",  "#1a1a3a",  "#4c9fff",  "#b8a000",  "#d05050"),
+    "midnight":("#0d2d1a", "#3dbf6e",  "#0d1a2d",  "#3d9fff",  "#a09000",  "#cc4444"),
+    "matrix":  ("#001800", "#33cc33",  "#001020",  "#33aaff",  "#88bb00",  "#cc3333"),
+    "amber":   ("#1a1000", "#c8860a",  "#0a1020",  "#5a90c8",  "#a07000",  "#c04040"),
+    "mocha":   ("#2a1a10", "#c8925a",  "#101828",  "#5a90b8",  "#9a7840",  "#c05050"),
+    "ocean":   ("#0a1e2a", "#3db8c8",  "#0a1428",  "#3d80d8",  "#289090",  "#c05050"),
+    "nordic":  ("#2a3a2a", "#7db87d",  "#2a2e3a",  "#7daad8",  "#7a9a50",  "#b06060"),
+}
+
+
+def _resolve_colors(key: str, t: dict):
+    """테마 이름으로 override 조회 → 없으면 팔레트에서 유도."""
+    try:
+        import core_theme as _ct
+        theme_name = _ct.CURRENT_THEME
+    except Exception:
+        theme_name = "dark"
+    if theme_name in _THEME_OVERRIDES:
+        db, df, cb, cf, dp, dn = _THEME_OVERRIDES[theme_name]
+        if key == "debit":   return db, df
+        if key == "credit":  return cb, cf
+        if key == "delta":   return dp, dn
+    # 팔레트 기반 유도 폴백
+    if key == "debit":   return _debit_colors(t)
+    if key == "credit":  return _credit_colors(t)
+    if key == "delta":   return _delta_colors(t)
+    return "#888", "#fff"
+
+
 class NetPriceDisplay(QWidget):
     """
     실시간 Net Price 전광판 위젯.
@@ -92,8 +171,9 @@ class NetPriceDisplay(QWidget):
         self._lbl_direction.setFont(QFont("Consolas", 11, QFont.Bold))
         self._lbl_direction.setFixedWidth(56)
         self._lbl_direction.setAlignment(Qt.AlignCenter)
+        _db, _df = _resolve_colors("debit", _pal())
         self._lbl_direction.setStyleSheet(
-            "background:#1a3a1a; color:#4cff4c; border-radius:4px; padding:2px 4px;")
+            f"background:{_db}; color:{_df}; border-radius:4px; padding:2px 4px;")
 
         self._lbl_dollar = QLabel("$")
         self._lbl_dollar.setFont(QFont("Consolas", 18, QFont.Bold))
@@ -109,7 +189,8 @@ class NetPriceDisplay(QWidget):
         self._lbl_delta_pnl = QLabel("")
         self._lbl_delta_pnl.setFont(QFont("Consolas", 14, QFont.Bold))
         self._lbl_delta_pnl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self._lbl_delta_pnl.setStyleSheet("color:#ffff44; border:none;")
+        _dp_init, _ = _resolve_colors("delta", _pal())
+        self._lbl_delta_pnl.setStyleSheet(f"color:{_dp_init}; border:none;")
         self._lbl_delta_pnl.setVisible(False)   # 데이터 있을 때만 표시
 
         price_row.addWidget(self._lbl_direction)
@@ -144,12 +225,9 @@ class NetPriceDisplay(QWidget):
         root.addWidget(self._manual_row)
 
         # 전체 위젯 스타일
-        try:
-            import core as _c
-            _t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
-            _bg = _t['group_bg']; _bd = _t['group_border']
-        except Exception:
-            _bg = "#141d2b"; _bd = "#2a3a50"
+        _t2 = _pal()
+        _bg = _t2.get('group_bg', "#141d2b")
+        _bd = _t2.get('group_border', "#2a3a50")
         self.setStyleSheet(
             f"NetPriceDisplay{{background:{_bg};"
             f"border:1px solid {_bd};border-radius:6px;}}")
@@ -184,20 +262,12 @@ class NetPriceDisplay(QWidget):
 
     @staticmethod
     def _toggle_style(active: bool) -> str:
-        try:
-            import core as _c
-            t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
-            if active:
-                return (f"background:{t['group_bg']}; color:{t['group_title']}; "
-                        f"border:1px solid {t['btn_hover_bdr']}; border-radius:6px; padding:1px 6px;")
-            return (f"background:{t['group_bg']}; color:{t['input_border']}; "
-                    f"border:1px solid {t['input_border']}; border-radius:6px; padding:1px 6px;")
-        except Exception:
-            if active:
-                return ("background:#1a3a5a; color:#4ca8ff; "
-                        "border:1px solid #4ca8ff; border-radius:6px; padding:1px 6px;")
-            return ("background:#1a1a2a; color:#556; "
-                    "border:1px solid #334; border-radius:6px; padding:1px 6px;")
+        t = _pal()
+        if active:
+            return (f"background:{t.get('group_bg','#1a3a5a')}; color:{t.get('group_title','#4ca8ff')}; "
+                    f"border:1px solid {t.get('btn_hover_bdr','#4ca8ff')}; border-radius:6px; padding:1px 6px;")
+        return (f"background:{t.get('group_bg','#1a1a2a')}; color:{t.get('input_border','#556')}; "
+                f"border:1px solid {t.get('input_border','#334')}; border-radius:6px; padding:1px 6px;")
 
     # ──────────────────────────────────────────────
     # 모드 전환
@@ -238,15 +308,17 @@ class NetPriceDisplay(QWidget):
 
         if net >= 0:
             self._lbl_direction.setText("DEBIT")
+            _db, _df = _resolve_colors("debit", _pal())
             self._lbl_direction.setStyleSheet(
-                "background:#1a3a1a; color:#4cff4c; border-radius:4px; padding:2px 4px;")
-            self._lbl_price.setStyleSheet("color:#4cff4c; letter-spacing:1px;")
+                f"background:{_db}; color:{_df}; border-radius:4px; padding:2px 4px;")
+            self._lbl_price.setStyleSheet(f"color:{_df}; letter-spacing:1px;")
             self._lbl_hint.setText("(지불)")
         else:
             self._lbl_direction.setText("CREDIT")
+            _cb, _cf = _resolve_colors("credit", _pal())
             self._lbl_direction.setStyleSheet(
-                "background:#1a1a3a; color:#4c9fff; border-radius:4px; padding:2px 4px;")
-            self._lbl_price.setStyleSheet("color:#4c9fff; letter-spacing:1px;")
+                f"background:{_cb}; color:{_cf}; border-radius:4px; padding:2px 4px;")
+            self._lbl_price.setStyleSheet(f"color:{_cf}; letter-spacing:1px;")
             self._lbl_hint.setText("(수취)")
 
         if not self._blink_timer.isActive():
@@ -288,6 +360,44 @@ class NetPriceDisplay(QWidget):
         if net >= 0:
             return {"lmt_price": round(net, 2), "action": "BUY", "manual": False, "invalid": False}
         return {"lmt_price": round(abs(net), 2), "action": "SELL", "manual": False, "invalid": False}
+
+    def apply_theme(self) -> None:
+        """
+        테마 전환 시 main_color_config.apply_theme() 에서 호출.
+        현재 debit/credit 상태에 맞게 색상을 즉시 재적용.
+        """
+        t = _pal()
+        # 배경 테두리
+        _bg = t.get("group_bg", "#141d2b")
+        _bd = t.get("group_border", "#2a3a50")
+        self.setStyleSheet(
+            f"NetPriceDisplay{{background:{_bg};"
+            f"border:1px solid {_bd};border-radius:6px;}}")
+
+        # 방향 배지 + 가격 색
+        direction = self._lbl_direction.text()
+        if direction == "DEBIT":
+            _db, _df = _resolve_colors("debit", t)
+            self._lbl_direction.setStyleSheet(
+                f"background:{_db}; color:{_df}; border-radius:4px; padding:2px 4px;")
+            self._lbl_price.setStyleSheet(f"color:{_df}; letter-spacing:1px;")
+        else:
+            _cb, _cf = _resolve_colors("credit", t)
+            self._lbl_direction.setStyleSheet(
+                f"background:{_cb}; color:{_cf}; border-radius:4px; padding:2px 4px;")
+            self._lbl_price.setStyleSheet(f"color:{_cf}; letter-spacing:1px;")
+
+        # 5P 델타 라벨
+        if self._lbl_delta_pnl.isVisible():
+            txt = self._lbl_delta_pnl.text()
+            _dp, _dn = _resolve_colors("delta", t)
+            color = _dp if "▲" in txt else _dn
+            self._lbl_delta_pnl.setStyleSheet(
+                f"color:{color}; border:none; font-weight:bold;")
+
+        # 모드 토글 버튼
+        self._btn_auto.setStyleSheet(self._toggle_style(not self._manual_mode))
+        self._btn_manual.setStyleSheet(self._toggle_style(self._manual_mode))
 
     def reset(self):
         """전략 변경 / 레그 리셋 시 초기화."""
@@ -363,12 +473,13 @@ class NetPriceDisplay(QWidget):
             debit_dollars = entry * 100.0              # $1.80 → $180
             pnl_pct       = (five_p_pnl / debit_dollars) * 100.0
 
+            _dp, _dn = _resolve_colors("delta", _pal())
             if pnl_pct >= 0:
                 txt   = f"5P ▲ +{pnl_pct:.0f}%"
-                color = "#ffff44"   # 형광 노랑
+                color = _dp
             else:
                 txt   = f"5P ▼ {pnl_pct:.0f}%"
-                color = "#ff6666"   # 연한 빨강
+                color = _dn
 
             self._lbl_delta_pnl.setText(txt)
             self._lbl_delta_pnl.setStyleSheet(

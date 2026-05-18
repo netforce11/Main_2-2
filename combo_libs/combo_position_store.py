@@ -120,6 +120,31 @@ def safe_remove_after_order(oid: int, log_fn=None) -> None:
         log_fn(f"🗑 잔고 파일 제거: OID={oid}")
 
 
+def manual_remove_position(oid: int, panel=None, ref=None,
+                            log_fn=None) -> None:
+    """
+    [MANUAL-DEL] UI 🗑 버튼에서 호출 — 파일 + 패널 + 스트림 동시 정리.
+    주문 없이 쓰레기 잔고를 수동으로 즉시 삭제할 때 사용.
+    """
+    # 1. 파일 제거
+    remove_position(oid)
+
+    # 2. 패널 행 제거
+    if panel and hasattr(panel, 'remove_position_by_oid'):
+        panel.remove_position_by_oid(oid)
+
+    # 3. 가격 스트림 해제
+    if ref:
+        try:
+            from combo_order_callbacks import stop_position_price_stream
+            stop_position_price_stream(ref, oid)
+        except Exception:
+            pass
+
+    if log_fn:
+        log_fn(f"🗑 [수동삭제] OID={oid} 제거 완료")
+
+
 # ══════════════════════════════════════════════════════════════
 # 거래 이력 기록
 # ══════════════════════════════════════════════════════════════

@@ -1,5 +1,10 @@
 """
-balance_journal_load.py — 매매일지 DB 조회 로직  v2.3
+balance_journal_load.py — 매매일지 DB 조회 로직  v2.4
+
+[v2.4 신규]
+  - monthly_load()  : 월간 합산 탭 조회 로직
+  - _item_monthly() : 월간 테이블 셀 헬퍼
+  (월간 탭 UI 위젯은 Account_info/balance_panel_journal.py 에서 빌드)
 """
 
 from __future__ import annotations
@@ -325,3 +330,84 @@ def _save_buf_to_db(self, buf: list, lbl):
     if lbl: lbl.setText("  ".join(parts) if parts else "ℹ 변경 없음")
 
     jnl_load(self)
+
+
+# ══════════════════════════════════════════════════════════════
+# [v2.4 신규] 월간 합산 탭 조회
+# ══════════════════════════════════════════════════════════════
+
+def monthly_load(self):
+    """
+    월간 합산 손익 조회 → 월간탭 갱신.
+    balance_panel_journal.py의 build_journal()에서
+    btn_monthly.clicked.connect(lambda: monthly_load(self)) 로 연결.
+    """
+    year  = self._monthly_year.value()
+    month = self._monthly_month.value()
+
+    try:
+        from trade_log import get_monthly_summary, get_monthly_daily_breakdown
+    except ImportError:
+        self._monthly_summary_lbl.setText("⚠ trade_log 모듈 없음")
+        return
+
+    summary   = get_monthly_summary(year, month)
+    breakdown = get_monthly_daily_breakdown(year, month)
+
+    # ── 요약 라벨 ──────────────────────────────────────────
+    if summary['trade_cnt'] == 0:
+        self._monthly_summary_lbl.setText(
+            f"  {summary['year_month']} — 거래 없음")
+        self._monthly_summary_lbl.setStyleSheet(
+            "color:#94a3b8;font-size:11px;"
+            "background:#f8fafc;border-bottom:1px solid #f0f2f6;"
+            "padding:6px 16px;")
+    else:
+        net  = summary['net_pnl']
+        sign = "+" if net >= 0 else ""
+        col  = "#16a34a" if net >= 0 else "#dc2626"
+        expired_note = (f"  ☠ 만기소멸 {summary['expired_cnt']}건 포함"
+                        if summary['expired_cnt'] else "")
+        self._monthly_summary_lbl.setText(
+            f"  {summary['year_month']}  |  {summary['trade_cnt']}건"
+            f"{expired_note}"
+            f"   실현손익: {sign}${summary['gross_pnl']:,.2f}"
+            f"   수수료: -${summary['commission']:,.2f}"
+            f"   순손익: {sign}${net:,.2f}")
+        self._monthly_summary_lbl.setStyleSheet(
+            f"color:{col};font-size:11px;font-weight:600;"
+            "background:#f8fafc;border-bottom:1px solid #f0f2f6;"
+            "padding:6px 16px;")
+
+    # ── 일별 브레이크다운 테이블 ───────────────────────────
+    tbl = self._monthly_table
+    tbl.setRowCount(0)
+
+    for row in breakdown:
+        r = tbl.rowCount()
+        tbl.insertRow(r)
+
+        net      = row['net_pnl']
+        gross    = row['gross_pnl']
+        has_exp  = row['expired_cnt'] > 0
+        net_str  = f"+${net:,.2f}"   if net   >= 0 else f"-${abs(net):,.2f}"
+        gross_str= f"+${gross:,.2f}" if gross >= 0 else f"-${abs(gross):,.2f}"
+        exp_str  = f"☠{row['expired_cnt']}" if has_exp else ""
+
+        vals = [
+            row['date'],
+            str(row['trade_cnt']),
+            exp_str,
+            gross_str,
+            f"${row['commission']:,.2f}",
+            net_str,
+        ]
+        for c, v in enumerate(vals):
+            item = QTableWidgetItem(v)
+            item.setTextAlignment(Qt.AlignCenter)
+            if has_exp and c != 5:
+                item.setForeground(QBrush(QColor("#888888")))
+            if c == 5:
+                item.setForeground(QBrush(
+                    QColor("#16a34a") if net >= 0 else QColor("#dc2626")))
+            tbl.setItem(r, c, item)

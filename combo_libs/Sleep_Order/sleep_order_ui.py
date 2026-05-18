@@ -55,6 +55,7 @@ class SleepOrderRightPanel(QWidget):
         vlay   = QVBoxLayout(inner)
         vlay.setContentsMargins(10, 8, 10, 12); vlay.setSpacing(10)
         vlay.addWidget(self._build_schedule_section())
+        vlay.addWidget(self._build_position_close_section())
         from Sleep_Order.ui_panel_debit import DebitSpikePanel
         self._debit_panel = DebitSpikePanel()
         vlay.addWidget(self._debit_panel)
@@ -86,6 +87,10 @@ class SleepOrderRightPanel(QWidget):
     def _build_schedule_section(self):
         from Sleep_Order.sleep_order_section_a import build_schedule_section_a
         return build_schedule_section_a(self)
+
+    def _build_position_close_section(self):
+        from Sleep_Order.position_close_section import build_position_close_section
+        return build_position_close_section(self)
 
 
 # ── 공통 헬퍼 ────────────────────────────────────────────────────
@@ -196,3 +201,84 @@ class SleepOrderButton(QWidget):
             self._set_on(); self._btn.setText("🟢 ON  예약감시중")
         else:
             self._set_off(); self._btn.setText("🌙 예약 주문")
+
+
+# ══════════════════════════════════════════════════════════════
+# PositionCloseButton — SleepOrderButton 우측 배치
+# ══════════════════════════════════════════════════════════════
+
+class PositionCloseButton(QWidget):
+    """
+    예약주문 버튼 우측 옆 배치.
+    설정탭 포지션 청산 슬롯 감시 ON/OFF 상태 표시 전용.
+    (실제 등록/취소는 설정탭 슬롯 UI 에서 수행)
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("background:transparent;")
+        self._build()
+        QTimer.singleShot(0, self._connect_watcher)
+
+    def _build(self) -> None:
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(4, 0, 4, 0)
+        lay.setSpacing(4)
+
+        # 슬롯 3개 상태 뱃지
+        self._slot_lbls = []
+        for i in range(3):
+            lbl = QLabel(f"S{i+1}")
+            lbl.setFixedWidth(28)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet(
+                "color:#333355;font-size:10px;font-weight:bold;"
+                "background:#0a0a18;border:1px solid #222244;"
+                "border-radius:3px;padding:1px 3px;")
+            lbl.setToolTip(f"슬롯{i+1}: 비활성")
+            lay.addWidget(lbl)
+            self._slot_lbls.append(lbl)
+
+        self._btn = QPushButton("🎯 청산 예약")
+        self._btn.setFixedHeight(26)
+        self._btn.setStyleSheet(
+            "QPushButton{background:#1a0a0a;color:#ff6b6b;font-size:13px;"
+            "font-weight:bold;border:1px solid #5a1a1a;"
+            "border-radius:4px;padding:2px 12px;}"
+            "QPushButton:hover{background:#2a0a0a;color:#ff8888;}")
+        self._btn.setToolTip("설정 탭 → 포지션 청산 설정에서 슬롯 등록")
+        lay.addWidget(self._btn)
+
+    def _connect_watcher(self) -> None:
+        try:
+            from Sleep_Order.position_close_watcher import PositionCloseWatcher
+            PositionCloseWatcher.get().slot_status_changed.connect(
+                self._on_slot_status)
+        except Exception as e:
+            print(f"[ClosBtn] watcher 연결 실패: {e}")
+
+    def _on_slot_status(self, idx: int, text: str) -> None:
+        if idx >= len(self._slot_lbls):
+            return
+        lbl = self._slot_lbls[idx]
+        lbl.setToolTip(f"슬롯{idx+1}: {text}")
+
+        if text.startswith("✅"):
+            style = ("color:#00ff88;background:#071a0e;"
+                     "border:1px solid #00ff44;")
+        elif "감시" in text or "주문" in text or "정정" in text:
+            style = ("color:#ffd700;background:#1a1a0a;"
+                     "border:1px solid #5a5a1a;")
+        elif "대기" in text:
+            style = ("color:#90caf9;background:#0a0a1a;"
+                     "border:1px solid #3a3a7a;")
+        elif text.startswith("⚠️") or text.startswith("🚨"):
+            style = ("color:#ff4444;background:#1a0a0a;"
+                     "border:1px solid #6a1a1a;")
+        else:
+            style = ("color:#333355;background:#0a0a18;"
+                     "border:1px solid #222244;")
+
+        lbl.setStyleSheet(
+            f"font-size:10px;font-weight:bold;border-radius:3px;"
+            f"padding:1px 3px;{style}")

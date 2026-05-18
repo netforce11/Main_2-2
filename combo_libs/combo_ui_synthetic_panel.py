@@ -348,6 +348,43 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
 
             tbl.setItem(r, 8, _it(st_text, st_col))
 
+            # ── 컬럼 9: 청산 예약 + 수동 삭제 버튼 ──────────
+            from PyQt5.QtWidgets import QPushButton, QHBoxLayout, QWidget
+            _cell_w   = QWidget()
+            _cell_lay = QHBoxLayout(_cell_w)
+            _cell_lay.setContentsMargins(1, 0, 1, 0)
+            _cell_lay.setSpacing(2)
+            _cell_w.setStyleSheet("background:transparent;")
+
+            if is_filled and not is_closing:
+                _btn_close_rsv = QPushButton("📌 예약")
+                _btn_close_rsv.setFixedHeight(22)
+                _btn_close_rsv.setStyleSheet(
+                    "QPushButton{background:#1a0a1a;color:#ff6b6b;"
+                    "font-size:11px;font-weight:bold;"
+                    "border:1px solid #5a1a3a;border-radius:3px;padding:1px 4px;}"
+                    "QPushButton:hover{background:#2a0a2a;color:#ff8888;}")
+                _p = dict(pos)
+                _btn_close_rsv.clicked.connect(
+                    lambda _, p=_p: self._open_close_reserve_dialog(p))
+                _cell_lay.addWidget(_btn_close_rsv)
+
+            # 🗑 수동 삭제 — 모든 행(보유/미체결/청산중)에 표시
+            _btn_del = QPushButton("🗑")
+            _btn_del.setFixedSize(24, 22)
+            _btn_del.setToolTip("잔고에서 수동 삭제 (주문 없이 즉시 제거)")
+            _btn_del.setStyleSheet(
+                "QPushButton{background:#1a0808;color:#ff4444;"
+                "font-size:12px;border:1px solid #3a1010;"
+                "border-radius:3px;padding:0px;}"
+                "QPushButton:hover{background:#2a0808;color:#ff6666;}")
+            _pos_oid = pos.get("oid")
+            _btn_del.clicked.connect(
+                lambda _, o=_pos_oid: self._manual_delete_position(o))
+            _cell_lay.addWidget(_btn_del)
+
+            tbl.setCellWidget(r, 9, _cell_w)
+
         tc = ("#00ff88" if total_pnl > 0
               else "#ff4444" if total_pnl < 0 else "#888899")
         self._lbl_total_pnl.setText(f"${total_pnl:+,.2f}")
@@ -447,6 +484,209 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
                 pos["current"] = current_price
                 break
         self._refresh_pos_table()
+
+    def _open_close_reserve_dialog(self, pos: dict) -> None:
+        """청산 예약 다이얼로그 — 행의 📌 예약 버튼 클릭 시 호출."""
+        from PyQt5.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+            QLabel, QPushButton, QSpinBox, QDoubleSpinBox,
+            QTimeEdit, QMessageBox,
+        )
+        from PyQt5.QtCore import QTime
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("📌 청산 예약 설정")
+        dlg.setFixedWidth(360)
+        dlg.setStyleSheet(
+            "QDialog{background:#0a0a18;}"
+            "QLabel{color:#dde0f0;font-size:13px;border:none;}"
+            "QTimeEdit,QDoubleSpinBox,QSpinBox{"
+            "background:#0a0a18;color:#dde0f0;font-size:13px;"
+            "border:1px solid #2e3060;border-radius:4px;padding:3px;}"
+        )
+
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(16, 14, 16, 14)
+        lay.setSpacing(10)
+
+        # 포지션 정보
+        strat = pos.get("strategy", "")
+        oid   = pos.get("oid", "")
+        current = float(pos.get("current", pos.get("entry", 0)))
+
+        info = QLabel(f"📌 {strat}\nOID = {oid}")
+        info.setWordWrap(True)
+        info.setStyleSheet(
+            "color:#ffd700;font-size:13px;border:none;"
+            "background:#0d0d20;border-radius:4px;padding:6px 8px;")
+        lay.addWidget(info)
+
+        # 설정 그리드
+        grid = QGridLayout()
+        grid.setSpacing(8)
+
+        # From
+        grid.addWidget(QLabel("From (KST):"), 0, 0)
+        te_from = QTimeEdit()
+        te_from.setDisplayFormat("HH:mm")
+        te_from.setTime(QTime(23, 0))
+        grid.addWidget(te_from, 0, 1)
+
+        # To
+        grid.addWidget(QLabel("To (KST):"), 0, 2)
+        te_to = QTimeEdit()
+        te_to.setDisplayFormat("HH:mm")
+        te_to.setTime(QTime(1, 30))
+        grid.addWidget(te_to, 0, 3)
+
+        # 목표가
+        grid.addWidget(QLabel("선매도 목표가:"), 1, 0)
+        dsb = QDoubleSpinBox()
+        dsb.setRange(0.01, 99.99)
+        dsb.setSingleStep(0.05)
+        dsb.setDecimals(2)
+        dsb.setPrefix("$")
+        dsb.setValue(round(current, 2) if current > 0 else 1.00)
+        grid.addWidget(dsb, 1, 1)
+
+        # 사정권 미리보기
+        thresh_lbl = QLabel()
+        thresh_lbl.setStyleSheet("color:#ffaa44;font-size:11px;border:none;")
+        def _update_thresh(v):
+            tick = 0.10 if v >= 3.00 else 0.05
+            thresh_lbl.setText(f"사정권 ≤${v - 2*tick:.2f}")
+        dsb.valueChanged.connect(_update_thresh)
+        _update_thresh(dsb.value())
+        grid.addWidget(thresh_lbl, 1, 2, 1, 2)
+
+        # 최대 정정
+        grid.addWidget(QLabel("최대 정정:"), 2, 0)
+        sb = QSpinBox()
+        sb.setRange(1, 10)
+        sb.setValue(3)
+        sb.setSuffix(" 회")
+        grid.addWidget(sb, 2, 1)
+        grid.addWidget(QLabel("초과 시 시장가"), 2, 2, 1, 2)
+
+        lay.addLayout(grid)
+
+        # 슬롯 안내
+        slot_lbl = QLabel()
+        slot_lbl.setStyleSheet("color:#90caf9;font-size:11px;border:none;")
+        lay.addWidget(slot_lbl)
+
+        # 빈 슬롯 찾기
+        def _find_empty_slot() -> int:
+            try:
+                from Sleep_Order.position_close_config import pos_close_cfg
+                for i in range(3):
+                    if not pos_close_cfg.is_slot_active(i):
+                        return i
+            except Exception:
+                pass
+            return -1
+
+        empty = _find_empty_slot()
+        if empty >= 0:
+            slot_lbl.setText(f"→ 슬롯 {empty+1} 에 등록됩니다")
+        else:
+            slot_lbl.setText("⚠️ 빈 슬롯 없음 (최대 3개)")
+
+        # 버튼 행
+        btn_row = QHBoxLayout()
+        ok_btn = QPushButton("📌 등록")
+        ok_btn.setFixedHeight(28)
+        ok_btn.setStyleSheet(
+            "QPushButton{background:#0a2a0a;color:#00ff88;font-size:13px;"
+            "font-weight:bold;border:1px solid #00ff44;border-radius:4px;padding:2px 16px;}"
+            "QPushButton:hover{background:#1a3a1a;}"
+            "QPushButton:disabled{background:#0a0a0a;color:#333;border-color:#222;}")
+        ok_btn.setEnabled(empty >= 0)
+
+        cancel_btn = QPushButton("취소")
+        cancel_btn.setFixedHeight(28)
+        cancel_btn.setStyleSheet(
+            "QPushButton{background:#1a0a0a;color:#ff6666;font-size:13px;"
+            "border:1px solid #5a1a1a;border-radius:4px;padding:2px 16px;}"
+            "QPushButton:hover{background:#2a0a0a;}")
+
+        btn_row.addWidget(ok_btn)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addStretch()
+        lay.addLayout(btn_row)
+
+        def _on_ok():
+            idx = _find_empty_slot()
+            if idx < 0:
+                QMessageBox.warning(dlg, "슬롯 없음", "빈 슬롯이 없습니다.")
+                return
+            try:
+                from Sleep_Order.position_close_config  import pos_close_cfg
+                from Sleep_Order.position_close_watcher import PositionCloseWatcher
+
+                frm   = te_from.time().toString("HH:mm")
+                to    = te_to.time().toString("HH:mm")
+                price = dsb.value()
+                max_c = sb.value()
+
+                pos_close_cfg.set_slot(idx, "close_from_kst",        frm)
+                pos_close_cfg.set_slot(idx, "close_to_kst",          to)
+                pos_close_cfg.set_slot(idx, "close_premium_price",   price)
+                pos_close_cfg.set_slot(idx, "close_max_corrections", max_c)
+
+                # ref 탐색 (parent 체인)
+                ref = None
+                w   = self
+                for _ in range(10):
+                    w = w.parent() if w else None
+                    if w and hasattr(w, "synthetic_panel") and \
+                            hasattr(w, "_sleep_get_chain"):
+                        ref = w
+                        break
+
+                PositionCloseWatcher.get().register(idx, pos, ref)
+                dlg.accept()
+            except Exception as e:
+                QMessageBox.critical(dlg, "오류", str(e))
+
+        ok_btn.clicked.connect(_on_ok)
+        cancel_btn.clicked.connect(dlg.reject)
+        dlg.exec_()
+
+    def _manual_delete_position(self, oid: int) -> None:
+        """[MANUAL-DEL] 🗑 버튼 — 확인 후 파일·패널·스트림 동시 삭제."""
+        from PyQt5.QtWidgets import QMessageBox
+        pos = next((p for p in self._positions if p.get("oid") == oid), None)
+        strat = pos.get("strategy", f"OID={oid}") if pos else f"OID={oid}"
+
+        ret = QMessageBox.question(
+            self, "잔고 수동 삭제",
+            (f"아래 포지션을 잔고에서 삭제합니다.\n\n"
+             f"  {strat}\n\n"
+             f"\u26a0 주문 없이 화면에서만 제거됩니다.\n"
+             f"실제 IB 포지션이 남아있다면 직접 청산하세요.\n\n"
+             f"계속하시겠습니까?"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if ret != QMessageBox.Yes:
+            return
+
+        # ref 탐색 (스트림 해제용)
+        ref = None
+        w = self
+        for _ in range(10):
+            w = w.parent() if w else None
+            if w and hasattr(w, 'synthetic_panel'):
+                ref = w
+                break
+
+        try:
+            from combo_position_store import manual_remove_position
+            manual_remove_position(oid, panel=self, ref=ref,
+                                   log_fn=None)
+        except Exception as e:
+            QMessageBox.warning(self, "삭제 오류", str(e))
 
     def clear_positions(self):
         self._positions.clear()

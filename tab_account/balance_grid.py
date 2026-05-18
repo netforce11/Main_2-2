@@ -63,14 +63,15 @@ class BalanceGrid(BalancePnlMixin, BalanceDataMixin, BalanceSessionMixin, Balanc
         from Account_info.balance_panel_journal import build_journal
 
         self.setStyleSheet(CS["root"])
+        # [v3.0] 월간합산을 row 1 상단으로 이동, 기존 패널들 한 칸씩 아래로
         self.add(build_hero(self),           0, 0, 1, 12)
-        self.add(build_acct_panel(self),     1, 0, 1,  4)
-        self.add(build_kpi_panel(self),      1, 4, 1,  4)
-        self.add(build_position_panel(self), 1, 8, 1,  4)
-        self.add(build_chart_panel(self),    2, 0, 1,  4)
-        self.add(build_session_panel(self),  2, 4, 1,  4)
-        self.add(build_order_panel(self),    2, 8, 1,  4)
-        self.add(build_journal(self),        3, 0, 1, 12)
+        self.add(build_journal(self),        1, 0, 1, 12)
+        self.add(build_acct_panel(self),     2, 0, 1,  4)
+        self.add(build_kpi_panel(self),      2, 4, 1,  4)
+        self.add(build_position_panel(self), 2, 8, 1,  4)
+        self.add(build_chart_panel(self),    3, 0, 1,  4)
+        self.add(build_session_panel(self),  3, 4, 1,  4)
+        self.add(build_order_panel(self),    3, 8, 1,  4)
 
     def _connect_signals(self):
         bridge.acct_value.connect(self._on_acct)
@@ -106,6 +107,40 @@ class BalanceGrid(BalancePnlMixin, BalanceDataMixin, BalanceSessionMixin, Balanc
             self._refresh()
             self._start_rt_pnl()
         self._jnl_load()
+        self._auto_expire_past_positions()   # [v2.4] 과거 만기 포지션 자동 처리
+
+    def _auto_expire_past_positions(self):
+        """
+        [v2.4 신규]
+        오늘 이전 만기일의 open 포지션을 자동으로 만기소멸 처리.
+        탭 활성화 시 1회 실행. 처리된 건이 있으면 콘솔에 출력.
+        """
+        import datetime
+        try:
+            from trade_log import get_open_trades, expire_worthless_by_expiry
+        except ImportError:
+            return
+
+        today = datetime.date.today()
+        open_trades = get_open_trades()
+
+        # 만기 지난 expiry 수집 (YYYYMMDD → date 비교)
+        past_expiries: set[str] = set()
+        for t in open_trades:
+            exp = str(t.get('expiry', ''))
+            if len(exp) == 8:
+                try:
+                    exp_date = datetime.date(
+                        int(exp[:4]), int(exp[4:6]), int(exp[6:]))
+                    if exp_date < today:
+                        past_expiries.add(exp_date.strftime('%Y-%m-%d'))
+                except ValueError:
+                    pass
+
+        for exp_str in sorted(past_expiries):
+            cnt = expire_worthless_by_expiry(exp_str)
+            if cnt > 0:
+                print(f"[tab_account] 자동 만기소멸: {exp_str} {cnt}건")
 
     def on_tab_deactivate(self):
         """Tab2 에서 벗어날 때 호출 — 실시간 PnL 구독 해지."""
