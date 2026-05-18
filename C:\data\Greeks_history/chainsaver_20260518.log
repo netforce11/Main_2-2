@@ -2796,3 +2796,19 @@
 2026-05-19 00:53:26 [ChainSaver] DB 최근5분 rows=5629 | IV커버=100.0% 이론가커버=99.7% | stream=1693 snap=3936 | 최근저장=2026-05-18 11:53:25
 2026-05-19 00:53:56 [ChainSaver] 버퍼 엔트리=56 | price_ticks=1760 greeks_ticks=3150 snap_ticks=1846 | 이론가 커버리지=100.0%
 2026-05-19 00:53:56 [ChainSaver] DB 최근5분 rows=5965 | IV커버=100.0% 이론가커버=98.6% | stream=1945 snap=4020 | 최근저장=2026-05-18 11:53:55
+2026-05-19 00:54:26 [ChainSaver] 버퍼 엔트리=120 | price_ticks=2908 greeks_ticks=5620 snap_ticks=4012 | 이론가 커버리지=100.0%
+2026-05-19 00:54:26 [ChainSaver] DB 최근5분 rows=6612 | IV커버=100.0% 이론가커버=97.8% | stream=2152 snap=4460 | 최근저장=2026-05-18 11:54:25
+2026-05-19 00:54:56 [ChainSaver] 버퍼 엔트리=120 | price_ticks=4109 greeks_ticks=7866 snap_ticks=5222 | 이론가 커버리지=100.0%
+2026-05-19 00:54:56 [ChainSaver] DB 최근5분 rows=7014 | IV커버=100.0% 이론가커버=97.0% | stream=2168 snap=4846 | 최근저장=2026-05-18 11:54:55
+2026-05-19 00:55:26 [ChainSaver] 버퍼 엔트리=184 | price_ticks=5515 greeks_ticks=10147 snap_ticks=7684 | 이론가 커버리지=100.0%
+2026-05-19 00:55:26 [ChainSaver] DB 최근5분 rows=7544 | IV커버=99.9%  이론가커버=96.4% | stream=2182 snap=5362 | 최근저장=2026-05-18 11:55:25
+2026-05-19 00:55:56 [ChainSaver] 버퍼 엔트리=184 | price_ticks=6736 greeks_ticks=12393 snap_ticks=8912 | 이론가 커버리지=100.0%
+2026-05-19 00:55:56 [ChainSaver] DB 최근5분 rows=7946 | IV커버=99.8%  이론가커버=95.7% | stream=2196 snap=5750 | 최근저장=2026-05-18 11:55:55
+2026-05-19 00:56:26 [ChainSaver] 버퍼 엔트리=184 | price_ticks=7972 greeks_ticks=14805 snap_ticks=11054 | 이론가 커버리지=100.0%
+2026-05-19 00:56:26 [ChainSaver] DB 최근5분 rows=8092 | IV커버=99.7%  이론가커버=95.0% | stream=2210 snap=5882 | 최근저장=2026-05-18 11:56:25
+2026-05-19 00:56:56 [ChainSaver] 버퍼 엔트리=184 | price_ticks=9045 greeks_ticks=17114 snap_ticks=12286 | 이론가 커버리지=100.0%
+2026-05-19 00:56:56 [ChainSaver] DB 최근5분 rows=8110 | IV커버=99.7%  이론가커버=94.2% | stream=2223 snap=5887 | 최근저장=2026-05-18 11:56:55
+2026-05-19 00:57:26 [ChainSaver] 버퍼 엔트리=184 | price_ticks=10502 greeks_ticks=19520 snap_ticks=14850 | 이론가 커버리지=100.0%
+2026-05-19 00:57:26 [ChainSaver] DB 최근5분 rows=8120 | IV커버=99.7%  이론가커버=93.5% | stream=2238 snap=5882 | 최근저장=2026-05-18 11:57:25
+2026-05-19 00:57:56 [ChainSaver] 버퍼 엔트리=184 | price_ticks=11711 greeks_ticks=21958 snap_ticks=16142 | 이론가 커버리지=100.0%
+2026-05-19 00:57:57 [ChainSaver] DB 최근5분 rows=8492 | IV커버=99.7%  이론가커버=93.0% | stream=2332 snap=6160 | 최근저장=2026-05-18 11:57:55
