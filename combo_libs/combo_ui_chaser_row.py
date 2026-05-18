@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
 
 def _pal():
     try:
-        import core as _core
+        import core_theme as _core
         return _core.THEME_PALETTES.get(_core.CURRENT_THEME,
                                         _core.THEME_PALETTES["light"])
     except Exception:

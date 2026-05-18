@@ -24,7 +24,7 @@ def _f(pt: int, bold: bool = False) -> QFont:
 def _pal() -> dict:
     """현재 CURRENT_THEME 팔레트 반환 (런타임 참조)."""
     try:
-        import core as _core
+        import core_theme as _core
         return _core.THEME_PALETTES.get(_core.CURRENT_THEME,
                                         _core.THEME_PALETTES["light"])
     except Exception:
@@ -76,3 +76,4 @@ def get_tbl_style() -> str:
 # 모듈 로드 시 한 번 생성됩니다. 테마 전환 후엔 get_tab_style() / get_tbl_style() 을 호출하세요.
 _TAB_STYLE = get_tab_style()
 _TBL_STYLE = get_tbl_style()
+

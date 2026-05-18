@@ -81,7 +81,7 @@ _DEFAULTS: dict = {
     "single_modify_max_count":      3,
     "single_modify_price_cap":      0.30,
 
-    # ── B3: 콤보 비중 주문 [신규] ────────────────────────
+    # ── B3: 콤보 비중 주문 ──────────────────────────────
     # direction: "put_only" | "call_only" | "both"
     "combo_direction":          "put_only",
     # ratio_mode: "equal" | "custom"  (both 선택 시에만 유효)
@@ -92,6 +92,19 @@ _DEFAULTS: dict = {
     "combo_call_budget":        100,
     # 풋 스프레드 전용 예산 (direction=put_only 또는 both 시 사용)
     "combo_put_budget":         100,
+
+    # ── B3-BOTH: 콜 독립 발사 조건 (direction=both 전용) ─
+    # True = 콜도 아래 조건을 독립적으로 충족해야 발사
+    # False = 풋 조건 충족 시 콜 무조건 동반 발사 (구 동작)
+    "call_independent_trigger": True,
+    # 콜 스프레드 목표 진입가 (이하일 때 발사)
+    "call_target_price":        0.50,
+    # 콜 ROI 하한/상한 (%, 0=무제한)
+    "call_roi_min":             0,
+    "call_roi_max":             1200,
+    # 콜 행사가 거리 하한/상한 (%, 지수대비) — 0이면 풋과 동일 조건 사용
+    "call_dist_min":            0.60,
+    "call_dist_max":            0.95,
 
     # ── C: 자동 매도 ─────────────────────────────────────
     "auto_sell_enabled":        False,
@@ -214,7 +227,7 @@ class SleepOrderConfigStore(_SingleSellProps):
     @property
     def modify_price_cap(self) -> float:  return float(self._data.get("modify_price_cap", 0.30))
 
-    # ── B3 콤보 비중 프로퍼티 [신규] ─────────────────────
+    # ── B3 콤보 비중 프로퍼티 ────────────────────────────
     @property
     def combo_direction(self) -> str:
         return str(self._data.get("combo_direction", "put_only"))
@@ -233,6 +246,26 @@ class SleepOrderConfigStore(_SingleSellProps):
     @property
     def combo_put_budget(self) -> int:
         return int(self._data.get("combo_put_budget", 100))
+
+    # ── B3-BOTH: 콜 독립 발사 조건 프로퍼티 ─────────────
+    @property
+    def call_independent_trigger(self) -> bool:
+        return bool(self._data.get("call_independent_trigger", True))
+    @property
+    def call_target_price(self) -> float:
+        return float(self._data.get("call_target_price", 0.50))
+    @property
+    def call_roi_min(self) -> int:
+        return int(self._data.get("call_roi_min", 0))
+    @property
+    def call_roi_max(self) -> int:
+        return int(self._data.get("call_roi_max", 1200))
+    @property
+    def call_dist_min(self) -> float:
+        return float(self._data.get("call_dist_min", 0.60))
+    @property
+    def call_dist_max(self) -> float:
+        return float(self._data.get("call_dist_max", 0.95))
 
 
 sleep_cfg = SleepOrderConfigStore()

@@ -18,7 +18,7 @@ from PyQt5.QtGui import QColor, QBrush
 def _pal() -> dict:
     """현재 CURRENT_THEME 팔레트 반환 (런타임 참조 → 테마 전환 즉시 반영)."""
     try:
-        import core as _core
+        import core_theme as _core
         return _core.THEME_PALETTES.get(_core.CURRENT_THEME,
                                         _core.THEME_PALETTES["light"])
     except Exception:
@@ -35,7 +35,7 @@ def _pal() -> dict:
 def _pal() -> dict:
     """현재 CURRENT_THEME 팔레트 반환 (combo 모듈용 편의 함수)."""
     try:
-        import core as _core
+        import core_theme as _core
         return _core.THEME_PALETTES.get(_core.CURRENT_THEME,
                                         _core.THEME_PALETTES["light"])
     except Exception:

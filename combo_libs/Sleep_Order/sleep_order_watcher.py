@@ -48,7 +48,11 @@ class SleepOrderWatcher(QObject):
         from Sleep_Order.sleep_order_config   import sleep_cfg
         from Sleep_Order.spike_watcher_debit  import DebitSpikeWatcher
         from Sleep_Order.spike_watcher_single import SingleOptSpikeWatcher
-        self._ref = ref; self._active = True; self._fired = False; self._last_range_reset = 0.0
+        self._ref = ref; self._active = True
+        self._fired = False          # 단방향(put_only/call_only) 및 호환용
+        self._put_fired  = False     # both 모드 — 풋 발사 완료
+        self._call_fired = False     # both 모드 — 콜 발사 완료
+        self._last_range_reset = 0.0
         DebitSpikeWatcher.get().reset_all()
         SingleOptSpikeWatcher.get().reset_all()
         if hasattr(ref, '_sleep_subscribe_chain'): ref._sleep_subscribe_chain()
@@ -81,13 +85,34 @@ class SleepOrderWatcher(QObject):
         from Sleep_Order.sleep_order_config import sleep_cfg
         in_win = self._in_window(sleep_cfg.schedule_start, sleep_cfg.schedule_end)
         if not in_win:
-            if self._fired: self.stop(reason="주문 완료 후 시간 종료")
-            elif self._past_end(sleep_cfg.schedule_end):
-                tg("⏰ 예약 시간 종료  미주문"); self.stop(reason="시간 초과 미주문")
+            if sleep_cfg.combo_direction == "both":
+                any_fired = self._put_fired or self._call_fired
+                if any_fired:
+                    # 어느 쪽이 체결됐는지 구분해서 메시지
+                    if self._put_fired and self._call_fired:
+                        tg("✅ [조건B] 양방향 체결 완료 후 시간 종료")
+                    elif self._put_fired:
+                        tg("⚠️ [조건B] 시간 종료\n풋 ✅ 체결  |  콜 ❌ 보조조건 미달로 미체결")
+                    else:
+                        tg("⚠️ [조건B] 시간 종료\n콜 ✅ 체결  |  풋 ❌ 보조조건 미달로 미체결")
+                    self.stop(reason="주문 완료 후 시간 종료")
+                elif self._past_end(sleep_cfg.schedule_end):
+                    tg("⏰ [조건B] 예약 시간 종료  양방향 조건 미충족 — 미주문")
+                    self.stop(reason="시간 초과 미주문")
+            else:
+                if self._fired: self.stop(reason="주문 완료 후 시간 종료")
+                elif self._past_end(sleep_cfg.schedule_end):
+                    tg("⏰ 예약 시간 종료  미주문"); self.stop(reason="시간 초과 미주문")
             return
-        if not self._fired:
-            from Sleep_Order.spike_scan import scan_and_check
-            scan_and_check(self)
+        # both 모드: 풋/콜 각각 독립 — 둘 다 완료됐을 때만 스캔 중단
+        if sleep_cfg.combo_direction == "both":
+            if self._put_fired and self._call_fired:
+                return
+        else:
+            if self._fired:
+                return
+        from Sleep_Order.spike_scan import scan_and_check
+        scan_and_check(self)
 
     # ── 시간 유틸 ─────────────────────────────────────────
     @staticmethod

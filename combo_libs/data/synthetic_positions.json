@@ -1,33 +1,5 @@
 [
   {
-    "strategy": "풋 데빗 스프레드 (풋매수 + 풋매도 / 약세)",
-    "qty": 1,
-    "entry": 0.35,
-    "current": 0.35,
-    "side": "BUY",
-    "oid": 36,
-    "legs": [
-      {
-        "dir": "BUY",
-        "cp": "P",
-        "strike": 7300.0,
-        "prem": "3.1",
-        "qty": 1,
-        "expiry": "20260511"
-      },
-      {
-        "dir": "SELL",
-        "cp": "P",
-        "strike": 7295.0,
-        "prem": "2.78",
-        "qty": 1,
-        "expiry": "20260511"
-      }
-    ],
-    "status": "보유",
-    "saved_at": "2026-05-11T13:24:58"
-  },
-  {
     "strategy": "풋 스프레드 (풋매수 + 풋매도)",
     "qty": 1,
     "entry": 0.1,

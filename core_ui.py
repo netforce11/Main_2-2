@@ -21,9 +21,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QObject
 from PyQt5.QtGui import QFont, QColor, QBrush
 
-import core as _core   # CURRENT_THEME / THEME_PALETTES 런타임 참조
+import core_theme as _core   # CURRENT_THEME / THEME_PALETTES 런타임 참조 (순환 임포트 방지)
 
-from core import DEFAULT_FONT_SIZE
+from core_theme import DEFAULT_FONT_SIZE
 
 # ══════════════════════════════════════════════════════════════
 # 내부 팔레트 참조 헬퍼

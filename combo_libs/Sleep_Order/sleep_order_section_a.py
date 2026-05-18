@@ -110,6 +110,11 @@ def build_schedule_section_a(parent) -> QGroupBox:
     lay.addWidget(parent._slider_ratio, r, 1, 1, 2)
     parent._lbl_ratio_pct = lbl("50%", "#5dade2", 13)
     lay.addWidget(parent._lbl_ratio_pct, r, 3); r += 1
+
+    # ── 콜 조건 그룹박스 (both 전용, 방향 변경 시 show/hide) ──
+    parent._gb_call_cond = _build_call_cond_group(parent)
+    lay.addWidget(parent._gb_call_cond, r, 0, 1, 4); r += 1
+
     lay.addWidget(sep(), r, 0, 1, 4); r += 1
 
     # ── 공격적 진입 + 드라이런 ────────────────────────────────
@@ -142,14 +147,82 @@ def build_schedule_section_a(parent) -> QGroupBox:
 
 # ── 핸들러 ────────────────────────────────────────────────────
 
+def _build_call_cond_group(parent) -> "QGroupBox":
+    """콜 조건 그룹박스 — both 모드일 때만 visible."""
+    from PyQt5.QtWidgets import QGroupBox, QGridLayout
+    gb = QGroupBox("📞  콜 조건")
+    gb.setStyleSheet(
+        "QGroupBox{font-size:13px;color:#00e5cc;font-weight:bold;"
+        "border:1px solid #00665a;border-radius:6px;"
+        "margin-top:8px;padding-top:6px;background:#060f0e;}"
+        "QGroupBox::title{subcontrol-origin:margin;left:10px;}")
+    g = QGridLayout(gb)
+    g.setContentsMargins(10, 12, 10, 8); g.setSpacing(7)
+    r = 0
+
+    # 콜 목표가
+    g.addWidget(lbl("목표가 상한:", "#aaffd0", 13), r, 0, Qt.AlignRight)
+    parent._dsb_call_tp = dspinbox(0.01, 5.0, 0.50, 0.05, prefix="$")
+    g.addWidget(parent._dsb_call_tp, r, 1)
+    g.addWidget(lbl("(이하일 때 진입)", "#666", 11), r, 2, 1, 2); r += 1
+
+    # 콜 ROI
+    g.addWidget(lbl("ROI 하한:", "#aaffd0", 13), r, 0, Qt.AlignRight)
+    parent._sb_call_roi_min = spinbox(0, 9999, 0, "%")
+    g.addWidget(parent._sb_call_roi_min, r, 1)
+    g.addWidget(lbl("ROI 상한:", "#aaffd0", 13), r, 2, Qt.AlignRight)
+    parent._sb_call_roi_max = spinbox(0, 9999, 1200, "%")
+    g.addWidget(parent._sb_call_roi_max, r, 3); r += 1
+
+    # 콜 거리
+    g.addWidget(lbl("거리 하한:", "#aaffd0", 13), r, 0, Qt.AlignRight)
+    parent._dsb_call_dmin = dspinbox(0.01, 5.0, 0.60, 0.05)
+    g.addWidget(parent._dsb_call_dmin, r, 1)
+    g.addWidget(lbl("거리 상한:", "#aaffd0", 13), r, 2, Qt.AlignRight)
+    parent._dsb_call_dmax = dspinbox(0.01, 5.0, 0.95, 0.05)
+    g.addWidget(parent._dsb_call_dmax, r, 3); r += 1
+
+    # ── 조건 B 구분선 ─────────────────────────────────────────
+    g.addWidget(sep(), r, 0, 1, 4); r += 1
+    g.addWidget(lbl("🔀  조건 B — AND 동시 체결", "#ffd700", 12), r, 0, 1, 4); r += 1
+
+    # 주력 방향
+    g.addWidget(lbl("주력 방향:", "#ffd066", 13), r, 0, Qt.AlignRight)
+    parent._cmb_primary = combo([
+        ("📉 풋 기준", "put"),
+        ("📈 콜 기준", "call"),
+    ], 120)
+    g.addWidget(parent._cmb_primary, r, 1)
+    g.addWidget(lbl("(주력이 엄격한 조건 적용)", "#666", 11), r, 2, 1, 2); r += 1
+
+    # 보조 목표가 (느슨한 조건)
+    g.addWidget(lbl("보조 목표가:", "#ffd066", 13), r, 0, Qt.AlignRight)
+    parent._dsb_sec_tp = dspinbox(0.01, 5.0, 0.65, 0.05, prefix="$")
+    g.addWidget(parent._dsb_sec_tp, r, 1)
+    g.addWidget(lbl("(반대쪽 느슨한 조건)", "#666", 11), r, 2, 1, 2); r += 1
+
+    gb.setVisible(False)   # 초기 숨김 — both 선택 시 show
+    return gb
+
+
 def _on_direction_changed(parent) -> None:
     d = parent._cmb_direction.currentData()
+    is_both = (d == "both")
     parent._sb_put_budget.setEnabled(d in ("put_only", "both"))
     parent._sb_call_budget.setEnabled(d in ("call_only", "both"))
-    parent._slider_ratio.setEnabled(d == "both")
-    parent._lbl_ratio_hdr.setEnabled(d == "both")
-    parent._lbl_ratio_pct.setEnabled(d == "both")
+    parent._slider_ratio.setEnabled(is_both)
+    parent._lbl_ratio_hdr.setEnabled(is_both)
+    parent._lbl_ratio_pct.setEnabled(is_both)
+    # 콜 조건 그룹박스: both 일 때만 표시
+    gb = getattr(parent, '_gb_call_cond', None)
+    if gb is not None:
+        gb.setVisible(is_both)
     _update_direction_badge(parent)
+
+
+def _on_call_indep_changed(parent) -> None:
+    """v1.4 이후 미사용 — 콜은 항상 독립 루프로 동작."""
+    pass
 
 
 def _on_slider_changed(parent, val: int) -> None:
@@ -188,6 +261,15 @@ def _save_schedule(parent) -> None:
     sleep_cfg.set("combo_call_budget", parent._sb_call_budget.value())
     sleep_cfg.set("combo_put_budget",  parent._sb_put_budget.value())
     sleep_cfg.set("combo_call_ratio",  parent._slider_ratio.value() / 100.0)
+    # 콜 조건
+    sleep_cfg.set("call_target_price", parent._dsb_call_tp.value())
+    sleep_cfg.set("call_roi_min",      parent._sb_call_roi_min.value())
+    sleep_cfg.set("call_roi_max",      parent._sb_call_roi_max.value())
+    sleep_cfg.set("call_dist_min",     parent._dsb_call_dmin.value())
+    sleep_cfg.set("call_dist_max",     parent._dsb_call_dmax.value())
+    # 조건 B
+    sleep_cfg.set("primary_direction",      parent._cmb_primary.currentData())
+    sleep_cfg.set("secondary_target_price", parent._dsb_sec_tp.value())
     # max_budget 호환 유지
     if d == "put_only":
         sleep_cfg.set("max_budget", parent._sb_put_budget.value())
@@ -225,6 +307,16 @@ def _load_schedule(parent) -> None:
     v = int(round(sleep_cfg.combo_call_ratio * 100))
     parent._slider_ratio.setValue(v)
     parent._lbl_ratio_pct.setText(f"{v}%")
+    # 콜 조건 로드
+    parent._dsb_call_tp.setValue(sleep_cfg.call_target_price)
+    parent._sb_call_roi_min.setValue(sleep_cfg.call_roi_min)
+    parent._sb_call_roi_max.setValue(sleep_cfg.call_roi_max)
+    parent._dsb_call_dmin.setValue(sleep_cfg.call_dist_min)
+    parent._dsb_call_dmax.setValue(sleep_cfg.call_dist_max)
+    # 조건 B
+    idx = parent._cmb_primary.findData(getattr(sleep_cfg, 'primary_direction', 'put'))
+    parent._cmb_primary.setCurrentIndex(max(0, idx))
+    parent._dsb_sec_tp.setValue(getattr(sleep_cfg, 'secondary_target_price', 0.65))
     _on_direction_changed(parent)
 
 
@@ -252,6 +344,14 @@ def _update_direction_badge(parent) -> None:
             budget = f"  예산 ${cb}"
         else:
             budget = f"  콜 ${cb} ({pct}%) / 풋 ${pb} ({100-pct}%)"
+            tp = getattr(parent, '_dsb_call_tp', None)
+            sec_tp  = getattr(parent, '_dsb_sec_tp', None)
+            primary = getattr(parent, '_cmb_primary', None)
+            if tp is not None:
+                budget += f"\n  콜 조건: 목표가 ≤${tp.value():.2f}"
+            if primary is not None and sec_tp is not None:
+                pri_txt = "풋 기준" if primary.currentData() == "put" else "콜 기준"
+                budget += f"\n  조건B: 주력={pri_txt}  보조 ≤${sec_tp.value():.2f}"
         dry_mark = "  🧪 드라이런" if dry else "  ✅ 실제주문"
         w.setText(f"{dir_text}{budget}{dry_mark}")
         w.setStyleSheet(

@@ -39,7 +39,7 @@ _OFF_BG = "#001a00";  _OFF_FG = "#444444";  _OFF_BD = "#222222"
 
 def _btn_base_ss():
     try:
-        import core as _c
+        import core_theme as _c
         t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
         return (
             f"QPushButton{{background:{t['btn_bg']};color:{t['group_title']};"
@@ -247,7 +247,7 @@ class WolfSystemBanner(QWidget):
 
     def _apply_off(self) -> None:
         try:
-            import core as _c
+            import core_theme as _c
             t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
             off_bg = t['group_bg']
             off_bd = t['group_border']

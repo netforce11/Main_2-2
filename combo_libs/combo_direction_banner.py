@@ -106,7 +106,7 @@ _S = {
 def _get_none_style() -> dict:
     """'none' 상태 스타일 — 현재 테마 팔레트 참조."""
     try:
-        import core as _c
+        import core_theme as _c
         t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
         return {
             "main": (f"background:{t['group_bg']};color:{t['group_title']};"

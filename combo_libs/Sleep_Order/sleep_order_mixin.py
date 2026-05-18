@@ -219,11 +219,28 @@ class SleepOrderMixin:
         self._chaser_bag_contract = bag
         self._chaser_current_oid  = oid
         self._chaser_oid          = oid
-        self._pending_position = {
-            "strategy": strat, "qty": qty, "entry": lmt_price,
-            "current": lmt_price, "side": "BUY",
-            "oid": oid, "legs": legs, "status": "미체결",
-        }
+        # ── _pending_position 업데이트 ────────────────────────
+        # BOTH 모드(tag가 SLEEP_ORDER_PUT / SLEEP_ORDER_CALL)는
+        # _pending_both 에서 별도 추적하므로 _pending_position 은
+        # 마지막 호출로 덮어쓰지 않고 첫 번째 호출(put)로만 초기 설정.
+        # 단방향(SLEEP_ORDER / SPIKE_DEBIT 등)은 기존처럼 덮어씀.
+        if tag in ("SLEEP_ORDER_PUT", "SLEEP_ORDER_CALL"):
+            # BOTH 모드: _pending_position 을 첫 주문(PUT)에만 설정
+            if tag == "SLEEP_ORDER_PUT":
+                self._pending_position = {
+                    "strategy": strat, "qty": qty, "entry": lmt_price,
+                    "current": lmt_price, "side": "BUY",
+                    "oid": oid, "legs": legs, "status": "미체결",
+                    "tag": tag,
+                }
+            # CALL 주문은 _pending_position 을 건드리지 않음
+            # (_pending_both 에서 call_oid 로 독립 추적)
+        else:
+            self._pending_position = {
+                "strategy": strat, "qty": qty, "entry": lmt_price,
+                "current": lmt_price, "side": "BUY",
+                "oid": oid, "legs": legs, "status": "미체결",
+            }
         try:
             from combo_order_special_condition import SpecialFillWatcher
             SpecialFillWatcher.get().watch(

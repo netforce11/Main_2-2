@@ -81,7 +81,7 @@ _ALERT_INTERVAL  = 5_000         # 5초
 
 def _btn_base_ss():
     try:
-        import core as _c
+        import core_theme as _c
         t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
         return (
             f"QPushButton{{background:{t['btn_bg']};color:{t['group_title']};"
@@ -234,7 +234,7 @@ class ProfitAlertBanner(QWidget):
         self._test_panel = QWidget()
         self._test_panel.setMaximumHeight(0)
         try:
-            import core as _c
+            import core_theme as _c
             _t = _c.THEME_PALETTES.get(_c.CURRENT_THEME, _c.THEME_PALETTES["light"])
             _tp_bg = _t['group_bg']; _tp_bd = _t['group_border']
         except Exception:

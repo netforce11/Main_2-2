@@ -30,7 +30,7 @@ from combo_ui_scenario_tab import ScenarioTab
 # ── 팔레트 헬퍼 ───────────────────────────────────────────────
 def _pal() -> dict:
     try:
-        import core as _core
+        import core_theme as _core
         return _core.THEME_PALETTES.get(_core.CURRENT_THEME,
                                         _core.THEME_PALETTES["light"])
     except Exception:
