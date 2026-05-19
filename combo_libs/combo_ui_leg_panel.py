@@ -51,6 +51,26 @@ def _build_leg_left(self) -> QWidget:
         f"selection-background-color:{_t['combo_sel_bg']};font-size:14px;}}"
         "QComboBox::drop-down{border:none;}")
     self.combo_strat.currentIndexChanged.connect(self._on_strat_change)
+    # ── 스프레드 간격 행 (v3.1) ──────────────────────────────
+    gap_row = QHBoxLayout(); gap_row.setSpacing(4)
+    gap_row.addWidget(QLabel("스프레드 간격:"))
+    from PyQt5.QtWidgets import QSpinBox
+    self._spn_gap = QSpinBox()
+    self._spn_gap.setRange(1, 200)
+    self._spn_gap.setValue(5)
+    self._spn_gap.setSuffix(" pt")
+    self._spn_gap.setFixedWidth(80)
+    self._spn_gap.setStyleSheet(
+        f"QSpinBox{{background:{_t['input_bg']};color:{_t['group_title']};"
+        f"border:1px solid {_t['input_border']};border-radius:4px;padding:2px;}}")
+    self._spn_gap.valueChanged.connect(lambda v: _on_gap_changed(self, v))
+    gap_row.addWidget(self._spn_gap)
+    lbl_hint = QLabel("(버터플라이·스프레드 자동 적용)")
+    lbl_hint.setStyleSheet("color:#888;font-size:11px;")
+    gap_row.addWidget(lbl_hint)
+    gap_row.addStretch()
+    v.addLayout(gap_row)
+
     row.addWidget(self.combo_strat, 1)
 
     # ❓ 전략 설명 버튼
@@ -327,3 +347,30 @@ def _apply_set_input(self, sell_edit, buy_edit):
 def _set_strategy_by_name(self, strat_name: str):
     from combo_ui_leg_setinput import _set_strategy_by_name as _f
     _f(self, strat_name)
+# ── 스프레드 간격 변경 핸들러 (v3.1) ────────────────────────────
+def _on_gap_changed(self, gap: int):
+    self._spread_gap = max(1, gap)
+    strat = self.combo_strat.currentText() if hasattr(self, "combo_strat") else ""
+    _BF = {"콜 버터플라이 스프레드": "C", "풋 버터플라이 스프레드": "P"}
+    _IBF = "아이언 버터플라이"
+    _SP2 = ("콜 스프레드", "콜 데빗 스프레드", "풋 스프레드", "풋 데빗 스프레드")
+    item = self.tbl_legs.item(0, 3)
+    if not item or not item.text().strip():
+        return
+    try:
+        leg0 = float(item.text().strip())
+    except ValueError:
+        return
+    from combo_constants import mk_item
+    tbl = self.tbl_legs
+    def _set(row, strike):
+        if row < tbl.rowCount():
+            tbl.item(row, 3) and tbl.item(row, 3).setText(str(int(strike))) or             tbl.setItem(row, 3, mk_item(str(int(strike))))
+    g = self._spread_gap
+    if strat in _BF:
+        _set(1, leg0 + g); _set(2, leg0 + g * 2)
+    elif strat == _IBF:
+        _set(0, leg0 - g); _set(2, leg0); _set(3, leg0 + g)
+    elif strat in _SP2:
+        sign = -1 if "풋" in strat else 1
+        _set(1, leg0 + sign * g)

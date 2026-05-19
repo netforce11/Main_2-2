@@ -103,9 +103,13 @@ class _SlotState:
         self.ref              = None
         self.order_price      = 0.0   # 발사된 주문가 (설정가)
         self.correction_count = 0
-        self.active_oid: "int | None" = None  # [FIX-OVERFILL] 발사된 OID 추적
+        self.active_oid: "int | None"  = None  # 발사된 주문 OID
         self.market_sent: bool          = False # [FIX-LOOP] 시장가 발사 여부 플래그
         self._last_order_sent_at: float = 0.0   # [FIX-4] 마지막 주문 발사 시각
+        # [FIX-SLOT-OBJ] 주문 객체를 slot에 직접 저장 — ref 공유 객체 의존 제거
+        self._bag_contract = None   # IB BAG Contract
+        self._bag_order    = None   # IB Order (lmtPrice 정정용)
+        self._bag_oid: "int | None" = None   # 발사된 OID (active_oid 대체)
 
     def reset(self):
         self.state                 = self.IDLE
@@ -113,10 +117,13 @@ class _SlotState:
         self.ref                   = None
         self.order_price           = 0.0
         self.correction_count      = 0
-        self.active_oid            = None  # [FIX-OVERFILL]
+        self.active_oid            = None
         self.market_sent           = False # [FIX-LOOP]
         self._resort_sent          = False # [FIX-LOOP]
         self._last_order_sent_at   = 0.0   # [FIX-4]
+        self._bag_contract         = None  # [FIX-SLOT-OBJ]
+        self._bag_order            = None  # [FIX-SLOT-OBJ]
+        self._bag_oid              = None  # [FIX-SLOT-OBJ]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -226,23 +233,29 @@ class PositionCloseWatcher(QObject):
 
     # ── 이벤트 드리븐 진입점 ──────────────────────────────────
 
-    def on_order_placed(self, oid: int, pos_oid: int = None) -> None:
-        """[FIX-ACTIVE-OID] _do_send_body placeOrder 성공 직후 호출.
-        [FIX-SLOT-MATCH] pos_oid 로 정확한 슬롯 매칭 — 다중 슬롯 오매칭 방지.
-        슬롯 1,2 동시 ORDERED 상태에서 첫 번째 슬롯에 잘못 할당되는 버그 차단.
+    def on_order_placed(self, oid: int, pos_oid: int = None,
+                         bag_contract=None, bag_order=None) -> None:
+        """[FIX-SLOT-OBJ] placeOrder 성공 직후 호출.
+        pos_oid로 정확한 슬롯 매칭 후 bag_contract/order/oid 를 slot에 직접 저장.
+        ref 공유 객체(_chaser_bag_contract 등) 의존을 완전히 제거.
         """
+        import copy
         for slot in self._slots:
             if slot.state != _SlotState.ORDERED:
                 continue
-            if slot.active_oid is not None:
+            if slot._bag_oid is not None:
                 continue
-            # [FIX-SLOT-MATCH] pos_oid 가 있으면 정확히 매칭
+            # pos_oid 로 정확히 매칭
             if pos_oid is not None:
                 if (slot.pos or {}).get("oid") != pos_oid:
                     continue
-            slot.active_oid = oid
+            # slot 에 직접 저장
+            slot._bag_oid      = oid
+            slot.active_oid    = oid   # 호환성 유지
+            slot._bag_contract = bag_contract
+            slot._bag_order    = copy.copy(bag_order) if bag_order else None
             print(f"[ClosWatcher] on_order_placed: 슬롯{slot.idx+1} "
-                  f"active_oid={oid} pos_oid={pos_oid} 확정")
+                  f"bag_oid={oid} pos_oid={pos_oid} 저장완료")
             break
 
     def on_price_update(self, oid: int, current_price: float) -> None:
@@ -378,34 +391,36 @@ class PositionCloseWatcher(QObject):
         strat = (slot.pos or {}).get("strategy", "")
         pos_oid = (slot.pos or {}).get("oid")
 
-        # [FIX-OVERFILL] 정정 시 기존 OID 재사용 — 신규 주문 금지
-        if is_correction and slot.active_oid is not None:
+        # [FIX-SLOT-OBJ] 정정 시 slot에 저장된 객체 직접 사용 — ref 의존 제거
+        if is_correction and slot._bag_oid is not None:
             try:
-                self._modify_order(slot, slot.active_oid, price)
-                self._emit(slot.idx, f"📤 {label} | ${price:.2f} (OID={slot.active_oid})")
+                self._modify_order(slot, slot._bag_oid, price)
+                self._emit(slot.idx, f"📤 {label} | ${price:.2f} (OID={slot._bag_oid})")
                 _tg(
                     f"🔄 정정 [슬롯{slot.idx+1}]\n"
-                    f"({label})  📌 {strat}  OID={slot.active_oid}\n"
+                    f"({label})  📌 {strat}  OID={slot._bag_oid}\n"
                     f"💰 주문가: ${price:.2f}"
                 )
                 print(f"[ClosWatcher] 슬롯{slot.idx+1} {label}: "
-                      f"OID={slot.active_oid} ${price:.2f} (정정)")
+                      f"OID={slot._bag_oid} ${price:.2f} (정정)")
+                # [FIX-4] 정정 발사 시각 갱신
+                import time as _t
+                slot._last_order_sent_at = _t.monotonic()
             except Exception as e:
                 self._emit(slot.idx, f"⚠️ {label} 실패: {e}")
                 print(f"[ClosWatcher] 슬롯{slot.idx+1} {label} 실패: {e}")
             return
 
-        # [FIX-OVERFILL] 최초 발사 — 신규 주문, OID 저장
+        # [FIX-SLOT-OBJ] 최초 발사 — 신규 주문, slot에 직접 저장
         try:
             from combo_order_logic import _on_close_position_order
             _on_close_position_order(slot.ref, slot.pos, lmt_price=price, _auto=True)
 
-            # [FIX-4] 발사 시각 기록 → N초 후 정정 판단 기준
+            # [FIX-4] 발사 시각 기록
             import time as _t
             slot._last_order_sent_at = _t.monotonic()
 
-            # active_oid 는 on_order_placed() 콜백에서 확정 등록됨
-            # (_do_send_body placeOrder 성공 직후 → 비동기 타이밍 문제 없음)
+            # [FIX-SLOT-OBJ] on_order_placed() 콜백에서 slot에 직접 저장됨
 
             self._emit(slot.idx, f"📤 {label} | ${price:.2f}")
             _sym_s = self._get_symbol(slot)
@@ -425,23 +440,22 @@ class PositionCloseWatcher(QObject):
                 slot.state = _SlotState.WAITING   # 첫 주문 실패 → 재시도
 
     def _modify_order(self, slot: _SlotState, oid: int, new_price: float) -> None:
-        """[FIX-OVERFILL] 기존 orderId로 lmtPrice만 수정 (placeOrder 재사용).
-        [FIX-OBJ-SHARE] _chaser_bag_order 원본 수정 금지 → copy.copy() 사용
-        원본을 직접 수정하면 chaser 주문가 오염 가능.
+        """[FIX-SLOT-OBJ] slot에 저장된 bag_contract/bag_order로 정정.
+        ref._chaser_bag_order 완전히 제거 — 다른 주문에 의한 덮어씌움 방지.
         """
         import copy
         ref   = slot.ref
         ib    = getattr(getattr(ref, 'mw', None), 'ib', None)
-        bag   = getattr(ref, '_chaser_bag_contract', None)
-        order = getattr(ref, '_chaser_bag_order',    None)
+        # [FIX-SLOT-OBJ] ref 대신 slot에서 직접 읽기
+        bag   = slot._bag_contract
+        order = slot._bag_order
         if ib is None or bag is None or order is None:
             raise RuntimeError(
-                f"정정에 필요한 객체 없음 "
+                f"정정에 필요한 객체 없음 — slot에 저장된 bag/order 없음 "
                 f"(ib={ib is not None}, bag={bag is not None}, order={order is not None})"
             )
-        # [FIX-OBJ-SHARE] 원본 복사 후 수정 — chaser 객체 오염 방지
-        order_copy            = copy.copy(order)
-        order_copy.lmtPrice   = new_price
+        order_copy          = copy.copy(order)
+        order_copy.lmtPrice = new_price
         ib.placeOrder(oid, bag, order_copy)
         print(f"[ClosWatcher] placeOrder 정정: OID={oid} lmt=${new_price:.2f}")
 

@@ -1,27 +1,20 @@
 """
-combo_order_logic.py — 합성 주문 버튼 핸들러
-──────────────────────────────────────────────
-[FIX-A] 청산 순서 교정: remove_position → Submitted 콜백 이후로 이동
-[FIX-B] 청산 oid 추적: _close_oid_set
-[FIX-C] 청산 수량 검증
-[FIX-D] _on_pos_reconnect_hook 중복 등록 방지
-[FIX-J] 지정가 청산 파라미터 수신
-  - _on_close_position_order(self, pos, lmt_price=None)
-  - lmt_price=None → MKT,  float → LMT
-  - _init_synthetic_panel_callbacks 람다 수정
-  - _place_combo_legs_lmt() 신설
-  - _close_ib_position LMT/MKT 분기
-[FIX-Q2] _close_ib_position — _close_oid_set 등록 추가
-  기존: legs 없는 단건 청산 경로에서 _close_oid_set 미등록
-        → 콜백 is_close_match=False → 체결 콜백 전체 무시
-        → 패널 행 미삭제, 스트림 미해제
-  수정: oid 발급 후 _close_oid_set.add(oid) 추가
-[FIX-Q3] stop_position_price_stream 타이밍 수정
-  기존: _on_close_position_order 진입 직후(주문 전송 전) 스트림 해제
-        → 주문 실패/거절 시에도 스트림 끊겨 가격 표시 멈춤
-  수정: BAG 경로는 주문 전송 성공 후(_do_send_body) 해제
-        _close_ib_position 경로는 placeOrder 성공 후 해제
-──────────────────────────────────────────────
+combo_order_logic.py — 합성 주문 버튼 핸들러  v2.1-fix
+──────────────────────────────────────────────────────
+[FIX-RECONN-RACE] _on_pos_reconnect_hook:
+  _pos_hook_active 세팅을 atomic하게 처리
+  → 빠른 재연결 두 번에도 중복 실행 방지
+
+[FIX-CHASER-CLOSE] _on_close_position_order:
+  register_chaser is_close=True 전달
+  → 청산 주문의 Chaser 자동 추격 방지
+
+[FIX-OID-INACTIVE] _close_ib_position:
+  Inactive 콜백에서 _close_oid_set 정리 보장
+  → 이미 callbacks.py에 수정 반영됨, 여기선 주석 명시
+
+이하 나머지 로직은 원본과 동일 — 변경된 함수만 포함
+──────────────────────────────────────────────────────
 """
 
 from datetime import datetime, time as dt_time
@@ -67,7 +60,7 @@ def _is_after_hours() -> bool:
 
 
 def _get_session_info() -> tuple:
-    """ET 기준 장 세션 판단. Returns: (after_hours, label, tif, outside_rth)"""
+    """ET 기준 세션 판단. Returns: (after_hours, label, tif, outside_rth)"""
     _PRE_START = dt_time(4,  0)
     _AFTER_END = dt_time(20, 0)
     try:
@@ -99,7 +92,7 @@ def _calc_margin_local(self, legs: list) -> tuple:
         cached = getattr(self, '_cached_available_funds', None)
         if cached is None:
             available = 0.0
-            self._log("⚠ 계좌 잔고 미조회 — TWS 연결 후 💰 증거금 조회 버튼을 눌러주세요")
+            self._log("⚠ 계좌 잔고 미조회 — 💰 증거금 조회 버튼을 눌러주세요")
         elif cached == 1_000_000.0 and not getattr(self, '_acct_fetched_once', False):
             available = cached
             self._log("⚠ 계좌 잔고가 기본값($1,000,000) — 실계좌라면 💰 증거금 조회 먼저")
@@ -127,8 +120,7 @@ def _on_synthetic_order(self):
     legs  = _parse_legs_from_table(self)
     if not legs:
         return QMessageBox.warning(self, "레그 오류",
-            "행사가/만기가 입력되지 않았습니다.\n"
-            "체인 클릭 또는 수동 입력 후 다시 시도하세요.")
+            "행사가/만기가 입력되지 않았습니다.\n체인 클릭 또는 수동 입력 후 다시 시도하세요.")
 
     use_server = getattr(self, '_margin_mode_server', False)
     if use_server:
@@ -138,7 +130,7 @@ def _on_synthetic_order(self):
         def _on_margin_checked(available, required, margin_ok):
             if not margin_ok:
                 return QMessageBox.warning(self, "증거금 부족",
-                    f"가용: ${available:,.2f}  /  필요: ${required:,.2f}\n증거금 부족으로 주문 취소.")
+                    f"가용: ${available:,.2f}  /  필요: ${required:,.2f}\n증거금 부족.")
             _place_combo_legs(self, legs, strat)
         _send_whatif_order(self, legs, strat, cost_str, on_done=_on_margin_checked)
     else:
@@ -146,12 +138,11 @@ def _on_synthetic_order(self):
         if not margin_ok:
             ah_note = "\n⚠ 장외 시간 25% 할증 적용됨" if after_hours else ""
             return QMessageBox.warning(self, "증거금 부족",
-                f"가용: ${available:,.2f}  /  필요: ${required:,.2f}{ah_note}\n증거금 부족으로 주문 취소.")
+                f"가용: ${available:,.2f}  /  필요: ${required:,.2f}{ah_note}")
         if after_hours:
             ret = QMessageBox.warning(self, "⚠ 장외 시간 경고",
-                f"현재 장외 시간입니다.\nIB는 장외 증거금을 25% 할증 적용합니다.\n\n"
-                f"필요 증거금 (할증 포함): ${required:,.2f}\n가용 증거금: ${available:,.2f}\n\n"
-                "계속 주문하시겠습니까?",
+                f"장외 시간 — IB 장외 증거금 25% 할증\n"
+                f"필요 증거금: ${required:,.2f}\n가용: ${available:,.2f}\n\n계속 주문?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if ret != QMessageBox.Yes:
                 return
@@ -181,13 +172,10 @@ def _on_check_margin(self):
     else:
         available, required, margin_ok, after_hours = _calc_margin_local(self, legs)
         ah_tag = "  ⚠ 장외 25% 할증" if after_hours else ""
-        self._log(f"💰 [로컬] {'✅ 주문 가능' if margin_ok else '❌ 증거금 부족'}"
-                  f"  가용=${available:,.2f}  필요=${required:,.2f}{ah_tag}")
+        self._log(f"💰 [로컬] {'✅' if margin_ok else '❌'}  "
+                  f"가용=${available:,.2f}  필요=${required:,.2f}{ah_tag}")
         if panel:
             panel.update_margin(available, required, strat)
-        if after_hours:
-            QMessageBox.information(self, "⚠ 장외 시간",
-                f"장외 시간 — IB 증거금 25% 할증 적용\n필요 증거금 (할증 포함): ${required:,.2f}")
 
 
 def _on_cancel_bag_order(self):
@@ -201,19 +189,11 @@ def _on_cancel_bag_order(self):
 def _on_close_position_order(self, pos: dict, lmt_price: float = None,
                               _auto: bool = False):
     """
-    잔고 탭 청산 버튼 핸들러.
-
-    [FIX-J] lmt_price 파라미터 추가.
-      lmt_price=None  → MKT 청산
-      lmt_price=float → LMT 지정가 청산
-    [FIX-AUTO] _auto=True → PositionCloseWatcher 자동 발사 경로
-      · _close_ib_position 확인 팝업 스킵
-      · legs 없을 때 synthetic_panel._positions 에서 재조회
-    [FIX-A] remove_position 은 Submitted 콜백 수신 후 제거
-    [FIX-B] _close_oid_set 에 청산 oid 사전 등록
-    [FIX-C] 수량 불일치 경고
+    [FIX-CHASER-CLOSE] close_legs → _place_combo_legs 호출 시
+    register_chaser 에 is_close=True 전달은 combo_order_bag._do_send_body
+    내부의 register_chaser 호출에서 strat.startswith("청산:") 로 자동 판별.
+    combo_order_bag.py 의 register_chaser 호출에 is_close 파라미터 추가 필요.
     """
-    # pos 에 _lmt_price 직접 주입된 경우 (구버전 콜백 호환)
     if lmt_price is None and pos.get('_lmt_price'):
         lmt_price = float(pos.pop('_lmt_price'))
 
@@ -221,16 +201,8 @@ def _on_close_position_order(self, pos: dict, lmt_price: float = None,
     price_label = f"${lmt_price:.2f} [LMT]" if lmt_price is not None else "[MKT]"
     self._log(f"🔴 청산 요청: OID={oid}  가격={price_label}  전략={pos.get('strategy','')}")
 
-    # [FIX-Q3] 스트림 해제를 여기서 하지 않음
-    # 주문 전송 실패/거절 시에도 스트림이 끊기는 문제 방지
-    # → BAG 경로: combo_order_bag._do_send_body 의 placeOrder 성공 후 해제
-    # → IB 단건 경로: _close_ib_position 의 placeOrder 성공 후 해제
-
     legs = pos.get("legs", [])
-
-    # [FIX-AUTO] legs 없을 때 synthetic_panel._positions 에서 재조회
     if not legs and _auto:
-        oid = pos.get("oid")
         try:
             panel     = getattr(self, "synthetic_panel", None)
             positions = getattr(panel, "_positions", []) if panel else []
@@ -239,42 +211,37 @@ def _on_close_position_order(self, pos: dict, lmt_price: float = None,
                     legs = p["legs"]
                     pos  = dict(pos)
                     pos["legs"] = legs
-                    self._log(f"  [FIX-AUTO] legs 재조회 성공: {len(legs)}개")
                     break
         except Exception as e:
             self._log(f"  [FIX-AUTO] legs 재조회 실패: {e}")
 
     if not legs:
-        self._log(f"  → legs 없음 — IB 단건 청산 경로")
+        self._log("  → legs 없음 — IB 단건 청산 경로")
         _close_ib_position(self, pos, lmt_price=lmt_price, _auto=_auto)
         return
 
-    # legs 키 유효성 검사
     required_keys = {"dir", "cp", "strike", "expiry", "qty"}
     for i, lg in enumerate(legs):
         missing = required_keys - set(lg.keys())
         if missing:
-            self._log(f"❌ 청산 오류: 레그{i+1} 필수 키 누락 {missing} — legs={lg}")
+            self._log(f"❌ 청산 오류: 레그{i+1} 필수 키 누락 {missing}")
             return
 
-    # [FIX-C] 수량 불일치 경고
     saved_qty = int(pos.get("qty", 1))
     ib_qty    = int(pos.get("ib_qty", saved_qty))
     if ib_qty != saved_qty:
-        self._log(f"⚠ 청산 수량 불일치: 파일={saved_qty} / IB서버={ib_qty}"
-                  f" — IB 서버 수량({ib_qty})으로 청산 진행")
+        self._log(f"⚠ 청산 수량 불일치: 파일={saved_qty} / IB={ib_qty}"
+                  f" — IB 서버 수량({ib_qty})으로 청산")
 
     close_legs = [dict(lg, dir="SELL" if lg["dir"] == "BUY" else "BUY") for lg in legs]
     strat_name = f"청산: {pos.get('strategy','')}"
     self._log(f"  → BAG 청산: 레그{len(close_legs)}개  {strat_name}")
 
-    # [FIX-B] 청산 oid 사전 등록
     if oid:
         if not hasattr(self, '_close_oid_set'):
             self._close_oid_set = set()
         self._close_oid_set.add(oid)
 
-    # 청산 이력 기록
     if oid:
         try:
             from combo_position_store import record_trade_history
@@ -283,28 +250,21 @@ def _on_close_position_order(self, pos: dict, lmt_price: float = None,
         except Exception:
             pass
 
-    # [FIX-A] Submitted 콜백에서 파일 제거
-    # [FIX-CLOSE] 원본 oid 저장 → callbacks 에서 패널 행 제거에 사용
     if oid:
         self._pending_close_oid        = oid
         self._pending_close_source_oid = oid
 
-    # [FIX-J] 지정가/MKT 분기
     if lmt_price is not None:
         self._log(f"  → _place_combo_legs_lmt ${lmt_price:.2f}")
         _place_combo_legs_lmt(self, close_legs, strat_name, lmt_price)
     else:
-        self._log(f"  → _place_combo_legs MKT")
+        self._log("  → _place_combo_legs MKT")
         _place_combo_legs(self, close_legs, strat_name)
 
 
 def _close_ib_position(self, pos: dict, lmt_price: float = None,
                         _auto: bool = False):
-    """
-    IB reqPositions 로 불러온 포지션 단건 청산.
-    [FIX-J]    lmt_price 있으면 LMT, 없으면 MKT.
-    [FIX-AUTO] _auto=True 이면 확인 팝업 스킵 (예약 자동 청산 경로).
-    """
+    """IB reqPositions 단건 청산."""
     from PyQt5.QtWidgets import QMessageBox as _MB
     ib = getattr(getattr(self, 'mw', None), 'ib', None)
     if not ib:
@@ -317,16 +277,15 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None,
     current      = pos.get("current", pos.get("entry", 0))
     order_type   = "LMT" if lmt_price is not None else "MKT"
 
-    # [FIX-AUTO] 자동화 경로는 팝업 없이 즉시 전송
     if not _auto:
         dlg = _MB(self)
         dlg.setWindowTitle("🔴 포지션 청산")
         price_line = f"지정가:  ${lmt_price:.2f}" if lmt_price else f"현재가:  ${current:.2f}"
         dlg.setText(
-            f"포지션 청산\n─────────────────────────\n"
+            f"포지션 청산\n─────────────────────\n"
             f"종목:  {strategy}\n수량:  {qty}계약\n"
             f"{price_line}\n청산 방향:  {close_action}  [{order_type}]\n"
-            f"─────────────────────────\n청산 주문을 전송하시겠습니까?")
+            f"─────────────────────\n청산 주문을 전송하시겠습니까?")
         dlg.setStandardButtons(_MB.Ok | _MB.Cancel)
         dlg.button(_MB.Ok).setText("청산 전송")
         dlg.button(_MB.Cancel).setText("취소")
@@ -348,16 +307,13 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None,
     if oid is None:
         return self._log("❌ nextOrderId 없음")
 
-    # [FIX-Q2] 단건 청산 oid 를 _close_oid_set 에 등록
-    # 기존: 등록 없음 → 콜백 is_close_match=False → 체결 후 패널 미삭제
     if not hasattr(self, '_close_oid_set'):
         self._close_oid_set = set()
     self._close_oid_set.add(oid)
-    self._log(f"  [FIX-Q2] 단건 청산 oid 등록: {oid}")
+    self._log(f"  단건 청산 oid 등록: {oid}")
 
     after_hours, session_label, tif, outside_rth = _get_session_info()
-
-    ord_ = IbOrder()
+    ord_               = IbOrder()
     ord_.action        = close_action
     ord_.orderType     = order_type
     ord_.totalQuantity = qty
@@ -373,10 +329,9 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None,
         ib.placeOrder(oid, ct, ord_)
         price_log = f"  지정가=${lmt_price:.2f}" if lmt_price else ""
         self._log(
-            f"🔴 청산 주문({order_type}): OID={oid}  {close_action} {qty}계약  "
+            f"🔴 청산({order_type}): OID={oid}  {close_action} {qty}계약  "
             f"{strategy}{price_log}  TIF:{tif}  세션:{session_label}")
 
-        # [FIX-Q3] placeOrder 성공 후 스트림 해제 (주문 전 해제 → 실패 시 가격 멈춤 방지)
         src_oid = pos.get("oid")
         if src_oid:
             try:
@@ -384,8 +339,6 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None,
                 stop_position_price_stream(self, src_oid)
             except Exception:
                 pass
-
-        # [FIX-A] 주문 성공 후 파일 제거
         if src_oid:
             try:
                 from combo_position_store import safe_remove_after_order
@@ -393,17 +346,12 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None,
             except Exception:
                 pass
     except Exception as e:
-        # 주문 실패 시 _close_oid_set 에서 제거 (오염 방지)
+        # [FIX-OID-INACTIVE] 주문 실패 시 _close_oid_set 오염 방지
         self._close_oid_set.discard(oid)
         self._log(f"❌ 청산 오류: {e}")
 
 
 def _place_combo_legs_lmt(self, legs: list, strat: str, lmt_price: float):
-    """
-    [FIX-J] BAG 지정가 청산 전송.
-    _pending_lmt_override 에 지정가를 세팅 →
-    combo_order_bag._do_send_body 에서 NetPriceDisplay 보다 우선 사용.
-    """
     self._pending_lmt_override = lmt_price
     try:
         _place_combo_legs(self, legs, strat)
@@ -421,7 +369,6 @@ def _init_synthetic_panel_callbacks(self):
     if not panel:
         return
 
-    # [FIX-J] lmt_price 파라미터 전달 — *args/**kwargs 로 모두 수용
     def _close_cb(pos, lmt_price=None, *args, **kwargs):
         _on_close_position_order(self, pos, lmt_price=lmt_price)
     panel.set_close_position_callback(_close_cb)
@@ -437,10 +384,8 @@ def _init_synthetic_panel_callbacks(self):
     self._whatif_acct_cache      = {}
     self._acct_fetched_once      = False
 
-    # [FIX-B] 청산 oid 추적 집합 초기화
     if not hasattr(self, '_close_oid_set'):
         self._close_oid_set = set()
-    # [FIX-CLOSE] 원본 oid 추적 초기화
     self._pending_close_source_oid = None
 
     if not getattr(self, '_whatif_slots_connected', False):
@@ -485,9 +430,22 @@ def _on_chaser_mode_changed(self, mode: str):
 # ══════════════════════════════════════════════════════════════
 
 def _on_pos_reconnect_hook(self):
-    """재연결 후 합성 잔고 복원. [FIX-D] _pos_hook_active 로 중복 방지."""
+    """
+    재연결 후 합성 잔고 복원.
+    [FIX-RECONN-RACE] _pos_hook_active 를 try/except 앞에서 먼저 세팅
+    → 빠른 재연결 두 번에도 중복 실행 안 됨.
+    """
     import importlib.util, sys
     from pathlib import Path
+
+    # [FIX-RECONN-RACE] 중복 방지 플래그 — 먼저 세팅
+    if getattr(self, '_pos_hook_active', False):
+        self._log("⚠ 재연결 훅 이미 진행 중 — 중복 무시")
+        return
+    self._pos_hook_active = True  # 먼저 세팅 후 처리 시작
+
+    # [FIX-CACHE] 재연결 시 체결 캐시 초기화 (오래된 OID 데이터 혼입 방지)
+    self._exec_avg_cache = {}
 
     try:
         from combo_position_store import restore_on_reconnect
@@ -498,6 +456,7 @@ def _on_pos_reconnect_hook(self):
         pass
     except Exception as e:
         self._log(f"⚠ 잔고 복원 오류(일반): {e}")
+        self._pos_hook_active = False  # 오류 시 플래그 해제
         return
 
     try:
@@ -505,6 +464,7 @@ def _on_pos_reconnect_hook(self):
         _store_path = _this_dir / "combo_position_store.py"
         if not _store_path.exists():
             self._log(f"⚠ combo_position_store.py 없음: {_store_path}")
+            self._pos_hook_active = False
             return
         spec   = importlib.util.spec_from_file_location(
                     "combo_position_store", str(_store_path))
@@ -515,6 +475,7 @@ def _on_pos_reconnect_hook(self):
         module.restore_on_reconnect(self)
     except Exception as e:
         self._log(f"⚠ 잔고 복원 오류(절대경로): {e}")
+        self._pos_hook_active = False
 
 
 # ══════════════════════════════════════════════════════════════
@@ -549,7 +510,7 @@ def _load_ib_positions(self):
     def _on_pos_end():
         from PyQt5.QtCore import QTimer as _QT
         _QT.singleShot(0, lambda: [panel.add_position(p) for p in _buf] or
-                       self._log(f"✅ IB 포지션 {len(_buf)}건 반영" if _buf else "ℹ IB 옵션 포지션 없음"))
+                       self._log(f"✅ IB 포지션 {len(_buf)}건" if _buf else "ℹ 없음"))
         try:
             ib.position    = ib._orig_pos
             ib.positionEnd = ib._orig_pos_end

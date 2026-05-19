@@ -45,7 +45,35 @@ def _on_chain_click(self, row: int, col: int, side: str):
     self._log(f"🖱 체인 클릭: {side} row={row}  전략={strat!r}  "
               f"is_spread={is_spread}  tbl_rows={self.tbl_legs.rowCount()}")
 
-    if is_spread and self.tbl_legs.rowCount() >= 2:
+    is_butterfly = ("버터플라이" in strat)
+    if is_butterfly:
+        # Leg0 에 클릭한 행사가 입력 후 나머지 자동 채움
+        strike = strikes[row]
+        price  = prices.get(strike)
+        _write_single(self, 0, side, strike, price)
+        _fetch_single(self, 0, side, strike)
+        from combo_ui_leg_logic import _fill_butterfly_legs, _BF_STRATS, _IBF_STRAT
+        _fill_butterfly_legs(self, strat, float(strike))
+        # 나머지 레그 시세 구독
+        gap = getattr(self, '_spread_gap', 5)
+        is_ibf = _IBF_STRAT in strat
+        if is_ibf:
+            legs_info = [
+                (0, side, float(strike) - gap),
+                (1, side, float(strike)),
+                (2, "C",  float(strike)),
+                (3, "C",  float(strike) + gap),
+            ]
+        else:
+            legs_info = [
+                (1, side, float(strike) + gap),
+                (2, side, float(strike) + gap * 2),
+            ]
+        for leg_r, leg_side, leg_strike in legs_info:
+            _write_single(self, leg_r, leg_side, leg_strike,
+                          (self._chain_call if leg_side=="C" else self._chain_put).get(leg_strike))
+            _fetch_single(self, leg_r, leg_side, leg_strike)
+    elif is_spread and self.tbl_legs.rowCount() >= 2:
         row2 = min(row + 1, len(strikes) - 1)
         plan = [
             (0, side, strikes[row]),

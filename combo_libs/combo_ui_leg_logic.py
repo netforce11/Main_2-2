@@ -64,6 +64,9 @@ def _on_strat_change(self, idx: int):
 
     # ── v3.0: 구성 가이드가 있는 전략이면 팝업 자동 표시 ─────
     _maybe_show_setup_guide(self, strat)
+    # ── v3.1: 스프레드 간격 스핀박스 기본값 5 반영 ──────────
+    if not hasattr(self, '_spread_gap'):
+        self._spread_gap = getattr(self, '_spn_gap', None) and self._spn_gap.value() or 5
 
 
 def _maybe_show_setup_guide(self, strat: str):
@@ -266,3 +269,54 @@ def _update_add_btn_state(self):
             f"레그 추가 (현재 {count}/{MAX_LEGS})"
             if count < MAX_LEGS else
             f"최대 {MAX_LEGS}개 레그까지 추가 가능합니다")
+
+
+# ── 버터플라이·아이언버터플라이 자동 레그 세팅 (v3.1) ───────────
+_BF_STRATS = {"콜 버터플라이": "C", "풋 버터플라이": "P"}
+_IBF_STRAT  = "아이언 버터플라이"
+
+def _fill_butterfly_legs(self, strat: str, leg0_strike: float):
+    """Leg0 행사가 기준으로 나머지 레그 행사가 자동 채움."""
+    gap = getattr(self, '_spread_gap', 5)
+    tbl = self.tbl_legs
+    def _set(row, strike):
+        if row < tbl.rowCount():
+            item = tbl.item(row, 3)
+            self._leg_item_changing = True
+            try:
+                if item:
+                    item.setText(str(int(strike)))
+                else:
+                    from combo_constants import mk_item
+                    tbl.setItem(row, 3, mk_item(str(int(strike))))
+            finally:
+                self._leg_item_changing = False
+
+    is_bf  = any(k in strat for k in _BF_STRATS)
+    is_ibf = _IBF_STRAT in strat
+    if is_bf:
+        _set(1, leg0_strike + gap)
+        _set(2, leg0_strike + gap * 2)
+    elif is_ibf:
+        _set(0, leg0_strike - gap)
+        _set(1, leg0_strike)
+        _set(2, leg0_strike)
+        _set(3, leg0_strike + gap)
+
+def _apply_gap_to_2leg_spread(self, strat: str, leg0_strike: float):
+    """2레그 스프레드 Leg1 행사가 자동 채움."""
+    gap = getattr(self, '_spread_gap', 5)
+    sign = -1 if "풋" in strat else 1
+    tbl = self.tbl_legs
+    if tbl.rowCount() < 2:
+        return
+    item = tbl.item(1, 3)
+    self._leg_item_changing = True
+    try:
+        if item:
+            item.setText(str(int(leg0_strike + sign * gap)))
+        else:
+            from combo_constants import mk_item
+            tbl.setItem(1, 3, mk_item(str(int(leg0_strike + sign * gap))))
+    finally:
+        self._leg_item_changing = False
