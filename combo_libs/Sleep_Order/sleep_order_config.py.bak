@@ -130,7 +130,6 @@ class SleepOrderConfigStore(_SingleSellProps):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._data: dict = {}
-            cls._instance._save_lock = __import__('threading').Lock()  # [FIX-FILE-LOCK]
             cls._instance._load()
         return cls._instance
 
@@ -144,18 +143,13 @@ class SleepOrderConfigStore(_SingleSellProps):
                 print(f"[SleepCfg] 로드 실패: {e}")
 
     def save(self) -> None:
-        """[FIX-FILE-LOCK] 동시 쓰기 방지 — threading.Lock 사용."""
-        with self._save_lock:
-            try:
-                _CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-                # 임시 파일에 먼저 쓰고 교체 — 파일 손상 방지
-                _tmp = _CONFIG_FILE.with_suffix('.tmp')
-                _tmp.write_text(
-                    json.dumps(self._data, ensure_ascii=False, indent=2),
-                    encoding="utf-8")
-                _tmp.replace(_CONFIG_FILE)
-            except Exception as e:
-                print(f"[SleepCfg] 저장 실패: {e}")
+        try:
+            _CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _CONFIG_FILE.write_text(
+                json.dumps(self._data, ensure_ascii=False, indent=2),
+                encoding="utf-8")
+        except Exception as e:
+            print(f"[SleepCfg] 저장 실패: {e}")
 
     def get(self, key: str, default=None):
         return self._data.get(key, _DEFAULTS.get(key, default))

@@ -28,7 +28,6 @@ class SleepOrderWatcher(QObject):
         self._initialized = True
         self._ref = None; self._active = False; self._fired = False
         self._last_range_reset = 0.0
-        self._scanning = False   # [FIX-REENTRANT] 재진입 방어 플래그
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._tick)
@@ -54,7 +53,6 @@ class SleepOrderWatcher(QObject):
         self._put_fired  = False     # both 모드 — 풋 발사 완료
         self._call_fired = False     # both 모드 — 콜 발사 완료
         self._last_range_reset = 0.0
-        self._scanning = False       # [FIX-REENTRANT]
         DebitSpikeWatcher.get().reset_all()
         SingleOptSpikeWatcher.get().reset_all()
         if hasattr(ref, '_sleep_subscribe_chain'): ref._sleep_subscribe_chain()
@@ -145,13 +143,9 @@ class SleepOrderWatcher(QObject):
                     if self._put_fired and self._call_fired:
                         tg("✅ [조건B] 양방향 체결 완료 후 시간 종료")
                     elif self._put_fired:
-                        tg("⚠️ [조건B] 시간 종료\n"
-                           "풋 ✅ 체결  |  콜 ❌ 보조조건 미달로 미체결\n"
-                           "🚨 풋 포지션 단독 보유 중 — 수동 확인 필요")
+                        tg("⚠️ [조건B] 시간 종료\n풋 ✅ 체결  |  콜 ❌ 보조조건 미달로 미체결")
                     else:
-                        tg("⚠️ [조건B] 시간 종료\n"
-                           "콜 ✅ 체결  |  풋 ❌ 보조조건 미달로 미체결\n"
-                           "🚨 콜 포지션 단독 보유 중 — 수동 확인 필요")
+                        tg("⚠️ [조건B] 시간 종료\n콜 ✅ 체결  |  풋 ❌ 보조조건 미달로 미체결")
                     self.stop(reason="주문 완료 후 시간 종료")
                 elif self._past_end(sleep_cfg.schedule_end):
                     tg("⏰ [조건B] 예약 시간 종료  양방향 조건 미충족 — 미주문")

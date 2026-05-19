@@ -312,26 +312,11 @@ def restore_on_reconnect(self) -> None:
         self._pos_hook_active = False
 
     def _on_pos(account, contract, pos_qty, avg_cost):
-        # [FIX-XSP-RESTORE] qty=0 또는 극소 수량 → 만기 현금결제 잔재 → 무시
         if abs(pos_qty) < 0.001:
             return
         sec = getattr(contract, 'secType', '')
         if sec not in ('OPT', 'FOP', 'BAG'):
             return
-        # [FIX-XSP-RESTORE] XSP 만기 포지션 필터 — expiry 가 오늘 이전이면 무시
-        try:
-            from datetime import date
-            expiry_str = str(getattr(contract, 'lastTradeDateOrContractMonth', '') or '')
-            if len(expiry_str) >= 8:
-                exp_date = date(int(expiry_str[:4]),
-                                int(expiry_str[4:6]),
-                                int(expiry_str[6:8]))
-                if exp_date < date.today():
-                    sym = getattr(contract, 'symbol', '')
-                    print(f"[PosStore] 만기 포지션 무시: {sym} {expiry_str} qty={pos_qty}")
-                    return
-        except Exception:
-            pass
         sym    = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
         right  = getattr(contract, 'right', '')
         strike = getattr(contract, 'strike', 0)

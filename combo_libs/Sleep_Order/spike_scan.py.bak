@@ -14,17 +14,7 @@ v1.5 변경 (조건 B — AND 동시 체결):
 """
 from __future__ import annotations
 import time as _time
-from Sleep_Order.spike_utils import tg as _tg_raw
-
-def tg(msg: str) -> None:
-    """[FIX-TG-SAFE] 텔레그램 전송 실패 시 주문 흐름 중단 방지 — 별도 스레드."""
-    import threading
-    def _run():
-        try:
-            _tg_raw(msg)
-        except Exception as e:
-            print(f"[SpikeScan] TG 실패: {e}")
-    threading.Thread(target=_run, daemon=True).start()
+from Sleep_Order.spike_utils import tg
 from Sleep_Order.spike_scan_call_helper import find_call_item as _find_call_item
 
 
@@ -49,14 +39,12 @@ def _opt_tick(net: float, symbol: str = "") -> float:
 
 def _round_to_tick(net: float, symbol: str = "") -> float:
     """net 가격을 해당 심볼의 틱 단위로 반올림.
-    [FIX-DECIMAL] 부동소수점 오차 방지 — Decimal 사용.
-    XSP: $0.01 단위 / SPX: $0.05 단위
+    XSP: $0.01 단위  (기존 *20/20 = $0.05 단위 → XSP에서 오차 발생)
+    SPX: $0.05 단위
     """
-    from decimal import Decimal, ROUND_HALF_UP
     tick = _opt_tick(net, symbol)
-    d    = Decimal(str(net))
-    step = Decimal(str(tick))
-    return float((d / step).quantize(Decimal('1'), rounding=ROUND_HALF_UP) * step)
+    factor = round(1 / tick)   # XSP=100, SPX=20
+    return round(round(net * factor) / factor, 4)
 
 def calc_entry_price(net: float, sleep_cfg, symbol: str = "") -> float:
     if not sleep_cfg.aggressive_entry:
@@ -77,21 +65,7 @@ def _now_str() -> str:
 
 
 def scan_and_check(watcher) -> None:
-    """watcher = SleepOrderWatcher 인스턴스.
-    [FIX-REENTRANT] 재진입 방어 — 이전 호출이 끝나기 전에 다음 틱이 오면 스킵.
-    """
-    # [FIX-REENTRANT] 재진입 락
-    if getattr(watcher, '_scanning', False):
-        return
-    watcher._scanning = True
-    try:
-        _scan_and_check_inner(watcher)
-    finally:
-        watcher._scanning = False
-
-
-def _scan_and_check_inner(watcher) -> None:
-    """scan_and_check 실제 로직 — 재진입 방어 래퍼에서 호출."""
+    """watcher = SleepOrderWatcher 인스턴스."""
     from Sleep_Order.sleep_order_config   import sleep_cfg
     from Sleep_Order.spike_watcher_debit  import DebitSpikeWatcher
     from Sleep_Order.spike_watcher_single import SingleOptSpikeWatcher, resolve_single_strikes
@@ -101,18 +75,6 @@ def _scan_and_check_inner(watcher) -> None:
 
     chain_put = getattr(ref, '_chain_put', {})
     if len([v for v in chain_put.values() if v and v > 0]) < 3: return
-
-    # [FIX-DEBIT-DUP] DebitSpikeWatcher 가 이미 같은 행사가에 진입했으면
-    # SleepOrderWatcher 중복 발사 차단
-    direction = sleep_cfg.combo_direction
-    if not watcher._fired:
-        try:
-            _debit_fired = DebitSpikeWatcher.get().any_fired()
-            if _debit_fired:
-                watcher.status_changed.emit("⚠ Debit캐치 발사됨 — 예약 중복 차단")
-                return
-        except Exception:
-            pass
 
     direction = sleep_cfg.combo_direction
 

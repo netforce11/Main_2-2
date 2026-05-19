@@ -726,11 +726,10 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         self._chaser_current_oid  = oid
         self._chaser_oid          = oid
 
-        # [FIX-ACTIVE-OID+SLOT-MATCH] watcher 에 OID + pos_oid 직접 통보
+        # [FIX-ACTIVE-OID] watcher 에 OID 직접 통보 — 비동기 타이밍 문제 완전 차단
         try:
             from Sleep_Order.position_close_watcher import PositionCloseWatcher
-            _src_oid = getattr(self, '_pending_close_source_oid', None)
-            PositionCloseWatcher.get().on_order_placed(oid, pos_oid=_src_oid)
+            PositionCloseWatcher.get().on_order_placed(oid)
         except Exception:
             pass
 

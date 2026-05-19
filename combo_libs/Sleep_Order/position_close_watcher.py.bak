@@ -226,24 +226,16 @@ class PositionCloseWatcher(QObject):
 
     # ── 이벤트 드리븐 진입점 ──────────────────────────────────
 
-    def on_order_placed(self, oid: int, pos_oid: int = None) -> None:
+    def on_order_placed(self, oid: int) -> None:
         """[FIX-ACTIVE-OID] _do_send_body placeOrder 성공 직후 호출.
-        [FIX-SLOT-MATCH] pos_oid 로 정확한 슬롯 매칭 — 다중 슬롯 오매칭 방지.
-        슬롯 1,2 동시 ORDERED 상태에서 첫 번째 슬롯에 잘못 할당되는 버그 차단.
+        ORDERED 상태에서 active_oid 가 None 인 슬롯에 OID 확정 등록.
+        비동기 conId 조회 타이밍 문제 완전 차단.
         """
         for slot in self._slots:
-            if slot.state != _SlotState.ORDERED:
-                continue
-            if slot.active_oid is not None:
-                continue
-            # [FIX-SLOT-MATCH] pos_oid 가 있으면 정확히 매칭
-            if pos_oid is not None:
-                if (slot.pos or {}).get("oid") != pos_oid:
-                    continue
-            slot.active_oid = oid
-            print(f"[ClosWatcher] on_order_placed: 슬롯{slot.idx+1} "
-                  f"active_oid={oid} pos_oid={pos_oid} 확정")
-            break
+            if slot.state == _SlotState.ORDERED and slot.active_oid is None:
+                slot.active_oid = oid
+                print(f"[ClosWatcher] on_order_placed: 슬롯{slot.idx+1} active_oid={oid} 확정")
+                break
 
     def on_price_update(self, oid: int, current_price: float) -> None:
         """[EVENT-DRIVEN] update_position_prices 에서 호출.
@@ -425,11 +417,7 @@ class PositionCloseWatcher(QObject):
                 slot.state = _SlotState.WAITING   # 첫 주문 실패 → 재시도
 
     def _modify_order(self, slot: _SlotState, oid: int, new_price: float) -> None:
-        """[FIX-OVERFILL] 기존 orderId로 lmtPrice만 수정 (placeOrder 재사용).
-        [FIX-OBJ-SHARE] _chaser_bag_order 원본 수정 금지 → copy.copy() 사용
-        원본을 직접 수정하면 chaser 주문가 오염 가능.
-        """
-        import copy
+        """[FIX-OVERFILL] 기존 orderId로 lmtPrice만 수정 (placeOrder 재사용)."""
         ref   = slot.ref
         ib    = getattr(getattr(ref, 'mw', None), 'ib', None)
         bag   = getattr(ref, '_chaser_bag_contract', None)
@@ -439,10 +427,8 @@ class PositionCloseWatcher(QObject):
                 f"정정에 필요한 객체 없음 "
                 f"(ib={ib is not None}, bag={bag is not None}, order={order is not None})"
             )
-        # [FIX-OBJ-SHARE] 원본 복사 후 수정 — chaser 객체 오염 방지
-        order_copy            = copy.copy(order)
-        order_copy.lmtPrice   = new_price
-        ib.placeOrder(oid, bag, order_copy)
+        order.lmtPrice = new_price
+        ib.placeOrder(oid, bag, order)
         print(f"[ClosWatcher] placeOrder 정정: OID={oid} lmt=${new_price:.2f}")
 
     def _send_market(self, slot: _SlotState) -> None:
@@ -458,9 +444,6 @@ class PositionCloseWatcher(QObject):
         if bid_price and bid_price > 0:
             slot.order_price = bid_price
             slot.active_oid  = None
-            # [FIX-TIMER-SLOT] 타이머 발사 시점에 슬롯 식별용 스냅샷 저장
-            _snap_idx     = slot.idx
-            _snap_pos_oid = (slot.pos or {}).get("oid")
             self._send_order(slot, is_correction=False)
             self._emit(slot.idx,
                        f"🚨 Simulated MKT (Bid ${bid_price:.2f}) "
@@ -472,27 +455,13 @@ class PositionCloseWatcher(QObject):
                 f"⏱ 5초 후 미체결 시 진짜 시장가 발사"
             )
             print(f"[ClosWatcher] 슬롯{slot.idx+1} Simulated MKT Bid=${bid_price:.2f}")
-            QTimer.singleShot(5000,
-                lambda s=slot, si=_snap_idx, sp=_snap_pos_oid:
-                    self._last_resort_market(s, snap_idx=si, snap_pos_oid=sp))
+            QTimer.singleShot(5000, lambda s=slot: self._last_resort_market(s))
         else:
             print(f"[ClosWatcher] 슬롯{slot.idx+1} Bid 조회 실패 → 즉시 시장가")
             self._last_resort_market(slot)
 
-    def _last_resort_market(self, slot: _SlotState,
-                             snap_idx: int = None,
-                             snap_pos_oid: int = None) -> None:
-        """[FIX-SLIPPAGE+LOOP+TIMER-SLOT] 최후 시장가 — 1회만 발사.
-        [FIX-TIMER-SLOT] 5초 타이머 만료 시점에 슬롯이 교체됐는지 검증.
-        """
-        # [FIX-TIMER-SLOT] 슬롯 교체 여부 확인
-        if snap_idx is not None and slot.idx != snap_idx:
-            return
-        if snap_pos_oid is not None:
-            cur_pos_oid = (slot.pos or {}).get("oid")
-            if cur_pos_oid != snap_pos_oid:
-                print(f"[ClosWatcher] _last_resort_market 슬롯 교체 감지 — 발사 취소")
-                return
+    def _last_resort_market(self, slot: _SlotState) -> None:
+        """[FIX-SLIPPAGE+LOOP] 최후 시장가 — 1회만 발사."""
         if slot.state != _SlotState.ORDERED:
             return
         if not self._pos_exists(slot):
