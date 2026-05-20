@@ -249,7 +249,7 @@ class SnapshotManager(QObject):
                 if rid in self._req_map:
                     try: self._ib.cancelMktData(rid)
                     except Exception: pass
-                    del self._req_map[rid]
+                    self._req_map.pop(rid, None)
 
     def _snap_1dte(self):
         if not self._exp_1: return

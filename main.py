@@ -94,9 +94,9 @@ pg.setConfigOption('antialias', False)
 # ─────────────────────────────────────────────────────────────
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QMessageBox,
-    QStatusBar
+    QStatusBar, QPushButton
 )
 from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtGui import QKeySequence
@@ -248,6 +248,26 @@ class TradingDashboard(QMainWindow):
         # ── 탭 등록 ────────────────────────────────────────────
         self.tab_callput = add(CallPutGrid,        "1. 콜-풋 (Main)", self)
         init_chain_saver(self)
+
+        # ✅ NEW: SPX 감시 패널 생성 + mw 주입
+        self._watch_panel = WatchAlertPanel()
+        self._watch_panel.set_main_window(self)
+        self._watch_panel.show()
+
+        # ✅ NEW: 메뉴바 좌측에 감시패널 토글 버튼 (누르면 show/hide)
+        self._watch_btn = QPushButton("🔍 감시패널")
+        self._watch_btn.setCheckable(True)
+        self._watch_btn.setChecked(True)
+        self._watch_btn.setFixedHeight(22)
+        self._watch_btn.setStyleSheet(
+            "QPushButton{padding:0 8px;font-size:11px;border:1px solid #555;border-radius:3px;}"
+            "QPushButton:checked{background:#2a6;color:#fff;border-color:#2a6;}"
+        )
+        self._watch_btn.toggled.connect(
+            lambda on: self._watch_panel.show() if on else self._watch_panel.hide()
+        )
+        self.menuBar().setCornerWidget(self._watch_btn, Qt.TopLeftCorner)
+
         self.tab_balance = add(BalanceGrid,        "2. 잔고/PnL",     self)
         self.tab_combo   = add(ComboStrategyGrid,  "4. 복합 전략",    self)
         self.tab_greeks  = add(GreeksGrid,         "6. Greeks Matrix",self)
@@ -639,6 +659,12 @@ class TradingDashboard(QMainWindow):
                 self.tab_callput._w_save()
         except Exception as e:
             print(f"[closeEvent] 관심종목 저장 실패 (무시): {e}")
+        # ✅ NEW: 감시 패널 정리
+        try:
+            if hasattr(self, '_watch_panel'):
+                self._watch_panel.hide()
+        except Exception:
+            pass
         self.disconnect_ibkr()
         event.accept()
 

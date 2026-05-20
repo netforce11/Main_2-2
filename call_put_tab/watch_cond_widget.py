@@ -551,6 +551,18 @@ class WatchCondMixin(WatchAlertTabMixin):
         self._watch_tabs.addTab(self._build_log_tab(),   "알람로그")
         self._watch_tabs.addTab(self._build_rules_tab(), "등록목록")
         self._watch_tabs.addTab(self._build_spx_tab(),   "  SPX감시")
+        print("[DEBUG] 새벽알림 탭 추가 시도")
+        # ── 새벽 알림 템플릿 탭 (v3.1) ──────────────────
+        try:
+            import sys, os
+            _wd = os.path.join(os.path.dirname(__file__), '..', 'watch_dog')
+            if _wd not in sys.path:
+                sys.path.insert(0, _wd)
+            from night_alert_tab import NightAlertTab
+            self._night_alert_tab = NightAlertTab()
+            self._watch_tabs.addTab(self._night_alert_tab, "🌙 새벽알림")
+        except Exception as e:
+            print(f"[NightAlertTab] 로드 실패: {e}")
         vb.addWidget(self._watch_tabs, 1)
         return self._watch_gb
 

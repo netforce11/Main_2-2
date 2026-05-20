@@ -38,6 +38,7 @@ class WatchMixin:
     # 통합 감시 위젯 빌더  (감시설정 | 알람로그 | 등록목록 탭)
     # ─────────────────────────────────────────────────────────
     def _build_watch_widget(self) -> QWidget:
+        print("[DEBUG] _build_watch_widget 호출됨")
         """감시설정 + 알람로그 + 등록목록을 QTabWidget 하나로 통합."""
         outer = QGroupBox("🔔 감시")
         outer_v = QVBoxLayout(outer)
@@ -67,6 +68,18 @@ class WatchMixin:
         tab_rules = self._build_rules_tab()
         self._watch_tabs.addTab(tab_rules, "📌 등록 목록")
 
+        # ── 새벽 알림 템플릿 탭 (v3.1) ──────────────────
+        try:
+            import sys, os
+            _wd = os.path.join(os.path.dirname(__file__), 'watch_dog')
+            if _wd not in sys.path:
+                sys.path.insert(0, _wd)
+            from night_alert_tab import NightAlertTab
+            self._night_alert_tab = NightAlertTab()
+            self._watch_tabs.addTab(self._night_alert_tab, "\U0001f319 새벽알림")
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            print(f"[NightAlertTab] 로드 실패: {e}")
         outer_v.addWidget(self._watch_tabs)
         self._watch_gb = outer
         return outer

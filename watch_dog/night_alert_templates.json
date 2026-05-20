@@ -1,0 +1,37 @@
+{
+  "slots": [
+    {
+      "start_hhmm": "01:00",
+      "end_hhmm": "0140",
+      "opt_type": "both",
+      "multiplier": 3.0,
+      "abs_price": 0.0,
+      "enabled": true,
+      "label": "구간1"
+    },
+    {
+      "start_hhmm": "01:45",
+      "end_hhmm": "02:30",
+      "opt_type": "both",
+      "multiplier": 3.0,
+      "abs_price": 0.0,
+      "enabled": true,
+      "label": "구간2"
+    },
+    {
+      "start_hhmm": "02:30",
+      "end_hhmm": "03:30",
+      "opt_type": "both",
+      "multiplier": 2.0,
+      "abs_price": 0.0,
+      "enabled": true,
+      "label": "구간3"
+    }
+  ],
+  "base_type": "open",
+  "atm_auto": true,
+  "atm_manual": 0.0,
+  "tg_fmt": "🚨 [{slot}] {opt_type}{strike} {pct:.0f}% 급등",
+  "snapshot_done": false,
+  "snapshot_time": ""
+}

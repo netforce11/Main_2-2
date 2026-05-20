@@ -293,6 +293,9 @@ class WatchLogicMixin:
 
     def _load_watch_rules_from_file(self):
         """앱 시작 시 호출. watch_rules.json → _watch_rules 복원 + 테이블 재구성."""
+        if not hasattr(self, "tbl_watch_rules"):
+            self._log("⚠ 감시 규칙 복원 건너뜀: tbl_watch_rules 미생성")
+            return
         if not _WATCH_RULES_FILE.exists():
             # 파일 없음 → OFF 상태 유지
             self._update_watch_status_label(False)

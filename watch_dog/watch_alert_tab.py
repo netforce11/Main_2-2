@@ -50,7 +50,7 @@ class WatchAlertPanel(QWidget):
         self.setWindowTitle("SPX 감시 패널")
         self.setWindowFlags(
             Qt.Tool | Qt.WindowStaysOnTopHint | Qt.CustomizeWindowHint |
-            Qt.WindowTitleHint | Qt.WindowMinimizeButtonHint
+            Qt.WindowTitleHint | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
         )
         self.setFixedWidth(380)
 
@@ -65,13 +65,35 @@ class WatchAlertPanel(QWidget):
 
         self._alert_total = 0
 
+        # ✅ NEW: 새벽 알림 발동 체커
+        try:
+            from night_alert_checker import NightAlertChecker
+            self._night_checker = NightAlertChecker(log_fn=self._log_deferred)
+        except Exception as e:
+            self._night_checker = None
+            print(f"[WatchAlertPanel] NightAlertChecker 로드 실패: {e}")
+
         self._build_ui()
+        # ── 자동 세션 감시 타이머 (1분 주기) ────────────
+        from PyQt5.QtCore import QTimer
+        self._auto_session_timer = QTimer(self)
+        self._auto_session_timer.setInterval(60_000)
+        self._auto_session_timer.timeout.connect(self._check_session_auto)
+        self._auto_session_timer.start()
+        self._session_was_open = False
         self._position_bottom_left()
 
         # ✅ FIX: 타이머 58초 (COOLDOWN_SEC=55 과 여유 확보)
         self._timer = QTimer(self)
         self._timer.setInterval(58_000)
         self._timer.timeout.connect(self._on_tick)
+
+        # ✅ NEW: 새벽알림 독립 타이머 — 감시 ON/OFF 무관, 패널 열리면 항상 작동
+        self._night_timer = QTimer(self)
+        self._night_timer.setInterval(60_000)
+        self._night_timer.timeout.connect(self._on_night_tick)
+        self._night_timer.start()
+        self._log_deferred("🌙 새벽알림 타이머 시작 (감시 독립)")
 
     # ── 메인윈도우 주입 ────────────────────────────────────
 
@@ -82,21 +104,41 @@ class WatchAlertPanel(QWidget):
         사용 예) panel.set_main_window(self)
         """
         self._mw = mw
+        # ✅ NEW: NightAlertChecker 에도 mw 주입
+        if self._night_checker is not None:
+            self._night_checker.set_main_window(mw)
 
     # ── UI 구성 ────────────────────────────────────────────
 
     def _build_ui(self):
+        from PyQt5.QtWidgets import QTabWidget
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(4)
-
         root.addLayout(self._make_header())
-        root.addWidget(self._make_cond_a_box())
-        root.addWidget(self._make_cond_b_box())
-        root.addLayout(self._make_control_bar())
-        root.addLayout(self._make_suppress_bar())   # ✅ NEW
-        root.addWidget(self._make_log_box())
-
+        tabs = QTabWidget()
+        spx_w = QWidget()
+        vb = QVBoxLayout(spx_w)
+        vb.setContentsMargins(0,0,0,0); vb.setSpacing(4)
+        vb.addWidget(self._make_cond_a_box())
+        vb.addWidget(self._make_cond_b_box())
+        vb.addLayout(self._make_control_bar())
+        vb.addLayout(self._make_suppress_bar())
+        vb.addWidget(self._make_log_box())
+        tabs.addTab(spx_w, '📡 SPX감시')
+        try:
+            import sys, os
+            _wd = os.path.dirname(__file__)
+            if _wd not in sys.path: sys.path.insert(0, _wd)
+            from night_alert_tab import NightAlertTab
+            self._night_alert_tab = NightAlertTab()
+            if self._night_checker is not None:
+                self._night_alert_tab.set_checker(self._night_checker)
+            tabs.addTab(self._night_alert_tab, '🌙 새벽알림')
+            print('[WatchAlertPanel] 새벽알림 탭 추가 완료')
+        except Exception as e:
+            import traceback; traceback.print_exc()
+        root.addWidget(tabs)
     def _make_header(self) -> QHBoxLayout:
         hb = QHBoxLayout()
         title = QLabel("🔍 SPX 감시")
@@ -111,6 +153,12 @@ class WatchAlertPanel(QWidget):
         self._cnt_label = QLabel("알람 0회")
         self._cnt_label.setStyleSheet("color: #aaa; font-size: 10px;")
         hb.addWidget(self._cnt_label)
+
+        btn_hide = QPushButton("숨기기")
+        btn_hide.setFixedSize(52, 20)
+        btn_hide.setStyleSheet("font-size:10px;padding:0;")
+        btn_hide.clicked.connect(self.hide)
+        hb.addWidget(btn_hide)
         return hb
 
     def _make_cond_a_box(self) -> QGroupBox:
@@ -246,6 +294,112 @@ class WatchAlertPanel(QWidget):
         return self._log_box
 
     # ── 제어 ──────────────────────────────────────────────
+
+    def _check_session_auto(self):
+        """1분마다 야간세션 여부 체크 → 자동 시작/종료."""
+        try:
+            from datetime import datetime
+            from spxw_core import _session_bounds
+            now = datetime.now()
+            start_hm, end_hm = _session_bounds(now.strftime("%Y%m%d"))
+            sh, sm = map(int, start_hm.split(":"))
+            eh, em = map(int, end_hm.split(":"))
+            t = now.hour * 60 + now.minute
+            s = sh * 60 + sm
+            e = eh * 60 + em
+            # 야간세션: 시작~자정 or 자정~종료
+            if s > e:  # 예: 22:30~05:00
+                in_session = (t >= s) or (t <= e)
+            else:
+                in_session = s <= t <= e
+        except Exception:
+            in_session = False
+
+        from datetime import datetime
+        now_str = datetime.now().strftime("%H:%M")
+        if in_session and not self._session_was_open:
+            self._session_was_open = True
+            if not self._engine.is_running():
+                self._start()
+                self._log(f"🟢 [{now_str}] 야간세션 시작 — 감시 자동 시작")
+                self._try_snapshot_base_price()
+        elif not in_session and self._session_was_open:
+            self._session_was_open = False
+            if self._engine.is_running():
+                self._stop()
+                self._log(f"🔴 [{now_str}] 야간세션 종료 — 감시 자동 종료")
+        else:
+            # 상태 유지 중 1분마다 로그 + 텔레그램 전송
+            state = "🟢 감시중" if in_session else "⏸ 장외대기"
+            # 감시 조건 요약
+            cond_lines = []
+            try:
+                for i, row in enumerate(self._cond_a_rows):
+                    mins = row["min"].value()
+                    pts  = row["pt"].value()
+                    dr   = row["dir"].currentText()
+                    cond_lines.append(f"  조건A-{i+1}: {mins}분/{pts}pt/{dr}")
+            except Exception:
+                pass
+            try:
+                for i, b in enumerate(self._engine.cond_b):
+                    cond_lines.append(f"  조건B-{i+1}: {b.opt_type}{int(b.strike)} {b.pct_threshold:.0f}%/{b.direction}")
+            except Exception:
+                pass
+            cond_str = "\n".join(cond_lines) if cond_lines else "  (조건 없음)"
+            # ✅ NEW: 새벽알림 체커 상태 요약
+            night_str = ""
+            if getattr(self, "_night_checker", None) is not None:
+                night_str = "\n" + self._night_checker.status_summary()
+            msg = (f"{state} [{now_str}]\n"
+                   f"세션: {'개장중' if in_session else '미개장'}\n"
+                   f"감시조건:\n{cond_str}\n"
+                   f"알람횟수: {getattr(self, '_alert_total', 0)}회"
+                   f"{night_str}")
+            self._log(f"{state} [{now_str}] 세션={'개장' if in_session else '미개장'}")
+            try:
+                import sys, os
+                sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+                from telegram_bot.tg_client import TelegramClient
+                TelegramClient.get().send("NIGHT_SESSION", msg)
+            except Exception as e:
+                self._log(f"TG 전송 실패: {e}")
+
+    def _try_snapshot_base_price(self):
+        """22:30 시가 기준 ATM 프리미엄 스냅샷 저장."""
+        try:
+            import sys, os
+            _wd = os.path.dirname(__file__)
+            if _wd not in sys.path:
+                sys.path.insert(0, _wd)
+            from night_alert_template import load_config, save_config
+            cfg = load_config()
+            if cfg.snapshot_done:
+                return
+            mw = self._mw
+            if mw is None:
+                return
+            und = getattr(mw, "und_price", None)
+            if not und:
+                return
+            # ATM 행사가 결정
+            atm = round(und / 5) * 5 if cfg.atm_auto else cfg.atm_manual
+            # 콜-풋탭 프리미엄 캐시에서 조회
+            chain_put = getattr(mw, "_chain_put", None) or getattr(mw, "chain_put", None)
+            if chain_put and atm in chain_put:
+                base = chain_put[atm]
+                cfg.snapshot_done = True
+                cfg.snapshot_time = __import__("datetime").datetime.now().strftime("%H:%M")
+                cfg.atm_manual    = atm
+                save_config(cfg)
+                self._log(f"📸 기준가 스냅샷: ATM={atm} P=${base:.2f} @ {cfg.snapshot_time}")
+                # NightAlertTab 에 기준가 전달
+                nt = getattr(self, "_night_alert_tab", None)
+                if nt:
+                    nt._base_price = base
+                    nt._base_atm   = atm
+        except Exception as e:
+            self._log(f"⚠ 스냅샷 실패: {e}")
 
     def _start(self):
         self._apply_cond_a()
@@ -409,6 +563,18 @@ class WatchAlertPanel(QWidget):
         if vix_now and vix_prev and vix_now > 0 and vix_prev > 0:
             self._engine.push_vix(vix_now, vix_prev)
 
+    def _on_night_tick(self):
+        """
+        ✅ NEW: 새벽알림 독립 타이머 콜백 (60초 주기).
+        감시 ON/OFF, 야간세션 여부 무관하게 패널이 열려 있으면 항상 호출.
+        샘플링(기준가 수집) + 알림 평가 모두 처리.
+        """
+        if self._night_checker is None:
+            return
+        if self._mw is None:
+            return
+        self._night_checker.tick()
+
     def _get_price_n_min_ago(self, ctx, minutes: int, exec_time: datetime, get_ctx_fn) -> float | None:
         """
         und_saver.get_context() 반환값에서 N분 전 가격 추출.
@@ -446,6 +612,13 @@ class WatchAlertPanel(QWidget):
     def _restore_light(self):
         if self._engine.is_running():
             self._set_light("green")
+
+    def _log_deferred(self, msg: str):
+        """build_ui 완료 전에도 안전하게 로그 출력."""
+        try:
+            self._log(msg)
+        except Exception:
+            print(f"[WatchAlertPanel] {msg}")
 
     def _log(self, msg: str):
         ts = datetime.now().strftime("%H:%M:%S")
