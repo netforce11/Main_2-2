@@ -164,7 +164,6 @@ class SettingsMixin:
         d["alert_sound"] = self._alert_sound_path
         if hasattr(self, '_watch_font_slider'):
             d["watch_font_size"] = self._watch_font_slider.value()
-        d.update(self._af_get_settings())
         return d
 
     def _apply_extra_settings(self, s: dict):
@@ -213,7 +212,6 @@ class SettingsMixin:
         # 스플리터 복원(100ms) 이후에 실행하여 순서 충돌 방지.
         if hasattr(self, '_w_load'):
             QTimer.singleShot(150, self._w_load)
-        self._af_apply_settings(s)
 
     # ─────────────────────────────────────────────────────────
     # 화면설정 프리셋 저장/불러오기/삭제

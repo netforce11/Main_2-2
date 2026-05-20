@@ -40,7 +40,6 @@ from call_put_tab.order_logic          import OrderLogicMixin
 from call_put_tab.order_panel_util     import OrderUtilMixin
 from call_put_tab.core_conn            import CoreConnMixin
 from call_put_tab.core_fetch           import CoreFetchMixin
-from call_put_tab.auto_fetch_next_day import AutoFetchNextDayMixin
 from call_put_tab.tab_options_settings import SettingsMixin
 from call_put_tab.tab_options_panels   import PanelsMixin
 from config_ui import ConfigMixin  # 기존 호환성 유지
@@ -68,7 +67,6 @@ class CallPutGrid(
     OrderLogicMixin,
     CoreConnMixin,
     CoreFetchMixin,
-    AutoFetchNextDayMixin,
     SettingsMixin,
     ConfigMixin,
     PanelsMixin,
@@ -120,7 +118,6 @@ class CallPutGrid(
         self._watch_timer.setInterval(2000)
         self._watch_timer.timeout.connect(self._check_watch_rules)
 
-        self._init_auto_fetch()
         self._build()
         self._connect_signals()
         self._load_watch_rules_from_file()
@@ -367,7 +364,6 @@ class CallPutGrid(
 
         # ── 저장 주기 설정 위젯 ───────────────────────────────
         vu.addWidget(self._build_config_widget())
-        vu.addWidget(self._build_auto_fetch_panel())
 
         # ── 수직 스플리터 조립 ────────────────────────────────
         spl = self._spl(Qt.Vertical)
