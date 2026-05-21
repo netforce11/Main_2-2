@@ -1,6 +1,11 @@
 """
-combo_trend_panel.py — 추세 점수판 패널 위젯  v1.2
+combo_trend_panel.py — 추세 점수판 패널 위젯  v1.3
 ════════════════════════════════════════════════════════════════
+v1.3 변경:
+  - QGroupBox 내부에 QTabWidget 추가
+  - 탭 1: 📊 추세 점수  (기존 내용 그대로)
+  - 탭 2: ⚡ 급변 감시  (SpikeMonitorTab 임베드)
+
 v1.2 변경:
   - 300초(5분) 자동 갱신 QTimer 추가
   - DF 수신 시 타이머 자동 시작
@@ -23,6 +28,7 @@ import sys
 from PyQt5.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QGridLayout, QFrame,
+    QTabWidget, QWidget,
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
@@ -72,6 +78,27 @@ class TrendScorePanel(QGroupBox):
                 color: #7c7cff;
                 font-weight: bold;
             }
+            QTabWidget::pane {
+                border: 1px solid #2a2a4a;
+                background: #0a0a18;
+            }
+            QTabBar::tab {
+                background: #0e0e1e;
+                color: #8888aa;
+                border: 1px solid #2a2a4a;
+                border-bottom: none;
+                padding: 4px 10px;
+                font-size: 12px;
+            }
+            QTabBar::tab:selected {
+                background: #1a1a3a;
+                color: #aaaaff;
+                font-weight: bold;
+            }
+            QTabBar::tab:hover {
+                background: #16162e;
+                color: #ccccff;
+            }
         """)
         self._build_ui()
         self._init_timers()
@@ -79,7 +106,28 @@ class TrendScorePanel(QGroupBox):
     # ── UI 구성 ──────────────────────────────────────────────────
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 14, 6, 6)
+        root.setContentsMargins(4, 14, 4, 4)
+        root.setSpacing(2)
+
+        # ── 탭 위젯 ──────────────────────────────────────────────
+        self._tabs = QTabWidget()
+        self._tabs.setDocumentMode(True)
+
+        # 탭 1: 추세 점수 (기존 내용)
+        self._tab_trend = QWidget()
+        self._build_trend_tab(self._tab_trend)
+        self._tabs.addTab(self._tab_trend, "📊 추세 점수")
+
+        # 탭 2: 급변 감시
+        self._tab_spike = self._build_spike_tab()
+        self._tabs.addTab(self._tab_spike, "⚡ 급변 감시")
+
+        root.addWidget(self._tabs)
+
+    # ── 추세 점수 탭 내용 (기존 _build_ui 내용 그대로) ────────────
+    def _build_trend_tab(self, container: QWidget):
+        root = QVBoxLayout(container)
+        root.setContentsMargins(6, 8, 6, 6)
         root.setSpacing(4)
 
         # 총점
@@ -169,6 +217,21 @@ class TrendScorePanel(QGroupBox):
         self.lbl_status = QLabel("Tab7에서 차트 조회 후 DF 자동 수신")
         self.lbl_status.setStyleSheet("color:#555577; font-size:11px; border:none;")
         root.addWidget(self.lbl_status)
+
+    # ── 급변 감시 탭 (SpikeMonitorTab 임베드) ────────────────────
+    def _build_spike_tab(self) -> QWidget:
+        try:
+            from combo_ui_spike_tab import SpikeMonitorTab
+            return SpikeMonitorTab()
+        except Exception as e:
+            # 임포트 실패 시 오류 안내 위젯 반환
+            w = QWidget()
+            lay = QVBoxLayout(w)
+            lbl = QLabel(f"⚠ SpikeMonitorTab 로드 실패:\n{e}")
+            lbl.setStyleSheet("color:#ff5252; font-size:12px; border:none;")
+            lbl.setAlignment(Qt.AlignCenter)
+            lay.addWidget(lbl)
+            return w
 
     # ── 타이머 초기화 ────────────────────────────────────────────
     def _init_timers(self):

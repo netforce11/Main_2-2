@@ -189,7 +189,7 @@ class StrategyPanelMixin:
         # 하단: 미체결 탭 패널
         v_spl.addWidget(self._build_open_orders_panel())
 
-        v_spl.setSizes([320, 200])   # 상단 ~62% / 하단 ~38%
+        v_spl.setSizes([300, 230])   # 상단 / 하단 — 탭 4개 맞게 조정
         rv.addWidget(v_spl, 1)
 
         # 단축키 설치
@@ -641,11 +641,16 @@ class StrategyPanelMixin:
 
         # ── 탭 위젯 ────────────────────────────────────────────
         self._oo_tab = QTabWidget()
+        self._oo_tab.setUsesScrollButtons(True)
+        self._oo_tab.tabBar().setExpanding(False)
+        self._oo_tab.tabBar().setElideMode(Qt.ElideNone)
         self._oo_tab.setStyleSheet(
-            "QTabBar::tab{background:#141430;color:#888;padding:4px 10px;"
-            "border:1px solid #2e3060;border-bottom:none;font-size:11px;}"
+            "QTabBar::tab{background:#141430;color:#888;padding:3px 6px;"
+            "border:1px solid #2e3060;border-bottom:none;font-size:10px;}"
             "QTabBar::tab:selected{background:#1c1c3a;color:#fff;font-weight:bold;}"
-            "QTabWidget::pane{border:1px solid #2e3060;}")
+            "QTabWidget::pane{border:1px solid #2e3060;}"
+            "QTabBar::scroller{width:14px;}"
+            "QTabBar QToolButton{background:#1c1c3a;color:#fff;border:1px solid #2e3060;}")
 
         # ── Tab 0: 증거금 확인 ──────────────────────────────────
         tab_margin = QWidget()
@@ -683,7 +688,7 @@ class StrategyPanelMixin:
             self._log("⚠ _req_whatif 미구현 — order_logic.py 확인"))
         tv0.addWidget(btn_whatif)
         tv0.addStretch()
-        self._oo_tab.addTab(tab_margin, "＋ 증거금 확인")
+        self._oo_tab.addTab(tab_margin, "증거금")
 
         # ── Tab 1: 합성 잔고 ────────────────────────────────────
         tab_synth = QWidget()
@@ -709,7 +714,7 @@ class StrategyPanelMixin:
             lambda: self._refresh_positions()
             if hasattr(self, '_refresh_positions') else None)
         tv1.addWidget(btn_ref_synth)
-        self._oo_tab.addTab(tab_synth, "합성 잔고")
+        self._oo_tab.addTab(tab_synth, "잔고")
 
         # ── Tab 2: 미체결 내역 ──────────────────────────────────
         tab_oo = QWidget()
@@ -782,7 +787,15 @@ class StrategyPanelMixin:
         amend_row.addWidget(btn_cancel_sel)
         amend_row.addStretch()
         tv2.addLayout(amend_row)
-        self._oo_tab.addTab(tab_oo, "미체결 내역")
+        self._oo_tab.addTab(tab_oo, "미체결")
+
+        # ── Tab 3: ⚡ 급변 감시 ─────────────────────────────────
+        try:
+            from combo_libs.combo_ui_spike_tab import SpikeMonitorTab
+            self._spike_monitor_tab = SpikeMonitorTab()
+            self._oo_tab.addTab(self._spike_monitor_tab, "⚡급변")
+        except Exception as _e:
+            print(f"[StrategyPanel] ⚠ 급변 감시 탭 로드 실패: {_e}")
 
         cv.addWidget(self._oo_tab, 1)
         return container
