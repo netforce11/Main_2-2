@@ -35,8 +35,10 @@ _STORE_FILE   = Path(__file__).resolve().parent / "data" / "synthetic_positions.
 _HISTORY_FILE = Path(__file__).resolve().parent / "data" / "trade_history.json"
 _MAX_AGE_DAYS = 7
 
-# [FIX-1] 파일 쓰기 직렬화 락
-_write_lock = threading.Lock()
+# [FIX-B5] threading.Lock → RLock (재진입 허용)
+# save_one_position / remove_position / update_position_current 안에서
+# load_positions() 를 호출하는 구조이므로 동일 스레드 재진입 시 데드락 방지
+_write_lock = threading.RLock()
 
 
 # ══════════════════════════════════════════════════════════════

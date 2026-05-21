@@ -26,8 +26,11 @@ _STRAT_LEGS = {
     "풋 데빗 스프레드":   [("P", "BUY"),  ("P", "SELL")],
     "콜 스프레드":        [("C", "BUY"),  ("C", "SELL")],
     "풋 스프레드":        [("P", "BUY"),  ("P", "SELL")],
-    "스트래들":           [("C", "BUY"),  ("P", "BUY")],
-    "스트랭글":           [("C", "BUY"),  ("P", "BUY")],
+    # [FIX-B11] 스트래들 vs 스트랭글 레그 방향은 동일(둘 다 BUY+BUY).
+    # 차이점: 스트래들 = 동일 행사가, 스트랭글 = 다른 행사가.
+    # 행사가 선택 로직은 _search_straddle / _search_strangle 에서 분기 처리.
+    "스트래들":           [("C", "BUY"),  ("P", "BUY")],  # 동일 행사가 C+P 매수
+    "스트랭글":           [("C", "BUY"),  ("P", "BUY")],  # 다른 행사가 C+P 매수
     "아이언 콘도르":      [("P", "BUY"),  ("P", "SELL"),
                            ("C", "SELL"), ("C", "BUY")],
 }
@@ -36,6 +39,12 @@ _CALL_SPREAD_TYPES = {"콜 스프레드", "콜 데빗 스프레드"}
 _PUT_SPREAD_TYPES  = {"풋 스프레드", "풋 데빗 스프레드"}
 _BEAR_CALL_TYPES   = {"숏 콜 스프레드", "베어 콜 스프레드"}
 _BULL_PUT_TYPES    = {"불 풋 스프레드"}
+
+# [FIX-B12] 콜 계열 전략을 하나의 집합으로 통합 제공
+# combo_op_search.py 에서 CALL 기반 로직 분기 시 이 집합을 사용하면
+# "숏 콜 스프레드" 계열이 _CALL_SPREAD_TYPES 에 없어 누락되는 문제 방지
+ALL_CALL_TYPES = _CALL_SPREAD_TYPES | _BEAR_CALL_TYPES
+ALL_PUT_TYPES  = _PUT_SPREAD_TYPES  | _BULL_PUT_TYPES
 
 
 def _strat_key(strat_text: str) -> str:

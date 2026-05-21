@@ -1,6 +1,12 @@
 """
-spike_scan.py — 체인 스캔 + 주문 발사 로직  v1.5
+spike_scan.py — 체인 스캔 + 주문 발사 로직  v1.6
 ════════════════════════════════════════
+v1.6 변경 (B4 버그 수정):
+  · _fire_put / _fire_call / _fire_call_from_peek 진입 시
+    watcher._fire_lock(threading.Lock) 으로 보호
+  · _fired / _put_fired / _call_fired 상태 변경이 원자적으로 수행되어
+    both 모드에서 주문 중복 발사 방지
+
 v1.5 변경 (조건 B — AND 동시 체결):
   · both 모드에 조건 B 적용
     - primary_direction(선호 방향) 기준으로 엄격 조건 평가
@@ -13,18 +19,24 @@ v1.5 변경 (조건 B — AND 동시 체결):
   · _fire_call() tg 메시지 정리
 """
 from __future__ import annotations
+import threading
 import time as _time
 from Sleep_Order.spike_utils import tg as _tg_raw
 
 def tg(msg: str) -> None:
     """[FIX-TG-SAFE] 텔레그램 전송 실패 시 주문 흐름 중단 방지 — 별도 스레드."""
-    import threading
     def _run():
         try:
             _tg_raw(msg)
         except Exception as e:
             print(f"[SpikeScan] TG 실패: {e}")
     threading.Thread(target=_run, daemon=True).start()
+
+def _ensure_fire_lock(watcher) -> threading.Lock:
+    """watcher에 _fire_lock이 없으면 생성해서 반환."""
+    if not hasattr(watcher, '_fire_lock'):
+        watcher._fire_lock = threading.Lock()
+    return watcher._fire_lock
 from Sleep_Order.spike_scan_call_helper import find_call_item as _find_call_item
 
 
@@ -426,135 +438,147 @@ def _scan_and_fire_call(watcher, ref, und: float, sleep_cfg) -> None:
 def _fire_put(watcher, ref, legs: list, net: float,
               strat: str, sleep_cfg) -> None:
     """both 모드 전용 풋 발사."""
-    agg     = f" (+{sleep_cfg.aggressive_ticks}틱)" if sleep_cfg.aggressive_entry else ""
-    _sym    = _get_symbol(ref)   # [XSP-TICK]
-    _sym_label = f"[{_sym}] " if _sym else ""   # [FIX-1+2]
-    put_lmt = calc_entry_price(net, sleep_cfg, symbol=_sym)
-    put_qty = max(1, int(sleep_cfg.combo_put_budget // (put_lmt * 100)))
+    # [FIX-B4] _fired/_put_fired/_call_fired 상태 변경 원자성 보장
+    _lock = _ensure_fire_lock(watcher)
+    with _lock:
+        # 이미 발사됐으면 중복 방지
+        if getattr(watcher, '_put_fired', False):
+            return
+        agg     = f" (+{sleep_cfg.aggressive_ticks}틱)" if sleep_cfg.aggressive_entry else ""
+        _sym    = _get_symbol(ref)   # [XSP-TICK]
+        _sym_label = f"[{_sym}] " if _sym else ""   # [FIX-1+2]
+        put_lmt = calc_entry_price(net, sleep_cfg, symbol=_sym)
+        put_qty = max(1, int(sleep_cfg.combo_put_budget // (put_lmt * 100)))
 
-    if sleep_cfg.dry_run:
+        if sleep_cfg.dry_run:
+            watcher._put_fired = True
+            watcher._fired = watcher._put_fired and watcher._call_fired
+            tg(f"🧪 [드라이런] PUT 발사\n{strat}\n"
+               f"${net:.2f}→${put_lmt:.2f}{agg} qty={put_qty}\n⚠ 미전송")
+            watcher.status_changed.emit(
+                f"🧪 드라이런 PUT  ${put_lmt:.2f}×{put_qty}"
+                f"{'  CALL대기…' if not watcher._call_fired else ''}")
+            return
+
+        # [FIX-2] 선제 플래그 세팅 → 비동기 구간 중복 차단
         watcher._put_fired = True
         watcher._fired = watcher._put_fired and watcher._call_fired
-        tg(f"🧪 [드라이런] PUT 발사\n{strat}\n"
-           f"${net:.2f}→${put_lmt:.2f}{agg} qty={put_qty}\n⚠ 미전송")
+        try:
+            put_oid = ref._sleep_place_order(
+                legs=legs, lmt_price=put_lmt, qty=put_qty,
+                strat=strat, tag="SLEEP_ORDER_PUT")
+        except Exception as e:
+            watcher._put_fired = False   # 실패 시 롤백
+            watcher._fired = False
+            tg(f"❌ [BOTH] 풋 주문 실패: {e}"); return
+        if put_oid is None:
+            watcher._put_fired = False
+            watcher._fired = False
+            return
+
+        if not hasattr(ref, '_pending_both') or not isinstance(ref._pending_both, dict):
+            ref._pending_both = {}
+        ref._pending_both.update({
+            'put_oid': put_oid, 'put_strat': strat,
+            'put_lmt': put_lmt, 'put_qty':   put_qty, 'put_status': '미체결',
+        })
+        # _pending_position 초기 설정 (chaser 호환)
+        ref._pending_position = {
+            "strategy": strat, "qty": put_qty, "entry": put_lmt,
+            "current": put_lmt, "side": "BUY",
+            "oid": put_oid, "legs": legs, "status": "미체결", "tag": "SLEEP_ORDER_PUT",
+        }
+        used    = round(put_lmt * put_qty * 100, 2)
+        remain  = round(sleep_cfg.combo_put_budget - used, 2)
+        tg(f"✅ [체결] 풋 스프레드 매수\n"
+           f"────────────────────\n"
+           f"📋 {strat}\n"
+           f"🔢 수량: {put_qty}계약  (수수료 미포함)\n"
+           f"🏷 종목: {_sym_label}{strat}\n"
+           f"💰 체결가: ${put_lmt:.2f}{agg}  (net ${net:.2f})\n"
+           f"💵 총 매수금액: ${used:,.0f}  /  설정예산 ${sleep_cfg.combo_put_budget:,.0f}\n"
+           f"🪙 잔액: ${remain:,.0f}\n"
+           f"🔖 OID: {put_oid}\n"
+           f"🕐 {_now_str()} ET"
+           f"{'  ⏳ CALL 대기중…' if not watcher._call_fired else ''}")
+        # 양방향 모두 완료 시 합산 요약
+        if watcher._fired:
+            _tg_both_summary(ref, sleep_cfg)
         watcher.status_changed.emit(
-            f"🧪 드라이런 PUT  ${put_lmt:.2f}×{put_qty}"
-            f"{'  CALL대기…' if not watcher._call_fired else ''}")
-        return
-
-    # [FIX-2] 선제 플래그 세팅 → 비동기 구간 중복 차단
-    watcher._put_fired = True
-    watcher._fired = watcher._put_fired and watcher._call_fired
-    try:
-        put_oid = ref._sleep_place_order(
-            legs=legs, lmt_price=put_lmt, qty=put_qty,
-            strat=strat, tag="SLEEP_ORDER_PUT")
-    except Exception as e:
-        watcher._put_fired = False   # 실패 시 롤백
-        watcher._fired = False
-        tg(f"❌ [BOTH] 풋 주문 실패: {e}"); return
-    if put_oid is None:
-        watcher._put_fired = False
-        watcher._fired = False
-        return
-
-    if not hasattr(ref, '_pending_both') or not isinstance(ref._pending_both, dict):
-        ref._pending_both = {}
-    ref._pending_both.update({
-        'put_oid': put_oid, 'put_strat': strat,
-        'put_lmt': put_lmt, 'put_qty':   put_qty, 'put_status': '미체결',
-    })
-    # _pending_position 초기 설정 (chaser 호환)
-    ref._pending_position = {
-        "strategy": strat, "qty": put_qty, "entry": put_lmt,
-        "current": put_lmt, "side": "BUY",
-        "oid": put_oid, "legs": legs, "status": "미체결", "tag": "SLEEP_ORDER_PUT",
-    }
-    used    = round(put_lmt * put_qty * 100, 2)
-    remain  = round(sleep_cfg.combo_put_budget - used, 2)
-    tg(f"✅ [체결] 풋 스프레드 매수\n"
-       f"────────────────────\n"
-       f"📋 {strat}\n"
-       f"🔢 수량: {put_qty}계약  (수수료 미포함)\n"
-       f"🏷 종목: {_sym_label}{strat}\n"
-       f"💰 체결가: ${put_lmt:.2f}{agg}  (net ${net:.2f})\n"
-       f"💵 총 매수금액: ${used:,.0f}  /  설정예산 ${sleep_cfg.combo_put_budget:,.0f}\n"
-       f"🪙 잔액: ${remain:,.0f}\n"
-       f"🔖 OID: {put_oid}\n"
-       f"🕐 {_now_str()} ET"
-       f"{'  ⏳ CALL 대기중…' if not watcher._call_fired else ''}")
-    # 양방향 모두 완료 시 합산 요약
-    if watcher._fired:
-        _tg_both_summary(ref, sleep_cfg)
-    watcher.status_changed.emit(
-        f"✅ PUT×{put_qty}"
-        f"{'  CALL대기…' if not watcher._call_fired else '  BOTH완료'}") 
+            f"✅ PUT×{put_qty}"
+            f"{'  CALL대기…' if not watcher._call_fired else '  BOTH완료'}") 
 
 
 # ── both 모드 콜 발사 ────────────────────────────────────────────
 
 def _fire_call(watcher, ref, call_item: dict, sleep_cfg) -> None:
     """both 모드 전용 콜 발사."""
-    net      = call_item["net"]
-    strat    = call_item["strat"]
-    legs     = call_item["legs"]
-    agg      = f" (+{sleep_cfg.aggressive_ticks}틱)" if sleep_cfg.aggressive_entry else ""
-    _sym     = _get_symbol(ref)   # [XSP-TICK]
-    _sym_label = f"[{_sym}] " if _sym else ""   # [FIX-1+2]
-    call_lmt = calc_entry_price(net, sleep_cfg, symbol=_sym)
-    call_qty = max(1, int(sleep_cfg.combo_call_budget // (call_lmt * 100)))
+    # [FIX-B4] _fired/_call_fired 상태 변경 원자성 보장
+    _lock = _ensure_fire_lock(watcher)
+    with _lock:
+        # 이미 발사됐으면 중복 방지
+        if getattr(watcher, '_call_fired', False):
+            return
+        net      = call_item["net"]
+        strat    = call_item["strat"]
+        legs     = call_item["legs"]
+        agg      = f" (+{sleep_cfg.aggressive_ticks}틱)" if sleep_cfg.aggressive_entry else ""
+        _sym     = _get_symbol(ref)   # [XSP-TICK]
+        _sym_label = f"[{_sym}] " if _sym else ""   # [FIX-1+2]
+        call_lmt = calc_entry_price(net, sleep_cfg, symbol=_sym)
+        call_qty = max(1, int(sleep_cfg.combo_call_budget // (call_lmt * 100)))
 
-    if sleep_cfg.dry_run:
+        if sleep_cfg.dry_run:
+            watcher._call_fired = True
+            watcher._fired = watcher._put_fired and watcher._call_fired
+            tg(f"🧪 [드라이런] CALL 발사\n{strat}\n"
+               f"${net:.2f}→${call_lmt:.2f}{agg} qty={call_qty}\n⚠ 미전송")
+            watcher.status_changed.emit(
+                f"🧪 드라이런 CALL  ${call_lmt:.2f}×{call_qty}"
+                f"{'  PUT대기…' if not watcher._put_fired else ''}")
+            return
+
+        # [FIX-2] 선제 플래그 세팅 → 비동기 구간 중복 차단
         watcher._call_fired = True
         watcher._fired = watcher._put_fired and watcher._call_fired
-        tg(f"🧪 [드라이런] CALL 발사\n{strat}\n"
-           f"${net:.2f}→${call_lmt:.2f}{agg} qty={call_qty}\n⚠ 미전송")
+        try:
+            call_oid = ref._sleep_place_order(
+                legs=legs, lmt_price=call_lmt, qty=call_qty,
+                strat=strat, tag="SLEEP_ORDER_CALL")
+        except Exception as e:
+            watcher._call_fired = False   # 실패 시 롤백
+            watcher._fired = False
+            tg(f"❌ [BOTH] 콜 주문 실패: {e}"); return
+        if call_oid is None:
+            watcher._call_fired = False
+            watcher._fired = False
+            return
+
+        if not hasattr(ref, '_pending_both') or not isinstance(ref._pending_both, dict):
+            ref._pending_both = {}
+        ref._pending_both.update({
+            'call_oid': call_oid, 'call_strat': strat,
+            'call_lmt': call_lmt, 'call_qty':   call_qty, 'call_status': '미체결',
+        })
+        used   = round(call_lmt * call_qty * 100, 2)
+        remain = round(sleep_cfg.combo_call_budget - used, 2)
+        tg(f"✅ [체결] 콜 스프레드 매수\n"
+           f"────────────────────\n"
+           f"📋 {strat}\n"
+           f"🔢 수량: {call_qty}계약  (수수료 미포함)\n"
+           f"🏷 종목: {_sym_label}{strat}\n"
+           f"💰 체결가: ${call_lmt:.2f}{agg}  (net ${net:.2f})\n"
+           f"💵 총 매수금액: ${used:,.0f}  /  설정예산 ${sleep_cfg.combo_call_budget:,.0f}\n"
+           f"🪙 잔액: ${remain:,.0f}\n"
+           f"🔖 OID: {call_oid}\n"
+           f"🕐 {_now_str()} ET"
+           f"{'  ⏳ PUT 대기중…' if not watcher._put_fired else ''}")
+        # 양방향 모두 완료 시 합산 요약
+        if watcher._fired:
+            _tg_both_summary(ref, sleep_cfg)
         watcher.status_changed.emit(
-            f"🧪 드라이런 CALL  ${call_lmt:.2f}×{call_qty}"
-            f"{'  PUT대기…' if not watcher._put_fired else ''}")
-        return
-
-    # [FIX-2] 선제 플래그 세팅 → 비동기 구간 중복 차단
-    watcher._call_fired = True
-    watcher._fired = watcher._put_fired and watcher._call_fired
-    try:
-        call_oid = ref._sleep_place_order(
-            legs=legs, lmt_price=call_lmt, qty=call_qty,
-            strat=strat, tag="SLEEP_ORDER_CALL")
-    except Exception as e:
-        watcher._call_fired = False   # 실패 시 롤백
-        watcher._fired = False
-        tg(f"❌ [BOTH] 콜 주문 실패: {e}"); return
-    if call_oid is None:
-        watcher._call_fired = False
-        watcher._fired = False
-        return
-
-    if not hasattr(ref, '_pending_both') or not isinstance(ref._pending_both, dict):
-        ref._pending_both = {}
-    ref._pending_both.update({
-        'call_oid': call_oid, 'call_strat': strat,
-        'call_lmt': call_lmt, 'call_qty':   call_qty, 'call_status': '미체결',
-    })
-    used   = round(call_lmt * call_qty * 100, 2)
-    remain = round(sleep_cfg.combo_call_budget - used, 2)
-    tg(f"✅ [체결] 콜 스프레드 매수\n"
-       f"────────────────────\n"
-       f"📋 {strat}\n"
-       f"🔢 수량: {call_qty}계약  (수수료 미포함)\n"
-       f"🏷 종목: {_sym_label}{strat}\n"
-       f"💰 체결가: ${call_lmt:.2f}{agg}  (net ${net:.2f})\n"
-       f"💵 총 매수금액: ${used:,.0f}  /  설정예산 ${sleep_cfg.combo_call_budget:,.0f}\n"
-       f"🪙 잔액: ${remain:,.0f}\n"
-       f"🔖 OID: {call_oid}\n"
-       f"🕐 {_now_str()} ET"
-       f"{'  ⏳ PUT 대기중…' if not watcher._put_fired else ''}")
-    # 양방향 모두 완료 시 합산 요약
-    if watcher._fired:
-        _tg_both_summary(ref, sleep_cfg)
-    watcher.status_changed.emit(
-        f"✅ CALL×{call_qty}"
-        f"{'  PUT대기…' if not watcher._put_fired else '  BOTH완료'}")
+            f"✅ CALL×{call_qty}"
+            f"{'  PUT대기…' if not watcher._put_fired else '  BOTH완료'}")
 
 
 # ── [조건 B] 콜 현재 net 조회 (발사 없이 가격만 확인) ───────────

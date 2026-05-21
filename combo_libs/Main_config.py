@@ -65,7 +65,15 @@ ALL_COLUMNS = [
 # 설정값 싱글톤 저장소
 # ══════════════════════════════════════════════════════════════
 class MainConfigStore:
-    """설정값 JSON 저장/로드 싱글톤."""
+    """설정값 JSON 저장/로드 싱글톤.
+
+    [FIX-B9] QObject 상속 금지:
+    QObject 에 __new__ 오버라이드 싱글톤 패턴을 적용하면
+    super().__init__() 미호출로 RuntimeError 발생.
+    (HeartbeatManager 주석 참조)
+    이 클래스는 반드시 일반 object 만 상속해야 함.
+    싱글톤은 모듈 레벨 config_store 인스턴스로 관리.
+    """
     _instance = None
 
     def __new__(cls):

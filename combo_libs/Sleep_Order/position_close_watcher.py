@@ -110,6 +110,8 @@ class _SlotState:
         self._bag_contract = None   # IB BAG Contract
         self._bag_order    = None   # IB Order (lmtPrice 정정용)
         self._bag_oid: "int | None" = None   # 발사된 OID (active_oid 대체)
+        # [FIX-B7] 슬롯 레벨 Lock — 폴링 타이머와 이벤트 콜백 동시 실행 방지
+        self._lock = threading.Lock()
 
     def reset(self):
         self.state                 = self.IDLE
@@ -318,30 +320,40 @@ class PositionCloseWatcher(QObject):
     def _check_price(self, slot: _SlotState, current: float) -> None:
         """[EVENT-DRIVEN + POLLING 공용] 사정권 판단 및 선매도 발사.
         _tick_waiting(폴링) 과 on_price_update(이벤트) 양쪽에서 호출.
+        [FIX-B7] slot._lock 으로 동시 실행 방지 — 중복 주문 발사 차단.
         """
-        from Sleep_Order.position_close_config import pos_close_cfg
-        cfg   = pos_close_cfg.get_slot(slot.idx)
-        frm   = cfg["close_from_kst"]
-        to    = cfg["close_to_kst"]
-        price = float(cfg["close_premium_price"])
+        # [FIX-B7] 슬롯 레벨 Lock: 폴링(QTimer) + 이벤트(틱 콜백) 동시 진입 방지
+        if not slot._lock.acquire(blocking=False):
+            return   # 다른 스레드가 처리 중 → 이번 호출 스킵
+        try:
+            # 이미 ORDERED 이상 상태면 중복 발사 방지
+            if slot.state != _SlotState.WAITING:
+                return
+            from Sleep_Order.position_close_config import pos_close_cfg
+            cfg   = pos_close_cfg.get_slot(slot.idx)
+            frm   = cfg["close_from_kst"]
+            to    = cfg["close_to_kst"]
+            price = float(cfg["close_premium_price"])
 
-        # 이벤트 경로에서도 시간 창 체크
-        now_dt = self._now_kst_dt()
-        if not _in_time_window(now_dt, frm, to):
-            return
+            # 이벤트 경로에서도 시간 창 체크
+            now_dt = self._now_kst_dt()
+            if not _in_time_window(now_dt, frm, to):
+                return
 
-        sym    = self._get_symbol(slot)
-        tick   = _tick_size(price, sym)
-        thresh = round(price - 2 * tick, 2)
+            sym    = self._get_symbol(slot)
+            tick   = _tick_size(price, sym)
+            thresh = round(price - 2 * tick, 2)
 
-        self._emit(slot.idx,
-                   f"👁 감시중 | 현재 ${current:.2f} → 사정권 ≤${thresh:.2f}")
+            self._emit(slot.idx,
+                       f"👁 감시중 | 현재 ${current:.2f} → 사정권 ≤${thresh:.2f}")
 
-        # 사정권 도달 → 선매도 발사
-        if _in_range(current, price, sym):
-            slot.order_price = price
-            slot.state       = _SlotState.ORDERED
-            self._send_order(slot, is_correction=False)
+            # 사정권 도달 → 선매도 발사
+            if _in_range(current, price, sym):
+                slot.order_price = price
+                slot.state       = _SlotState.ORDERED
+                self._send_order(slot, is_correction=False)
+        finally:
+            slot._lock.release()
 
     def _tick_ordered(self, slot: _SlotState) -> None:
         from Sleep_Order.position_close_config import pos_close_cfg
@@ -369,14 +381,26 @@ class PositionCloseWatcher(QObject):
         if _t.monotonic() - last_sent < wait_sec:
             return   # 아직 N초 안 지남 → 대기
 
-        # 미체결 → 정정 or 시장가
-        if slot.correction_count >= max_c:
-            self._send_market(slot)
-        else:
-            tick             = _tick_size(slot.order_price, self._get_symbol(slot))
-            new_p            = max(0.01, round(slot.order_price - tick, 2))
-            slot.order_price = new_p
-            self._send_order(slot, is_correction=True)
+        # [FIX-B7] 정정/시장가 발사 직전 Lock 획득 — 중복 정정 방지
+        if not slot._lock.acquire(blocking=False):
+            return   # 다른 콜백이 처리 중
+        try:
+            # Lock 획득 후 재확인 (대기 중 상태 변경 가능성)
+            if slot.market_sent:
+                return
+            last_sent = getattr(slot, '_last_order_sent_at', 0.0)
+            if _t.monotonic() - last_sent < wait_sec:
+                return
+            # 미체결 → 정정 or 시장가
+            if slot.correction_count >= max_c:
+                self._send_market(slot)
+            else:
+                tick             = _tick_size(slot.order_price, self._get_symbol(slot))
+                new_p            = max(0.01, round(slot.order_price - tick, 2))
+                slot.order_price = new_p
+                self._send_order(slot, is_correction=True)
+        finally:
+            slot._lock.release()
 
     # ── 주문 발사 ─────────────────────────────────────────────
 

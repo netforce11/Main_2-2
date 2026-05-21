@@ -253,6 +253,7 @@ def _auto_chase_tick(self) -> None:
 def _do_chase(self, reason: str = "") -> None:
     """
     [FIX-C7-LOCK] _chase_in_progress 플래그로 동시 실행 방지.
+    [FIX-B8] _chaser_bag_contract None 체크를 진입부에서 통합 처리.
     [v2.5 L-A] price_tick_sig 구독 방식.
     """
     # [FIX-C7-LOCK]
@@ -260,13 +261,15 @@ def _do_chase(self, reason: str = "") -> None:
         return
     self._chase_in_progress = True
 
+    # [FIX-B8] bag 유효성 단일 검증 — 이전 코드는 두 곳에서 중복 체크
+    ib  = getattr(getattr(self, 'mw', None), 'ib', None)
+    bag = getattr(self, '_chaser_bag_contract', None)
+
     mid = _read_mid_from_cache(self)
     if mid is not None:
         _do_chase_with_price(self, mid, reason)
         return
 
-    ib  = getattr(getattr(self, 'mw', None), 'ib', None)
-    bag = getattr(self, '_chaser_bag_contract', None)
     if ib is None or bag is None:
         _do_chase_with_price(self, None, reason)
         return

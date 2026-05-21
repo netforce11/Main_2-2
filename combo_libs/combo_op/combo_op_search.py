@@ -14,6 +14,7 @@ from .combo_op_constants import (
     _strat_key,
     _CALL_SPREAD_TYPES, _PUT_SPREAD_TYPES,
     _BEAR_CALL_TYPES, _BULL_PUT_TYPES,
+    ALL_CALL_TYPES, ALL_PUT_TYPES,  # [FIX-B12] 통합 집합 임포트
 )
 from .combo_op_worker import _SearchWorker
 

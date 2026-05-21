@@ -129,6 +129,25 @@ def _parse_expiry_display(display: str) -> str:
     return ""
 
 
+def _validate_expiry_not_past(yyyymmdd: str) -> str:
+    """[FIX-B10] 만기 날짜가 오늘보다 이전이면 로그 경고.
+    반환값: 입력 그대로 (UI 경고는 호출자가 처리).
+    사용: combo_order_utils 또는 _parse_legs_from_table 에서 래핑.
+    """
+    if not yyyymmdd or len(yyyymmdd) != 8:
+        return yyyymmdd
+    try:
+        y, m, d = int(yyyymmdd[:4]), int(yyyymmdd[4:6]), int(yyyymmdd[6:8])
+        expiry_date = date(y, m, d)
+        if expiry_date < date.today():
+            print(f"[FIX-B10] ⚠ 만기 날짜가 과거입니다: {yyyymmdd} "
+                  f"(오늘={date.today().strftime('%Y%m%d')}) "
+                  f"— 0DTE/오늘 형식이 아닌 MM/DD 입력인지 확인하세요.")
+    except (ValueError, TypeError):
+        pass
+    return yyyymmdd
+
+
 def _calc_required_margin(legs: list) -> float:
     """
     N-레그 전략 증거금 추정 (v2.8 데빗 스프레드 버그픽스).

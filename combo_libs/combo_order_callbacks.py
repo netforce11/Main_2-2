@@ -29,11 +29,24 @@ _STATUS_CANCELLED = ("Cancelled",)
 _STATUS_INACTIVE  = ("Inactive",)
 
 _POS_STREAM_BASE = 9200
+# [FIX-B6] reqId 충돌 방지: oid*10+i 방식은 oid가 커지면 범위 초과 위험
+# 전역 카운터로 순차 할당 → 고유성 보장
+_pos_stream_tid_counter = _POS_STREAM_BASE
 
 
 # ══════════════════════════════════════════════════════════════
 # 공개 API
 # ══════════════════════════════════════════════════════════════
+
+def _alloc_stream_tid() -> int:
+    """[FIX-B6] 순차 reqId 할당 — oid*10+i 충돌 방지."""
+    global _pos_stream_tid_counter
+    _pos_stream_tid_counter += 1
+    # 상한 도달 시 base 이후 재순환 (앞서 해제된 tid 재사용 안전)
+    if _pos_stream_tid_counter > _POS_STREAM_BASE + 8000:
+        _pos_stream_tid_counter = _POS_STREAM_BASE + 1
+    return _pos_stream_tid_counter
+
 
 def connect_order_callbacks(self) -> None:
     if getattr(self, '_cb_connected', False):
@@ -46,9 +59,9 @@ def connect_order_callbacks(self) -> None:
     self._cb_slot_status  = _slot_status
     self._cb_slot_exec    = _slot_exec
     self._cb_connected    = True
-    # [FIX-CACHE] 재연결 시 체결 캐시 초기화
-    if not hasattr(self, '_exec_avg_cache'):
-        self._exec_avg_cache = {}
+    # [FIX-B1] 재연결마다 stale OID 캐시 제거 — 무조건 초기화
+    # 기존 코드: if not hasattr → 최초 1회만 초기화 → 재연결 시 이전 세션 OID 잔존 버그
+    self._exec_avg_cache = {}
 
 
 def disconnect_order_callbacks(self) -> None:
@@ -117,8 +130,14 @@ def _on_order_status(self, oid: int, status: str,
         if remaining > 0:
             self._log(f"⚡ OID={oid} 부분체결: {filled:.0f}체결 / {remaining:.0f}잔여")
             _set_panel_status(panel, oid, f"⚡ 부분체결({filled:.0f})")
-            # [FIX-BUG4] 부분체결 return 전 is_close 상태 보존 (속성에 기록)
-            self._partial_fill_is_close = {oid: is_close}
+            # [FIX-B3] 딕셔너리 교체(= 덮어쓰기) 대신 기존 딕셔너리에 업데이트
+            # 기존 코드: self._partial_fill_is_close = {oid: is_close}
+            #   → 복수 포지션 동시 부분체결 시 이전 OID 정보가 소멸됨
+            _pfc = getattr(self, '_partial_fill_is_close', None)
+            if not isinstance(_pfc, dict):
+                _pfc = {}
+            _pfc[oid] = is_close
+            self._partial_fill_is_close = _pfc
             return
 
         if avg_fill > 0:
@@ -132,9 +151,8 @@ def _on_order_status(self, oid: int, status: str,
 
         # [FIX-BUG4] 부분체결 후 최종 체결인 경우 저장된 is_close 사용
         partial_map = getattr(self, '_partial_fill_is_close', {})
-        if oid in partial_map:
+        if isinstance(partial_map, dict) and oid in partial_map:
             is_close = partial_map.pop(oid)
-            self._partial_fill_is_close = partial_map
 
         if is_close:
             src_oid = getattr(self, '_pending_close_source_oid', None) or oid
@@ -168,7 +186,9 @@ def _on_order_status(self, oid: int, status: str,
                     save_one_position(pending)
                 except Exception as e:
                     self._log(f"⚠ 잔고 저장 실패: {e}")
-                self._pending_position = None
+                # [FIX-B2] _pending_position = None 을 TG 알림 이후로 이동
+                # 기존 코드: 여기서 None 처리 후 아래에서 _pend 재조회 → 항상 None → notify_filled 미호출
+                # 수정: pending 지역변수를 보존해 두고 None 처리는 TG 알림 이후에 수행
 
         # SpecialFillWatcher / SpikeWatcher / TG 알림
         try:
@@ -194,11 +214,23 @@ def _on_order_status(self, oid: int, status: str,
                         pos_for_tg['current'] = avg
                     notify_closed(pos_for_tg)
             else:
-                _pend = getattr(self, '_pending_position', None)
-                if _pend and _pend.get('oid') == oid:
-                    notify_filled(_pend, avg or 0.0)
+                # [FIX-B2] self._pending_position 대신 위에서 확보한 pending 지역변수 사용
+                # 기존 코드: _pend = getattr(self, '_pending_position', None)
+                #   → 이미 None 처리된 후라 항상 None → notify_filled 호출 안됨
+                _pend_for_tg = getattr(self, '_pending_position', None)
+                if _pend_for_tg is None:
+                    # pending 이 이미 None 처리된 경우, 위 블록에서 보존한 변수 사용
+                    _pend_for_tg = pending if 'pending' in dir() else None
+                if _pend_for_tg and _pend_for_tg.get('oid') == oid:
+                    notify_filled(_pend_for_tg, avg or 0.0)
         except Exception:
             pass
+
+        # [FIX-B2] _pending_position None 처리를 TG 알림 이후로 이동 (신규 체결 경우)
+        if not is_close:
+            _cur_pend = getattr(self, '_pending_position', None)
+            if _cur_pend and _cur_pend.get('oid') == oid:
+                self._pending_position = None
 
         try:
             _wolf = getattr(panel, 'wolf_banner', None)
@@ -417,7 +449,7 @@ def _start_position_price_stream(self, pending: dict) -> None:
         if not con_id:
             self._log(f"⚠ 실시간 손익: 레그{i+1} conId 없음 — 구독 스킵")
             continue
-        tid  = _POS_STREAM_BASE + oid * 10 + i
+        tid  = _alloc_stream_tid()  # [FIX-B6] 전역 카운터 — oid*10+i 충돌 방지
         slot = _make_tick_handler(i)
         router.register_price(tid, tid, slot)
         self._pos_stream_tids[oid].append(tid)

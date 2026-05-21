@@ -1,5 +1,14 @@
 """
-combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.7
+combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.8
+──────────────────────────────────────────────────────
+v3.8 변경 (bug fix):
+  [BUG-BAG-1 FIX] XSP 종목 $0.01 틱 예외 누락 수정
+    · _do_send_body(): _get_tick_size(lmt_price) → _get_tick_size(lmt_price, bag.symbol)
+    · _sleep_place_sell_order(): 동일하게 bag.symbol 전달
+    · XSP 합성 매수/매도 주문 시 0.01 단위가 아닌 가격에도
+      불필요한 "가격 조정 팝업"이 뜨던 문제 해결
+
+이하는 v3.7 기준 변경 없음
 ──────────────────────────────────────────────────────
 v3.7 변경 (bug fix):
   [FIX-CHASER-CLOSE] register_chaser() 호출 시 is_close 파라미터 전달
@@ -219,7 +228,8 @@ def _sleep_place_sell_order(self, legs: list, lmt_price: float,
 
     try:
         from combo_order_chaser import _get_tick_size, _snap_to_tick
-        tick      = _get_tick_size(lmt_price)
+        _sleep_symbol = getattr(bag, 'symbol', '').upper()
+        tick      = _get_tick_size(lmt_price, _sleep_symbol)
         lmt_price = _snap_to_tick(lmt_price, tick, "sell")
     except Exception:
         pass
@@ -479,9 +489,11 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             lmt_price = 0.01
 
     # 틱 단위 확인
+    # [BUG-BAG-1 FIX] bag.symbol 을 함께 전달하여 XSP($0.01 틱) 예외 적용
     try:
         from combo_order_chaser import _get_tick_size
-        _tick_size = _get_tick_size(lmt_price)
+        _bag_symbol = getattr(bag, 'symbol', '').upper()
+        _tick_size = _get_tick_size(lmt_price, _bag_symbol)
         if not _is_tick_aligned(lmt_price, _tick_size):
             chosen = _ask_tick_snap_dialog(self, lmt_price, _tick_size, bag_action)
             if chosen is None:
