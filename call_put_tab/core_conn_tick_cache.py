@@ -1,5 +1,5 @@
 """
-core_conn_tick_cache.py — 틱 수신 캐시 + 200ms UI 배치 갱신  v1.0
+core_conn_tick_cache.py — 틱 수신 캐시 + 200ms UI 배치 갱신  v1.1
 ════════════════════════════════════════════════════════════════
 [M-A] UI 갱신 병목 해소
 
@@ -23,6 +23,26 @@ core_conn_tick_cache.py — 틱 수신 캐시 + 200ms UI 배치 갱신  v1.0
   스나이퍼(_sniper_check), 알람엔진(AlertEngine),
   Watchdog(_watch_dog)은 캐시에서 직접 읽으므로
   배치 주기(200ms)와 무관하게 실시간 정확도 유지.
+
+[v1.1] sleep_order 콜백 연동 / [v1.2] 버그 수정 2건
+  기존: IBKR tick → cache → 200ms → call_data/put_data → 3초 → scan_and_check
+        최악 지연 4.2초
+
+  변경: IBKR tick → cache → 즉시 _notify_sleep_watcher()
+          → _patch_chain_price() (_price_cache 직접 참조, reqId 1개만 반영)
+          → watcher.on_price_update() (윈도우·fired 체크 + scan_and_check 위임)
+        지연 수십ms 이내
+
+  [v1.2 수정 ①] _patch_chain_price: call_data 대신 _price_cache 직접 참조
+    call_data 는 200ms flush 후 갱신 → 틱 수신 직후엔 직전 값
+    → _price_cache(tickType 1/2/4) 에서 직접 bid/ask/last 읽도록 수정
+
+  [v1.2 수정 ②] _notify_sleep_watcher: scan_and_check 직접 호출 제거
+    → watcher.on_price_update() 위임
+    → 윈도우 체크·fired 체크·scan_and_check 중복 제거
+
+  sleep_order watcher 비활성 시 _notify_sleep_watcher()는 즉시 리턴
+  — 평상시 오버헤드 없음.
 ════════════════════════════════════════════════════════════════
 """
 
@@ -121,6 +141,9 @@ class TickCacheMixin:
         # 옵션 틱: super() 호출 생략 → _flush_tick_ui에서 배치 처리
         # (스나이퍼는 _price_cache를 직접 참조하므로 정확도 영향 없음)
 
+        # [v1.1] sleep_order 즉시 스캔 트리거
+        _notify_sleep_watcher(self, reqId)
+
     def _on_tick_option(self, reqId: int, tickType: int,
                         impliedVol: float, delta: float,
                         optPrice: float, pvDividend: float,
@@ -140,6 +163,9 @@ class TickCacheMixin:
         cache['optPrice'] = optPrice
         cache['undPrice'] = undPrice
         self._dirty_req_ids.add(reqId)
+
+        # [v1.1] sleep_order 즉시 스캔 트리거 (Greeks 갱신도 가격 변동으로 봄)
+        _notify_sleep_watcher(self, reqId)
 
     # ── 200ms 배치 UI 갱신 ──────────────────────────────────────
     def _flush_tick_ui(self):
@@ -204,6 +230,10 @@ class TickCacheMixin:
                                 else self.put_data)
                 if req_id in data_dict_ba:
                     data_dict_ba[req_id][key_ba] = val_ba
+
+        # [v1.1] _chain_call / _chain_put 즉시 반영 (3초 _auto_sync_chain 대기 제거)
+        # call_data / put_data 가 위에서 갱신된 직후 호출 → 항상 최신값 반영
+        _flush_chain_price(self, req_id)
 
         # Greeks 갱신
         if option_ticks:
@@ -397,3 +427,126 @@ class TickCacheMixin:
         """탭 활성화 시 UI flush 타이머 재시작."""
         if hasattr(self, '_ui_flush_timer'):
             self._ui_flush_timer.start()
+
+
+def _flush_chain_price(cp, reqId: int) -> None:
+    """
+    [v1.1] _flush_one_req() 에서 호출.
+    call_data / put_data 갱신 직후, 같은 reqId를
+    mw.tab_combo 의 _chain_call / _chain_put 에도 반영.
+
+    _auto_sync_chain() 의 3초 루프를 기다리지 않고
+    200ms flush 주기에 맞춰 combo_tab 체인 데이터를 최신 상태로 유지.
+
+    cp  = CallPutGrid (tab_callput) — call_data / put_data 보유
+    combo_tab = LeftPanelMixin 계열 — _chain_call / _chain_put 보유
+    """
+    try:
+        mw = getattr(cp, 'mw', None)
+        if mw is None:
+            return
+        combo_tab = getattr(mw, 'tab_combo', None)
+        if combo_tab is None:
+            return
+        # _chain_call / _chain_put 이 초기화되지 않았으면 스킵
+        if not hasattr(combo_tab, '_chain_call') or not hasattr(combo_tab, '_chain_put'):
+            return
+        _patch_chain_price(combo_tab, cp, reqId)
+    except Exception:
+        pass
+
+
+# ── [v1.1] sleep_order 즉시 스캔 연동 ───────────────────────────
+# TickCacheMixin 외부 모듈 함수 (self = CallPutGrid 인스턴스)
+
+def _notify_sleep_watcher(cp, reqId: int) -> None:
+    """
+    옵션 틱 수신 즉시 watcher.on_price_update() 를 호출.
+
+    [v1.1 → v1.2 변경]
+    · scan_and_check() 직접 호출 제거
+      → watcher.on_price_update() 위임
+      → 윈도우 체크 / fired 체크 / scan_and_check() 모두 watcher 내부에서 처리
+      → 중복 로직 제거, watcher 설계 의도에 맞게 수정
+
+    · _patch_chain_price() 호출 유지
+      → _price_cache 에서 직접 읽도록 수정 (call_data 타이밍 버그 수정)
+
+    오버헤드:
+      · watcher 비활성 시 속성 조회 3회 후 즉시 리턴 — 무시할 수준
+      · 활성 시 _patch_chain_price() 로 변경된 reqId 1개만 갱신 → O(1)
+    """
+    # REQ_CALL / REQ_PUT 범위만 처리 (스나이퍼·긴급매도 등 제외)
+    if not (REQ_CALL <= reqId <= REQ_CALL + 25 or
+            REQ_PUT  <= reqId <= REQ_PUT  + 25):
+        return
+
+    try:
+        mw = getattr(cp, 'mw', None)
+        if mw is None:
+            return
+        combo_tab = getattr(mw, 'tab_combo', None)
+        if combo_tab is None:
+            return
+        watcher = getattr(combo_tab, '_sleep_watcher', None)
+        if watcher is None or not watcher._active:
+            return
+
+        # _price_cache 에서 직접 읽어 _chain_call/put 즉시 갱신
+        # (call_data 는 200ms 후 flush 때 갱신되므로 직접 읽어야 최신값 보장)
+        _patch_chain_price(combo_tab, cp, reqId)
+
+        # watcher.on_price_update() 에 위임
+        # 내부에서 _in_window / fired 체크 + scan_and_check() 까지 처리
+        watcher.on_price_update(combo_tab, 0.0)
+
+    except Exception:
+        pass  # sleep_order 연동 실패가 메인 틱 흐름을 절대 막으면 안 됨
+
+
+def _patch_chain_price(combo_tab, cp, reqId: int) -> None:
+    """
+    변경된 reqId 1개에 해당하는 행사가 가격만
+    combo_tab._chain_call / _chain_put 에 즉시 반영.
+
+    [v1.2 수정] call_data / put_data 대신 _price_cache 직접 참조.
+    call_data 는 200ms flush 후에야 갱신되므로
+    틱 수신 직후 호출 시 직전 값을 읽는 버그 수정.
+
+    가격 계산: bid/ask mid 우선, 없으면 last.
+    기존 _sync_chain_from_cp() 전체 루프 대비 O(1).
+    """
+    try:
+        # _price_cache 에서 직접 bid/ask/last 읽기
+        price_cache = getattr(cp, '_price_cache', {})
+        d    = price_cache.get(reqId, {})
+        bid  = d.get(1)   # tickType 1 = bid
+        ask  = d.get(2)   # tickType 2 = ask
+        last = d.get(4)   # tickType 4 = last
+
+        lp = None
+        if bid and ask and bid > 0 and ask > 0:
+            lp = round((bid + ask) / 2, 2)
+        elif last and last > 0:
+            lp = last
+
+        if not lp or lp <= 0:
+            return
+
+        # 콜 체인
+        if REQ_CALL <= reqId <= REQ_CALL + 25:
+            idx = reqId - REQ_CALL
+            strikes = getattr(cp, 'call_strikes', [])
+            if idx < len(strikes):
+                combo_tab._chain_call[strikes[idx]] = lp
+            return
+
+        # 풋 체인
+        if REQ_PUT <= reqId <= REQ_PUT + 25:
+            idx = reqId - REQ_PUT
+            strikes = getattr(cp, 'put_strikes', [])
+            if idx < len(strikes):
+                combo_tab._chain_put[strikes[idx]] = lp
+
+    except Exception:
+        pass

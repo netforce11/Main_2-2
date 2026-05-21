@@ -17,6 +17,16 @@ watch_alert_tab.py — SPX 감시 패널 (항상 위, 좌측 하단 고정)
 4. 억제 조건 개별 해제 버튼 추가 (_make_suppress_bar)
 5. add_strike_from_chain(): 추가 시 현재 UI 값 반영 확인 토스트 메시지
 6. mw(메인윈도우) 참조 주입: set_main_window()
+
+[v7 수정]
+7. ✅ 조건B ATM 자동 탐색 (_auto_add_atm_strike / _find_atm_by_premium):
+   - 목표 프리미엄(기본 $2.0) ± 허용오차%(기본 25%) 범위의 행사가 자동 탐색
+   - mw.call_data / put_data 캐시에서 mid=(bid+ask)/2 또는 last 로 필터
+   - P / C / both 선택 가능, target 에 가까운 순 등록
+   - 이미 등록된 행사가 중복 스킵
+8. ✅ 주기적 heartbeat 알림 제거 (_check_session_auto else 브랜치):
+   - 상태 유지 중 1분마다 보내던 텔레그램/로그 완전 제거
+   - 알람은 오직 AlertEngine → _on_alert 경로(조건 성립 시)에서만 발화
 """
 
 import os, sys, subprocess
@@ -48,11 +58,13 @@ class WatchAlertPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("SPX 감시 패널")
+        # ✅ FIX: 기본 닫기/최소화 버튼 숨기고 커스텀 타이틀바 사용
         self.setWindowFlags(
-            Qt.Tool | Qt.WindowStaysOnTopHint | Qt.CustomizeWindowHint |
-            Qt.WindowTitleHint | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
+            Qt.Tool | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint
         )
-        self.setFixedWidth(380)
+        self.setFixedWidth(560)
+        # 드래그 이동용 변수
+        self._drag_pos = None
 
         # ✅ NEW: 메인윈도우 참조 (나중에 set_main_window()로 주입)
         self._mw = None
@@ -107,15 +119,46 @@ class WatchAlertPanel(QWidget):
         # ✅ NEW: NightAlertChecker 에도 mw 주입
         if self._night_checker is not None:
             self._night_checker.set_main_window(mw)
+        # ✅ NEW: NightAlertTab 에도 mw 주입 (프리미엄 탐색용)
+        nt = getattr(self, "_night_alert_tab", None)
+        if nt is not None:
+            nt.set_main_window(mw)
 
     # ── UI 구성 ────────────────────────────────────────────
 
     def _build_ui(self):
         from PyQt5.QtWidgets import QTabWidget
+        # ✅ 프레임리스 전체 배경 + 테두리
+        self.setStyleSheet(
+            "WatchAlertPanel{background:#1e1e1e;border:1px solid #555;border-radius:4px;}"
+        )
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(4)
-        root.addLayout(self._make_header())
+        root.setContentsMargins(0, 0, 0, 6)
+        root.setSpacing(0)
+
+        # ── 커스텀 타이틀바 래퍼 ──────────────────────────
+        title_bar = QWidget()
+        title_bar.setFixedHeight(28)
+        title_bar.setStyleSheet(
+            "background:#2d2d2d;border-bottom:1px solid #555;"
+            "border-top-left-radius:4px;border-top-right-radius:4px;"
+        )
+        tb_layout = QHBoxLayout(title_bar)
+        tb_layout.setContentsMargins(6, 0, 4, 0)
+        # _make_header() 반환값(QHBoxLayout)의 아이템들을 title_bar 레이아웃에 옮기기
+        hdr = self._make_header()
+        while hdr.count():
+            item = hdr.takeAt(0)
+            if item.widget():
+                tb_layout.addWidget(item.widget())
+            elif item.spacerItem():
+                tb_layout.addStretch()
+        root.addWidget(title_bar)
+
+        inner = QWidget()
+        inner_layout = QVBoxLayout(inner)
+        inner_layout.setContentsMargins(6, 4, 6, 0)
+        inner_layout.setSpacing(4)
         tabs = QTabWidget()
         spx_w = QWidget()
         vb = QVBoxLayout(spx_w)
@@ -134,15 +177,24 @@ class WatchAlertPanel(QWidget):
             self._night_alert_tab = NightAlertTab()
             if self._night_checker is not None:
                 self._night_alert_tab.set_checker(self._night_checker)
+            # mw 가 이미 주입된 경우 NightAlertTab 에도 즉시 전달
+            if self._mw is not None:
+                self._night_alert_tab.set_main_window(self._mw)
             tabs.addTab(self._night_alert_tab, '🌙 새벽알림')
             print('[WatchAlertPanel] 새벽알림 탭 추가 완료')
         except Exception as e:
             import traceback; traceback.print_exc()
-        root.addWidget(tabs)
+        inner_layout.addWidget(tabs)
+        root.addWidget(inner)
     def _make_header(self) -> QHBoxLayout:
+        # ✅ FIX: 커스텀 타이틀바 — 드래그 가능 + HIDE/X 버튼
         hb = QHBoxLayout()
+
+        # 타이틀바 드래그용 레이블
         title = QLabel("🔍 SPX 감시")
         title.setFont(QFont("Arial", 10, QFont.Bold))
+        title.setStyleSheet("color:#ddd;")
+        # 드래그 이벤트는 위젯 레벨에서 처리
         hb.addWidget(title)
         hb.addStretch()
 
@@ -154,12 +206,45 @@ class WatchAlertPanel(QWidget):
         self._cnt_label.setStyleSheet("color: #aaa; font-size: 10px;")
         hb.addWidget(self._cnt_label)
 
-        btn_hide = QPushButton("숨기기")
-        btn_hide.setFixedSize(52, 20)
-        btn_hide.setStyleSheet("font-size:10px;padding:0;")
+        # ✅ HIDE 버튼 (숨기기 — tray/호출로 복원 가능)
+        _BTN_SS = (
+            "QPushButton{font-size:11px;font-weight:bold;padding:0 4px;"
+            "background:#2a2a2a;color:#ccc;border:1px solid #555;border-radius:3px;}"
+            "QPushButton:hover{background:#444;color:#fff;}"
+        )
+        btn_hide = QPushButton("▁")
+        btn_hide.setFixedSize(24, 20)
+        btn_hide.setToolTip("숨기기 (패널 닫기 — 감시는 계속 실행)\n다시 표시: 메인 메뉴 또는 tray 아이콘 클릭")
+        btn_hide.setStyleSheet(_BTN_SS)
         btn_hide.clicked.connect(self.hide)
         hb.addWidget(btn_hide)
+
+        # ✅ X 버튼 (hide — 프로세스 종료 아님)
+        btn_x = QPushButton("✕")
+        btn_x.setFixedSize(24, 20)
+        btn_x.setToolTip("창 닫기 (감시는 계속 실행)\n다시 표시: 메인 메뉴 또는 tray 아이콘 클릭")
+        btn_x.setStyleSheet(
+            "QPushButton{font-size:11px;font-weight:bold;padding:0;"
+            "background:#2a2a2a;color:#ccc;border:1px solid #555;border-radius:3px;}"
+            "QPushButton:hover{background:#c0392b;color:#fff;}"
+        )
+        btn_x.clicked.connect(self.hide)
+        hb.addWidget(btn_x)
         return hb
+
+    # ✅ 커스텀 타이틀바 드래그 이동
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and self._drag_pos is not None:
+            self.move(event.globalPos() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
 
     def _make_cond_a_box(self) -> QGroupBox:
         box = QGroupBox("조건A — SPX 등락 (N분 전 대비)")
@@ -329,41 +414,9 @@ class WatchAlertPanel(QWidget):
                 self._stop()
                 self._log(f"🔴 [{now_str}] 야간세션 종료 — 감시 자동 종료")
         else:
-            # 상태 유지 중 1분마다 로그 + 텔레그램 전송
-            state = "🟢 감시중" if in_session else "⏸ 장외대기"
-            # 감시 조건 요약
-            cond_lines = []
-            try:
-                for i, row in enumerate(self._cond_a_rows):
-                    mins = row["min"].value()
-                    pts  = row["pt"].value()
-                    dr   = row["dir"].currentText()
-                    cond_lines.append(f"  조건A-{i+1}: {mins}분/{pts}pt/{dr}")
-            except Exception:
-                pass
-            try:
-                for i, b in enumerate(self._engine.cond_b):
-                    cond_lines.append(f"  조건B-{i+1}: {b.opt_type}{int(b.strike)} {b.pct_threshold:.0f}%/{b.direction}")
-            except Exception:
-                pass
-            cond_str = "\n".join(cond_lines) if cond_lines else "  (조건 없음)"
-            # ✅ NEW: 새벽알림 체커 상태 요약
-            night_str = ""
-            if getattr(self, "_night_checker", None) is not None:
-                night_str = "\n" + self._night_checker.status_summary()
-            msg = (f"{state} [{now_str}]\n"
-                   f"세션: {'개장중' if in_session else '미개장'}\n"
-                   f"감시조건:\n{cond_str}\n"
-                   f"알람횟수: {getattr(self, '_alert_total', 0)}회"
-                   f"{night_str}")
-            self._log(f"{state} [{now_str}] 세션={'개장' if in_session else '미개장'}")
-            try:
-                import sys, os
-                sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-                from telegram_bot.tg_client import TelegramClient
-                TelegramClient.get().send("NIGHT_SESSION", msg)
-            except Exception as e:
-                self._log(f"TG 전송 실패: {e}")
+            # ✅ FIX: 상태 유지 중에는 조용히 대기 — 주기적 heartbeat 알림 제거
+            # (알람은 조건 성립 시에만 AlertEngine → _on_alert 경로로 발화)
+            pass
 
     def _try_snapshot_base_price(self):
         """22:30 시가 기준 ATM 프리미엄 스냅샷 저장."""

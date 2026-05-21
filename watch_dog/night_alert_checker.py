@@ -77,17 +77,19 @@ class NightAlertChecker:
             active = {s.label for s in get_active_slots(cfg)}
             lines  = ["🌙 새벽알림"]
             for slot in cfg.slots:
-                rt    = self._slots.get(slot.label, slot)
+                cache_key = slot.label if slot.label else slot.start_hhmm
+                rt    = self._slots.get(cache_key, slot)
                 flag  = "✅" if slot.label in active else "⏸"
                 base_s = (
-                    f"기준가 {rt.opt_type}{int(rt.base_strike)} ${rt.base_prem:.2f}@{rt.base_set_at}"
-                    f" [{self._alert_count.get(slot.label,0)}/{rt.max_alerts}회]"
+                    f"기준가 {rt.opt_type}{int(rt.base_strike)} {rt.base_prem:.2f}pt@{rt.base_set_at}"
+                    f" [{self._alert_count.get(cache_key, 0)}/{rt.max_alerts}회]"
+                    + (f" → 추적:{rt.tracked_type}{int(rt.tracked_strike)}" if rt.tracked_strike > 0 else "")
                 ) if rt.base_prem > 0 else "기준가 수집중"
                 lines.append(
-                    f"  {flag} {slot.label} [{slot.start_hhmm}~{slot.end_hhmm}]"
+                    f"  {flag} {cache_key} [{slot.start_hhmm}~{slot.end_hhmm}]"
                     f" {slot.opt_type}/{slot.multiplier}x  {base_s}"
                 )
-            for label, (ot, strike, pct) in self._last_best.items():
+            for key, (ot, strike, pct) in self._last_best.items():
                 lines.append(f"  └ 최고감지: {ot}{int(strike)} {pct:.0f}%")
             return "\n".join(lines)
         except Exception as e:
@@ -109,57 +111,59 @@ class NightAlertChecker:
         if mw is None:
             return
 
-        # ── 체인 데이터 접근 ─────────────────────────────────────
-        # mw = TradingDashboard, 실제 데이터는 mw.tab_callput 안에 있음
-        # put_data  = {REQ_PUT+i:  {'last': price, ...}}
-        # call_data = {REQ_CALL+i: {'last': price, ...}}
-        # put_strikes / call_strikes = [strike, ...] (인덱스 i 대응)
-        cp_tab = getattr(mw, "tab_callput", mw)   # mw 자체가 CallPutGrid일 경우 대비
+        cp_tab = getattr(mw, "tab_callput", mw)
         chain_put, chain_call = self._build_chain_dicts(cp_tab)
         und = getattr(cp_tab, "und_price", None) or 0.0
-        atm = round(und / _STRIKE_STEP) * _STRIKE_STEP if und > 0 else 0.0
+        # ✅ NEW: ES 선물 지수 (장외 구간용)
+        es_price = getattr(cp_tab, "es_price", None) or getattr(mw, "es_price", None) or 0.0
+        atm_spx  = round(und    / _STRIKE_STEP) * _STRIKE_STEP if und    > 0 else 0.0
 
-        # 진단 로그 (최초 1회 또는 체인이 비어있을 때)
         if not getattr(self, "_chain_logged", False):
             self._log_fn(
-                f"[진단] und={und:.1f} atm={atm:.0f} "
+                f"[진단] und={und:.1f} atm={atm_spx:.0f} es={es_price:.1f} "
                 f"put체인={len(chain_put)}개 call체인={len(chain_call)}개"
             )
             if chain_put:
                 self._chain_logged = True
 
         cfg = load_config()
-        # 런타임 슬롯 캐시 동기화 (새 구간 추가 대응)
         for slot in cfg.slots:
-            if slot.label not in self._slots:
-                self._slots[slot.label] = slot
+            # ✅ FIX BUG3: label 빈 문자열이면 start_hhmm을 키로 사용 (충돌 방지)
+            cache_key = slot.label if slot.label else slot.start_hhmm
+            if cache_key not in self._slots:
+                self._slots[cache_key] = slot
 
         for slot in cfg.slots:
             if not slot.enabled:
                 continue
-            rt = self._slots[slot.label]
+            cache_key = slot.label if slot.label else slot.start_hhmm
+            rt = self._slots[cache_key]
 
-            is_active = slot.is_active_now()
-            was_active = self._slot_active.get(slot.label, False)
+            is_active  = slot.is_active_now()
+            was_active = self._slot_active.get(cache_key, False)
 
-            # 구간 새로 진입 시 카운터 리셋
             if is_active and not was_active:
-                self._alert_count[slot.label] = 0
-                self._fired.pop(slot.label, None)
-                self._fired.pop(f"{slot.label}_pre", None)
-                self._log_fn(f"🔄 [{slot.label}] 새 구간 진입 — 알람 카운터 리셋")
-            self._slot_active[slot.label] = is_active
+                self._alert_count[cache_key] = 0
+                self._fired.pop(cache_key, None)
+                self._fired.pop(f"{cache_key}_pre", None)
+                self._log_fn(f"🔄 [{cache_key}] 새 구간 진입 — 알람 카운터 리셋")
+            self._slot_active[cache_key] = is_active
 
-            # ── Phase 1: 샘플링 구간 ───────────────────────
+            # ✅ NEW: 구간별 ATM 결정 (ES 기준 or SPX 기준)
+            if rt.use_es and es_price > 0:
+                # ES - es_offset(기본 -25) = 행사가 기준
+                target_strike = round((es_price + rt.es_offset) / _STRIKE_STEP) * _STRIKE_STEP
+                atm = target_strike
+            else:
+                atm = atm_spx
+
             if slot.is_in_sampling_window():
                 self._collect_sample(rt, atm, chain_put, chain_call)
-
-            # ── Phase 2: 활성 구간 → 알림 평가 ────────────
             elif is_active:
                 if rt.base_prem <= 0:
-                    self._log_fn(f"⚠ [{slot.label}] 기준가 미확정 — 샘플 없음")
+                    self._log_fn(f"⚠ [{cache_key}] 기준가 미확정 — 샘플 없음")
                     continue
-                self._check_slot(rt, atm, chain_put, chain_call, cfg.tg_fmt)
+                self._check_slot(rt, cache_key, atm, chain_put, chain_call, cfg.tg_fmt)
 
     def _collect_sample(
         self, rt: NightSlot, atm: float,
@@ -177,9 +181,10 @@ class NightAlertChecker:
             base_strike = atm
 
         prem = None
+        # ✅ FIX BUG7: both 타입일 때 P 우선, C는 P 없을 때만 (elif → 독립 if)
         if rt.opt_type in ("P", "both") and base_strike in chain_put:
             prem = chain_put[base_strike]
-        elif rt.opt_type in ("C", "both") and base_strike in chain_call:
+        if prem is None and rt.opt_type in ("C", "both") and base_strike in chain_call:
             prem = chain_call[base_strike]
 
         if prem and prem > 0:
@@ -196,29 +201,41 @@ class NightAlertChecker:
                 )
 
     def _check_slot(
-        self, rt: NightSlot, atm: float,
+        self, rt: NightSlot, cache_key: str, atm: float,
         chain_put: dict, chain_call: dict, tg_fmt: str,
     ):
         # 최대 알람 횟수 초과
-        if rt.max_alerts > 0 and self._alert_count[rt.label] >= rt.max_alerts:
+        if rt.max_alerts > 0 and self._alert_count[cache_key] >= rt.max_alerts:
             return
 
         # 본 알림 재발화 억제
-        last = self._fired.get(rt.label)
+        last = self._fired.get(cache_key)
         if last and (datetime.now() - last).total_seconds() / 60 < self._cooldown_min:
             return
 
         candidates = self._scan_range(rt, atm, chain_put, chain_call)
 
-        # ── 사전경보 스캔 (본 알림 미충족 시) ──────────────
+        # 추적 행사가 항상 갱신 (UI 표시용)
+        if candidates:
+            best_tracked = max(candidates, key=lambda x: x[2])
+            rt.tracked_strike = best_tracked[1]
+            rt.tracked_type   = best_tracked[0]
+        elif rt.pre_alert_pct > 0:
+            pre_candidates = self._scan_pre_alert(rt, atm, chain_put, chain_call)
+            if pre_candidates:
+                best_pre = max(pre_candidates, key=lambda x: x[2])
+                rt.tracked_strike = best_pre[1]
+                rt.tracked_type   = best_pre[0]
+
+        # ── pre_alert 스캔 (본 알림 미충족 시) ─────────────
         if not candidates and rt.pre_alert_pct > 0:
             pre_candidates = self._scan_pre_alert(rt, atm, chain_put, chain_call)
             if pre_candidates:
                 best = max(pre_candidates, key=lambda x: x[2])
                 opt_type, strike, pct = best
-                msg = f"⚠️ [{rt.label}] 접근중 {opt_type}{int(strike)} {pct:.0f}%"
+                msg = f"⚠️ [{cache_key}] 접근중 {opt_type}{int(strike)} {pct:.0f}%"
                 self._log_fn(msg)
-                pre_key = f"{rt.label}_pre"
+                pre_key = f"{cache_key}_pre"
                 last_pre = self._fired.get(pre_key)
                 if not last_pre or (datetime.now() - last_pre).total_seconds() / 60 >= self._cooldown_min:
                     self._send_tg(msg)
@@ -229,17 +246,17 @@ class NightAlertChecker:
             return
 
         # no_dup: 이미 같은 구간에서 알람 발생했으면 억제
-        if rt.no_dup and self._alert_count[rt.label] > 0:
+        if rt.no_dup and self._alert_count[cache_key] > 0:
             return
 
         best = max(candidates, key=lambda x: x[2])
         opt_type, strike, pct = best
         curr_prem = (pct / 100) * rt.base_prem
 
-        self._last_best[rt.label] = best
-        self._fire(rt, opt_type, strike, curr_prem, pct, tg_fmt)
-        self._fired[rt.label] = datetime.now()
-        self._alert_count[rt.label] += 1
+        self._last_best[cache_key] = best
+        self._fire(rt, cache_key, opt_type, strike, curr_prem, pct, tg_fmt)
+        self._fired[cache_key] = datetime.now()
+        self._alert_count[cache_key] += 1
 
     def _scan_range(
         self, rt: NightSlot, atm: float,
@@ -332,15 +349,11 @@ class NightAlertChecker:
             return last
         return None
 
-    def _fire(self, rt, opt_type, strike, curr_prem, pct, tg_fmt):
-        label = rt.label or rt.start_hhmm
-        try:
-            msg = tg_fmt.format(
-                slot=label, opt_type=opt_type, strike=int(strike), pct=pct,
-            )
-        except KeyError:
-            msg = f"🚨 [{label}] {opt_type}{int(strike)} {pct:.0f}% 급등 (${curr_prem:.2f})"
-        self._log_fn(f"🚨 새벽알림 발동: {msg}")
+    def _send_tg(self, msg: str):
+        """
+        TG 전송 헬퍼 — _fire() 를 거치지 않는 pre_alert / adjust_base 메시지용.
+        전송 실패는 조용히 로그만 남김.
+        """
         try:
             _p = os.path.join(_DIR, "..")
             if _p not in sys.path:
@@ -349,3 +362,14 @@ class NightAlertChecker:
             TelegramClient.get().send("NIGHT_ALERT", msg)
         except Exception as e:
             self._log_fn(f"⚠ TG 전송 실패: {e}")
+
+    def _fire(self, rt, cache_key: str, opt_type, strike, curr_prem, pct, tg_fmt):
+        label = cache_key  # 로그/메시지 표시용
+        try:
+            msg = tg_fmt.format(
+                slot=label, opt_type=opt_type, strike=int(strike), pct=pct,
+            )
+        except KeyError:
+            msg = f"🚨 [{label}] {opt_type}{int(strike)} {pct:.0f}% 급등 ({curr_prem:.2f}pt)"
+        self._log_fn(f"🚨 새벽알림 발동: {msg}")
+        self._send_tg(msg)

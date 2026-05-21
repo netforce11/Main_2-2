@@ -41,6 +41,7 @@ from call_put_tab.order_panel_util     import OrderUtilMixin
 from call_put_tab.core_conn            import CoreConnMixin
 from call_put_tab.core_fetch           import CoreFetchMixin
 from call_put_tab.auto_fetch_next_day import AutoFetchNextDayMixin
+from call_put_tab.auto_spx_fetch import AutoSpxFetchMixin
 from call_put_tab.tab_options_settings import SettingsMixin
 from call_put_tab.tab_options_panels   import PanelsMixin
 from config_ui import ConfigMixin  # 기존 호환성 유지
@@ -67,6 +68,7 @@ class CallPutGrid(
     OrderUtilMixin,
     OrderLogicMixin,
     CoreConnMixin,
+    AutoSpxFetchMixin,
     CoreFetchMixin,
     AutoFetchNextDayMixin,
     SettingsMixin,
@@ -128,6 +130,8 @@ class CallPutGrid(
         #    v6.5 포맷(dict)을 포함한 완전한 파싱으로 100ms 후 재복원.
         #    TabWrapper 설정 파일이 없거나 최초 실행 시에도 반드시 복원.
         QTimer.singleShot(200, self._w_load)
+        # ── 앱 시작 10초 후 자동 SPX 조회 ───────────────────
+        self._init_auto_spx_fetch()
 
     # ── Splitter style ────────────────────────────────────────
     def _spl_style(self) -> str:

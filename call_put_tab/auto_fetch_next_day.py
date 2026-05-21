@@ -47,10 +47,22 @@ from PyQt5.QtWidgets import (
 # 헬퍼: 다음 거래일 계산 (core.py 에 이미 있으면 import 로 교체)
 # ──────────────────────────────────────────────
 
+def _now_kst() -> datetime.datetime:
+    """KST(UTC+9) 기준 현재 datetime 반환 (pytz 불필요)."""
+    from datetime import timezone, timedelta
+    KST = timezone(timedelta(hours=9))
+    return datetime.datetime.now(tz=KST)
+
+
+def _today_kst() -> datetime.date:
+    """KST 기준 오늘 날짜 반환."""
+    return _now_kst().date()
+
+
 def _next_trading_day(ref: Optional[datetime.date] = None) -> datetime.date:
-    """ref(기본: 오늘) 기준 다음 미국 증시 거래일 반환 (토→월, 일→월)."""
+    """ref(기본: KST 오늘) 기준 다음 미국 증시 거래일 반환 (토→월, 일→월)."""
     if ref is None:
-        ref = datetime.date.today()
+        ref = _today_kst()
     nxt = ref + datetime.timedelta(days=1)
     while nxt.weekday() >= 5:          # 5=토, 6=일
         nxt += datetime.timedelta(days=1)
@@ -92,7 +104,7 @@ class AutoFetchNextDayMixin:
 
     def _init_auto_fetch(self) -> None:
         """__init__ 말미에 호출."""
-        self._af_enabled: bool = False
+        self._af_enabled: bool = True
         self._af_target: QTime = QTime(4, 30)    # 기본값 04:30
         self._af_fired: bool = False
         self._af_last_fired_date: Optional[datetime.date] = None
@@ -141,6 +153,7 @@ class AutoFetchNextDayMixin:
         self._af_chk = QCheckBox("자동 조회")
         self._af_chk.setStyleSheet("font-size: 11px; color: #d0e8ff;")
         self._af_chk.setToolTip("체크 시 지정 시각에 D+1 만기 옵션 체인 자동 조회")
+        self._af_chk.setChecked(True)                # ← 기본값 체크
         self._af_chk.toggled.connect(self._af_on_toggle)
         row1.addWidget(self._af_chk)
 
@@ -196,8 +209,8 @@ class AutoFetchNextDayMixin:
     def _af_on_toggle(self, checked: bool) -> None:
         self._af_enabled = checked
         if checked:
-            # 활성화 시 오늘 이미 실행했으면 내일 실행 대기로 리셋
-            today = datetime.date.today()
+            # 활성화 시 오늘(KST) 이미 실행했으면 내일 실행 대기로 리셋
+            today = _today_kst()
             if self._af_last_fired_date == today:
                 self._af_status_lbl.setText("오늘 이미 실행됨 · 내일 대기")
             else:
@@ -223,21 +236,24 @@ class AutoFetchNextDayMixin:
             )
 
     def _af_tick(self) -> None:
-        """30초마다 호출. 지정 시각 도달 여부 확인."""
+        """30초마다 호출. 지정 시각 도달 여부 확인 (KST 기준)."""
         if not self._af_enabled:
             return
 
-        now = QTime.currentTime()
-        today = datetime.date.today()
+        now_kst = _now_kst()
+        today = now_kst.date()
 
         # 오늘 이미 실행했으면 skip
         if self._af_last_fired_date == today:
             return
 
-        # 목표 시각 ±1분 이내면 실행
+        # KST 현재 시각을 QTime 으로 변환
+        now = QTime(now_kst.hour, now_kst.minute, now_kst.second)
+
+        # 목표 시각 ±90초 이내면 실행
         target = self._af_target
-        diff = abs(now.secsTo(target))          # 초 단위 차이
-        within_window = diff <= 90              # ±90초 창
+        diff = abs(now.secsTo(target))
+        within_window = diff <= 90
 
         if within_window:
             self._log(
@@ -249,7 +265,7 @@ class AutoFetchNextDayMixin:
 
     def _af_do_fetch(self) -> None:
         """D+1 만기를 설정하고 _fetch() 호출."""
-        next_day = _next_trading_day()
+        next_day = _next_trading_day()           # KST 기준 다음 거래일
         expiry_str = _date_to_expiry_str(next_day)   # YYYYMMDD
 
         self._log(
@@ -263,22 +279,20 @@ class AutoFetchNextDayMixin:
         # self.edit_sym.setText("SPXW")
 
         # ── 만기 설정 ─────────────────────────
-        # combo_exp 에서 CUSTOM 인덱스를 찾아 선택 후 date_edit 에 날짜 입력
         self._af_set_expiry(next_day)
 
         # ── 체인 조회 ─────────────────────────
-        # 만기 콤보 변경 이벤트가 처리된 뒤 _fetch() 가 실행되도록 짧게 딜레이
         QTimer.singleShot(200, self._fetch)
 
-        # ── 상태 업데이트 ─────────────────────
+        # ── 상태 업데이트 (KST 시각 표시) ────
+        now_str = _now_kst().strftime("%H:%M")
         self._af_status_lbl.setText(
-            f"✅ {datetime.datetime.now().strftime('%H:%M')} "
+            f"✅ {now_str} "
             f"D+1({next_day.strftime('%m/%d')}) 조회 완료"
         )
         self._af_status_lbl.setStyleSheet(
             "font-size: 10px; color: #44cc88; padding-left: 2px;"
         )
-        # 3초 후 원래 색으로 복원
         QTimer.singleShot(
             3000,
             lambda: self._af_status_lbl.setStyleSheet(
@@ -333,5 +347,6 @@ class AutoFetchNextDayMixin:
             t = QTime.fromString(d["af_time"], "HH:mm")
             if t.isValid():
                 self._af_time_edit.setTime(t)
-        if d.get("af_enabled"):
-            self._af_chk.setChecked(True)
+        # 저장값 없을 때 기본값 True (체크 유지)
+        enabled = d.get("af_enabled", True)
+        self._af_chk.setChecked(enabled)

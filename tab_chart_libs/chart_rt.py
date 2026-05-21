@@ -153,6 +153,22 @@ def on_bar_in(self, data):
         self._append_right(data, eok)
     self._update_display()
 
+    # ── 실시간: 최신 캔들이 우측 끝에 잘리지 않도록 X범위 자동 추적 ──
+    try:
+        n = len(self.df_raw)
+        if n > 0 and hasattr(self, 'p1'):
+            vb = self.p1.getViewBox()
+            cur_range = vb.viewRange()[0]             # 현재 X범위 [xmin, xmax]
+            view_width = cur_range[1] - cur_range[0]  # 현재 보이는 구간 폭
+            # 마지막 캔들이 뷰 오른쪽 끝 3봉 이내로 들어오면 자동 스크롤
+            if (n - 1) >= cur_range[1] - 3:
+                self.p1.setXRange(
+                    n - view_width + 2.5,   # 왼쪽: 폭 그대로 유지
+                    n + 2.5,                # 오른쪽: 최신 캔들 + 3봉 여백
+                    padding=0)
+    except Exception:
+        pass
+
 
 def fetch_missing_polygon(self, symbol):
     if not PANDAS: return

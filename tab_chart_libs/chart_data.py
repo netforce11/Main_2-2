@@ -129,6 +129,17 @@ def update_display(self, force_regular=False):
 
     self.p1.addItem(CandlestickItem(p_data, self._c_up(), self._c_dn()))
 
+    # ── Y축 범위: 데이터 min/max 기준으로 타이트하게 설정 ──
+    if p_data:
+        all_lo = min(r[3] for r in p_data)   # low 최솟값
+        all_hi = max(r[4] for r in p_data)   # high 최댓값
+        span   = all_hi - all_lo
+        if span < 1e-6:                       # 데이터가 flat할 때 방어
+            span = all_hi * 0.01
+        pad    = span * 0.06                  # 위아래 6% 여백 (기본 10% → 축소)
+        self.p1.setYRange(all_lo - pad, all_hi + pad, padding=0)
+        self.p1.setXRange(-0.5, len(p_data) + 2.5, padding=0)  # 우측 3봉 여백
+
     # ── 기능3: 거래량 급증 하이라이트 ───────────────────────
     try:
         from chart_vol_surge import draw_vol_surge
