@@ -19,6 +19,12 @@ except ImportError:
 from combo_constants import SPLITTER_STYLE, get_splitter_style, STRATEGIES, STRATEGY_DESC, LEG_COLORS
 from combo_ui_synthetic_panel import SyntheticStatusPanel
 from combo_ui_leg_panel       import _build_leg_left          # noqa: F401
+
+# [v1.2] 콜-풋 체인 자동 동기화 타이머 — left_panel 생성 후 1회 attach
+try:
+    from combo_ui_left_chain_sync import attach_chain_sync_timer as _attach_chain_sync
+except ImportError:
+    def _attach_chain_sync(panel): pass  # 모듈 없을 경우 무시
 from combo_ui_chaser_row      import _build_chaser_row        # noqa: F401
 from combo_ui_right_panels_ext import (                       # noqa: F401
     _build_result_panel, _build_spread_chart_panel,
@@ -39,6 +45,10 @@ class RightPanelMixin:
         cv.addWidget(self._build_account_safety_bar())
 
         cv.addWidget(self._build_strategy_input_panel())
+
+        # [v1.2] left_panel 체인 동기화 타이머 — UI 빌드 완료 후 attach
+        from PyQt5.QtCore import QTimer as _QT_chain
+        _QT_chain.singleShot(0, self._attach_left_chain_sync)
 
         self._mid_hsplit = QSplitter(Qt.Horizontal)
         self._mid_hsplit.setHandleWidth(6)
@@ -351,6 +361,25 @@ class RightPanelMixin:
             QMessageBox.No,   # 기본값: No (실수 방지)
         )
         return ret == QMessageBox.Yes
+
+    def _attach_left_chain_sync(self) -> None:
+        """[v1.2] left_panel 의 _auto_sync_chain 을 3초 타이머에 연결.
+        _build_right_panel() 의 singleShot(0) 콜백으로 호출 — UI 완전 빌드 후 실행.
+        left_panel 후보: self._left_panel / self.left_panel / mw.tab_combo._left_panel
+        """
+        candidates = [
+            getattr(self, '_left_panel', None),
+            getattr(self, 'left_panel', None),
+            getattr(getattr(self, 'mw', None), 'tab_combo', None),
+            self,  # LeftPanelMixin 을 self 가 직접 상속하는 경우
+        ]
+        for panel in candidates:
+            if panel is not None and hasattr(panel, '_auto_sync_chain'):
+                timer = _attach_chain_sync(panel)
+                if timer is not None:
+                    self._log("[ChainSync] ✅ 체인 자동 동기화 타이머 연결 완료 (3초 주기)")
+                return
+        self._log("[ChainSync] ⚠ left_panel._auto_sync_chain 을 찾지 못함 — 수동 동기화만 사용")
 
     def _on_chase_click(self):
         """Chase 버튼 → combo_order_chaser.on_chase_click 위임."""
