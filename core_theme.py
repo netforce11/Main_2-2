@@ -438,6 +438,57 @@ THEME_PALETTES: dict[str, dict[str, str]] = {
         "slider_groove": "#4c566a",
         "slider_handle": "#88c0d0",
     },
+
+    # ─────────────────────────────────────────────────────────
+    # 9. GITHUB_DARK — GitHub Dark 스타일 (선명한 컨트라스트)
+    # ─────────────────────────────────────────────────────────
+    "github_dark": {
+        "win_bg":        "#0d1117",
+        "widget_fg":     "#c9d1d9",
+        "group_bg":      "#161b22",
+        "group_border":  "#30363d",
+        "group_title":   "#58a6ff",
+        "btn_bg":        "#21262d",
+        "btn_fg":        "#c9d1d9",
+        "btn_border":    "#30363d",
+        "btn_hover":     "#30363d",
+        "btn_hover_bdr": "#58a6ff",
+        "btn_press":     "#388bfd",
+        "input_bg":      "#0d1117",
+        "input_fg":      "#c9d1d9",
+        "input_border":  "#30363d",
+        "grp_input_bg":  "#161b22",
+        "grp_input_bdr": "#3d444d",
+        "combo_popup_bg":"#161b22",
+        "combo_popup_fg":"#c9d1d9",
+        "combo_sel_bg":  "#1f6feb",
+        "combo_sel_fg":  "#ffffff",
+        "list_bg":       "#0d1117",
+        "list_border":   "#30363d",
+        "log_bg":        "#0d1117",
+        "log_border":    "#30363d",
+        "log_fg":        "#f85149",
+        "tbl_bg":        "#0d1117",
+        "tbl_grid":      "#21262d",
+        "tbl_border":    "#30363d",
+        "tbl_sel_bg":    "#1f6feb",
+        "tbl_sel_fg":    "#ffffff",
+        "hdr_bg":        "#161b22",
+        "hdr_fg":        "#8b949e",
+        "hdr_border":    "#21262d",
+        "radio_fg":      "#c9d1d9",
+        "tab_bg":        "#161b22",
+        "tab_fg":        "#8b949e",
+        "tab_border":    "#30363d",
+        "tab_sel_bg":    "#0d1117",
+        "tab_sel_fg":    "#58a6ff",
+        "tab_sel_bdr":   "#0d1117",
+        "pane_bg":       "#0d1117",
+        "pane_border":   "#30363d",
+        "splitter":      "#30363d",
+        "slider_groove": "#21262d",
+        "slider_handle": "#388bfd",
+    },
 }
 
 # ── 테마 메타 ───────────────────────────────────────────────────
@@ -450,11 +501,12 @@ THEME_LABELS: dict[str, str] = {
     "mocha":    "☕  모카",
     "ocean":    "🌊  오션",
     "nordic":   "❄️  노르딕",
+    "github_dark": "🖥  깃허브 다크",
 }
 
 THEME_ORDER: list[str] = [
     "light", "dark", "midnight", "matrix",
-    "amber", "mocha", "ocean", "nordic",
+    "amber", "mocha", "ocean", "nordic", "github_dark",
 ]
 
 

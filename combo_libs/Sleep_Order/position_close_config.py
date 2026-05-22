@@ -86,7 +86,12 @@ class PositionCloseConfig:
         self.save()
 
     def is_slot_active(self, idx: int) -> bool:
-        return self.get_slot(idx).get("oid") is not None
+        """[FIX] Watcher 실시간 상태 우선 — JSON 잔류 OID 오판 방지."""
+        try:
+            from Sleep_Order.position_close_watcher import PositionCloseWatcher
+            return PositionCloseWatcher.get().is_active(idx)
+        except Exception:
+            return self.get_slot(idx).get("oid") is not None
 
     @property
     def n_slots(self) -> int:

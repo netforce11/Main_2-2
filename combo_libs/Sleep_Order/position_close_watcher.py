@@ -131,6 +131,26 @@ class _SlotState:
 # ══════════════════════════════════════════════════════════════
 # PositionCloseWatcher
 # ══════════════════════════════════════════════════════════════
+# ── Sleep 예약 취소 헬퍼 (BUG-1-B) ───────────────────────────
+def _cancel_sleep_reservation(slot_idx: int, pos_oid: int) -> None:
+    """청산 슬롯 취소 시 연동된 SleepOrder 예약도 함께 해제."""
+    try:
+        from Sleep_Order.sleep_order_watcher import SleepOrderWatcher
+        watcher = SleepOrderWatcher.get()
+        for i, s in enumerate(getattr(watcher, "_slots", [])):
+            try:
+                cfg_oid = (s.pos or {}).get("oid") if hasattr(s, "pos") else None
+            except Exception:
+                cfg_oid = None
+            if cfg_oid == pos_oid and hasattr(watcher, "cancel"):
+                watcher.cancel(i)
+                print(f"[ClosWatcher] Sleep 슬롯{i+1} 해제 (pos_oid={pos_oid})")
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"[ClosWatcher] Sleep 예약 해제 오류: {e}")
+
+
 class PositionCloseWatcher(QObject):
     """
     포지션 청산 예약 감시 싱글톤.
@@ -190,41 +210,53 @@ class PositionCloseWatcher(QObject):
         print(f"[ClosWatcher] 슬롯{idx+1} 등록: OID={oid} / "
               f"{frm}~{to} KST / 선매도 ${price:.2f} / 사정권 ≤${thresh:.2f}")
 
-        # [FIX-INSTANT] 등록 시점 현재가 즉시 체크
-        # 현재가 > 설정가  → 현재가로 즉시 매도
-        # 현재가 ≤ 사정권  → 설정가로 즉시 매도
+        # [FIX-INSTANT v2] 등록 시점 즉시 체크
+        # 현재가 >= 설정가  → 이미 목표 도달 → 현재가로 즉시 발사
+        # 현재가 < 설정가   → 시간 창 대기 (감시만, 즉시 발사 안 함)
         current = self._get_current_price(slot)
         if current is not None:
-            if current > price:
-                # 현재가가 설정가보다 높음 → 현재가로 즉시 발사
+            if current >= price:
                 slot.order_price = current
                 slot.state       = _SlotState.ORDERED
                 _tg(
-                    f"⚡ [슬롯{idx+1}] 등록 즉시 발사 (현재가 > 설정가)\n"
+                    f"⚡ [슬롯{idx+1}] 등록 즉시 발사 (현재가 >= 설정가)\n"
                     f"📌 {strat}\n"
-                    f"💰 현재가 ${current:.2f} > 설정가 ${price:.2f} → 즉시 매도"
+                    f"💰 현재가 ${current:.2f} >= 설정가 ${price:.2f} → 즉시 매도"
                 )
-                print(f"[ClosWatcher] 슬롯{idx+1} 즉시 발사: 현재가(${current:.2f}) > 설정가(${price:.2f})")
+                print(f"[ClosWatcher] 슬롯{idx+1} 즉시 발사: 현재가(${current:.2f}) >= 설정가(${price:.2f})")
                 self._send_order(slot, is_correction=False)
-            elif _in_range(current, price, _sym):
-                # 현재가가 이미 사정권 이하 → 설정가로 즉시 발사
-                slot.order_price = price
-                slot.state       = _SlotState.ORDERED
-                _tg(
-                    f"⚡ [슬롯{idx+1}] 등록 즉시 발사 (이미 사정권)\n"
-                    f"📌 {strat}\n"
-                    f"💰 현재가 ${current:.2f} ≤ 사정권 ${thresh:.2f} → 설정가 ${price:.2f}로 즉시 매도"
-                )
-                print(f"[ClosWatcher] 슬롯{idx+1} 즉시 발사: 현재가(${current:.2f}) ≤ 사정권(${thresh:.2f})")
-                self._send_order(slot, is_correction=False)
+            else:
+                # 현재가 < 설정가 → 감시 대기
+                self._emit(idx, f"👁 감시 대기 | 현재 ${current:.2f} → 목표 ${price:.2f}")
+                print(f"[ClosWatcher] 슬롯{idx+1} 감시 대기: 현재가(${current:.2f}) < 설정가(${price:.2f})")
 
     def cancel(self, idx: int) -> None:
+        """[BUG-1] ORDERED 상태도 IB cancelOrder 연동 + Sleep 예약 함께 해제."""
         from Sleep_Order.position_close_config import pos_close_cfg
-        slot = self._slots[idx]
-        if slot.state == _SlotState.ORDERED:
-            self._emit(idx, "⚠️ 주문 발사 후 취소 불가")
-            return
+        slot  = self._slots[idx]
         strat = (slot.pos or {}).get("strategy", "")
+        oid   = (slot.pos or {}).get("oid")
+
+        if slot.state == _SlotState.ORDERED:
+            # [FIX-A] 발사된 주문 IB 취소 시도
+            bag_oid = slot._bag_oid or slot.active_oid
+            if bag_oid is not None:
+                try:
+                    from core import bridge as _br
+                    ib = getattr(_br, "ib", None) or getattr(_br, "_ib", None)
+                    if ib is not None:
+                        ib.cancelOrder(bag_oid)
+                        print(f"[ClosWatcher] 슬롯{idx+1} cancelOrder({bag_oid})")
+                        self._emit(idx, f"🚫 취소 요청 (OID={bag_oid})")
+                    else:
+                        print(f"[ClosWatcher] 슬롯{idx+1} ib 없음 — 로컬 리셋")
+                except Exception as e:
+                    print(f"[ClosWatcher] 슬롯{idx+1} cancelOrder 오류: {e}")
+
+        # [FIX-B] Sleep 예약 주문 함께 해제
+        if oid is not None:
+            _cancel_sleep_reservation(idx, oid)
+
         slot.reset()
         pos_close_cfg.clear_slot(idx)
         self._emit(idx, "⏸ 비활성")

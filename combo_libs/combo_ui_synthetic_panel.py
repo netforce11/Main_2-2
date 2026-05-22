@@ -273,7 +273,14 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
     # 테이블 갱신
     # ══════════════════════════════════════════════════════════
 
+
     def _refresh_pos_table(self):
+        from combo_ui_panel_constants import _pal
+        from combo_ui_panel_utils import _calc_delta_pnl_pct, _format_expiry
+        from PyQt5.QtWidgets import QPushButton, QHBoxLayout, QWidget, QTableWidgetItem
+        from PyQt5.QtGui import QColor, QFont
+        from PyQt5.QtCore import Qt
+
         tbl = self._tbl_pos
         tbl.setRowCount(0)
         if not self._positions:
@@ -286,6 +293,21 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
         self._lbl_no_pos.setVisible(False)
         tbl.setVisible(True)
         tbl.setRowCount(len(self._positions))
+
+        # [BUG-4] 테마 팔레트에서 모든 색상 동적 참조
+        t         = _pal()
+        fg_normal = t.get("widget_fg", "#111827")
+        fg_dim    = t.get("tbl_grid",  "#9ca3af")
+
+        # 테마별 수익/손실/중립 색상
+        # light: 진한색 계열 / dark계열: 형광색 계열
+        _is_dark  = t.get("win_bg", "#fff")[1:3].lower() < "88"
+        col_gain  = "#00bb66" if _is_dark else "#15803d"
+        col_loss  = "#ff4444" if _is_dark else "#dc2626"
+        col_neut  = t.get("tbl_grid", "#9ca3af")
+        col_warn  = "#ffaa44" if _is_dark else "#d97706"
+        col_close = t.get("hdr_fg",   "#6b7280")
+
         total_pnl = 0.0
 
         for r, pos in enumerate(self._positions):
@@ -295,61 +317,64 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
             status     = pos.get("status", "미체결")
             is_filled  = status in ("체결완료", "보유")
             is_closing = status == "청산중"
-            pnl        = ((current - entry) * qty * 100
-                          if is_filled and not is_closing else 0.0)
+
+            # [BUG-2] 청산중에도 pnl/수익률 계산 유지
+            if is_filled or is_closing:
+                pnl = (current - entry) * qty * 100
+            else:
+                pnl = 0.0
             total_pnl += pnl
-            pnl_col    = ("#00ff88" if pnl > 0
-                          else "#ff4444" if pnl < 0 else "#888899")
+            pnl_col = (col_gain if pnl > 0 else col_loss if pnl < 0 else col_neut)
 
-            def _it(text, color="#cccccc", align=Qt.AlignCenter):
-                it = QTableWidgetItem(str(text))
-                it.setTextAlignment(align)
-                it.setForeground(QColor(color))
-                it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                return it
-
-            if is_filled and not is_closing and entry > 0:
+            show_rate = (is_filled or is_closing) and entry > 0
+            if show_rate:
                 pnl_rate     = (current - entry) / entry * 100
                 pnl_rate_txt = f"{pnl_rate:+.1f}%"
-                pnl_rate_col = ("#00ff88" if pnl_rate > 0
-                                else "#ff4444" if pnl_rate < 0 else "#888899")
+                pnl_rate_col = (col_gain if pnl_rate > 0
+                                else col_loss if pnl_rate < 0 else col_neut)
             else:
                 pnl_rate_txt = "―"
-                pnl_rate_col = "#888899"
+                pnl_rate_col = fg_dim
 
             if is_closing:
-                st_col, st_text = "#888888", "🔄 청산중"
+                st_col, st_text = col_close, "🔄 청산중"
             elif is_filled:
-                st_col, st_text = "#00ff88", "📌 보유"
+                st_col, st_text = col_gain,  "📌 보유"
             else:
-                st_col, st_text = "#ffaa44", "⏳ 미체결"
+                st_col, st_text = col_warn,  "⏳ 미체결"
+
+            # [BUG-4] 기본 색상을 테마 팔레트에서 가져오는 _it 헬퍼
+            def _it(text, color=None, align=Qt.AlignCenter,
+                    _fg=fg_normal):
+                it = QTableWidgetItem(str(text))
+                it.setTextAlignment(align)
+                it.setForeground(QColor(color if color else _fg))
+                it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                return it
 
             expiry_txt, expiry_col = _format_expiry(pos.get("legs", []))
             tbl.setItem(r, 0, _it(expiry_txt, expiry_col))
             tbl.setItem(r, 1, _it(
-                pos.get("strategy", "―"), "#e0e0ff",
+                pos.get("strategy", "―"), fg_normal,
                 Qt.AlignLeft | Qt.AlignVCenter))
-            tbl.setItem(r, 2, _it(str(qty),           "#aaaaaa"))
-            tbl.setItem(r, 3, _it(f"${entry:.2f}",    "#aaaaaa"))
-            tbl.setItem(r, 4, _it(f"${current:.2f}",  "#e0e0e0"))
+            tbl.setItem(r, 2, _it(str(qty),          fg_dim))
+            tbl.setItem(r, 3, _it(f"${entry:.2f}",   fg_dim))
+            tbl.setItem(r, 4, _it(f"${current:.2f}", fg_normal))
             tbl.setItem(r, 5, _it(
-                f"${pnl:+,.2f}" if is_filled else "―", pnl_col))
+                f"${pnl:+,.2f}" if (is_filled or is_closing) else "―", pnl_col))
             tbl.setItem(r, 6, _it(pnl_rate_txt, pnl_rate_col))
 
-            # [FIX-DELTA] 칼럼 7: 지수 5P당 예상 손익률
             delta_pct_txt, delta_pct_col = _calc_delta_pnl_pct(pos)
             delta_it = QTableWidgetItem(delta_pct_txt)
             delta_it.setTextAlignment(Qt.AlignCenter)
             delta_it.setForeground(QColor(delta_pct_col))
             delta_it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-            delta_font = QFont(); delta_font.setPointSize(14)
+            delta_font = QFont()
+            delta_font.setPointSize(14)
             delta_it.setFont(delta_font)
             tbl.setItem(r, 7, delta_it)
-
             tbl.setItem(r, 8, _it(st_text, st_col))
 
-            # ── 컬럼 9: 청산 예약 + 수동 삭제 버튼 ──────────
-            from PyQt5.QtWidgets import QPushButton, QHBoxLayout, QWidget
             _cell_w   = QWidget()
             _cell_lay = QHBoxLayout(_cell_w)
             _cell_lay.setContentsMargins(1, 0, 1, 0)
@@ -369,7 +394,6 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
                     lambda _, p=_p: self._open_close_reserve_dialog(p))
                 _cell_lay.addWidget(_btn_close_rsv)
 
-            # 🗑 수동 삭제 — 모든 행(보유/미체결/청산중)에 표시
             _btn_del = QPushButton("🗑")
             _btn_del.setFixedSize(24, 22)
             _btn_del.setToolTip("잔고에서 수동 삭제 (주문 없이 즉시 제거)")
@@ -382,7 +406,6 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
             _btn_del.clicked.connect(
                 lambda _, o=_pos_oid: self._manual_delete_position(o))
             _cell_lay.addWidget(_btn_del)
-
             tbl.setCellWidget(r, 9, _cell_w)
 
         tc = ("#00ff88" if total_pnl > 0
@@ -390,7 +413,6 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
         self._lbl_total_pnl.setText(f"${total_pnl:+,.2f}")
         self._lbl_total_pnl.setStyleSheet(f"color:{tc};border:none;")
 
-        # [FIX-BANNER] 수익률 배너 갱신 — 최대 수익률 포지션 기준
         if self.profit_alert_banner and self._positions:
             try:
                 best_pct = 0.0
@@ -411,79 +433,91 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
             except Exception:
                 pass
 
-    # ══════════════════════════════════════════════════════════
-    # Public API
-    # ══════════════════════════════════════════════════════════
+    def update_position_prices(self, oid: int, current_price: float):
+        """[BUG-3] oid 행만 직접 갱신 — 테이블 전체 rebuild 제거."""
+        from combo_ui_panel_constants import _pal
+        from PyQt5.QtWidgets import QTableWidgetItem
+        from PyQt5.QtGui import QColor
+        from PyQt5.QtCore import Qt
 
-    def set_cancel_order_callback(self, fn):
-        self._cancel_order_callback = fn
-
-    def set_close_pos_callback(self, fn):
-        """청산 콜백. fn(pos_dict, lmt_price=None)"""
-        self._close_pos_callback = fn
-
-    def set_close_position_callback(self, fn):
-        """하위 호환 별칭."""
-        self.set_close_pos_callback(fn)
-
-    def set_margin_mode_callback(self, fn):
-        self._margin_mode_callback = fn
-
-    def set_chaser_mode_callback(self, fn):
-        self._chaser_mode_callback = fn
-
-    def set_manual_modify_callback(self, fn):
-        self._manual_modify_callback = fn
-
-    def is_auto_chaser(self) -> bool:
-        return self._rb_chaser_auto.isChecked()
-
-    def set_current_order_price(self, price: float):
-        self._spin_manual_price.setValue(round(price, 2))
-
-    def mark_position_filled(self, oid: int):
-        for pos in self._positions:
+        row_idx = None
+        for i, pos in enumerate(self._positions):
             if pos.get("oid") == oid:
-                pos["status"] = "보유"
-        self._refresh_pos_table()
-
-    def mark_position_cancelled(self, oid: int):
-        self._positions = [p for p in self._positions if p.get("oid") != oid]
-        self._refresh_pos_table()
-
-    def mark_position_closing(self, oid: int):
-        """[FIX-CLOSE] 청산 주문 접수 → 해당 행 '청산중' 상태로 변경."""
-        for pos in self._positions:
-            if pos.get("oid") == oid:
-                pos["status"] = "청산중"
+                pos["current"] = current_price
+                row_idx = i
                 break
-        self._refresh_pos_table()
-        self._btn_close_lmt.setEnabled(False)
-        self._btn_close_mkt.setEnabled(False)
-        self._spin_close_price.setEnabled(False)
-        self._lbl_pos_hint.setText("🔄 청산 주문 접수됨 — 체결 대기 중")
 
-    def remove_position_by_oid(self, oid: int):
-        """[FIX-L] 청산 Filled 콜백에서 oid 기준으로 패널 포지션 제거."""
-        self._positions = [p for p in self._positions if p.get("oid") != oid]
-        self._refresh_pos_table()
+        if row_idx is None:
+            return
+
+        pos        = self._positions[row_idx]
+        entry      = pos.get("entry", 0.0)
+        qty        = pos.get("qty", 1)
+        status     = pos.get("status", "미체결")
+        is_filled  = status in ("체결완료", "보유")
+        is_closing = status == "청산중"
+
+        t         = _pal()
+        fg_dim    = t.get("tbl_grid",  "#9ca3af")
+        _is_dark  = t.get("win_bg", "#fff")[1:3].lower() < "88"
+        col_gain  = "#00bb66" if _is_dark else "#15803d"
+        col_loss  = "#ff4444" if _is_dark else "#dc2626"
+        col_neut  = t.get("tbl_grid", "#9ca3af")
+
+        tbl = self._tbl_pos
+        if row_idx >= tbl.rowCount():
+            self._refresh_pos_table()
+            return
+
+        def _set(col, text, color):
+            item = tbl.item(row_idx, col)
+            if item is None:
+                item = QTableWidgetItem()
+                item.setTextAlignment(Qt.AlignCenter)
+                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                tbl.setItem(row_idx, col, item)
+            item.setText(str(text))
+            item.setForeground(QColor(color))
+
+        _set(4, f"${current_price:.2f}", t.get("widget_fg", "#111827"))
+
+        if is_filled or is_closing:
+            pnl     = (current_price - entry) * qty * 100
+            pnl_col = (col_gain if pnl > 0 else col_loss if pnl < 0 else col_neut)
+            _set(5, f"${pnl:+,.2f}", pnl_col)
+        else:
+            _set(5, "―", fg_dim)
+
+        # [BUG-2] 청산중에도 수익률 표시
+        show_rate = (is_filled or is_closing) and entry > 0
+        if show_rate:
+            pnl_rate = (current_price - entry) / entry * 100
+            rate_col = (col_gain if pnl_rate > 0 else col_loss if pnl_rate < 0 else col_neut)
+            _set(6, f"{pnl_rate:+.1f}%", rate_col)
+        else:
+            _set(6, "―", fg_dim)
+
+        total_pnl = 0.0
+        for p in self._positions:
+            s = p.get("status", "")
+            if s in ("체결완료", "보유", "청산중"):
+                e = p.get("entry", 0.0)
+                c = p.get("current", e)
+                q = p.get("qty", 1)
+                total_pnl += (c - e) * q * 100
+        tc = (col_gain if total_pnl > 0 else col_loss if total_pnl < 0 else col_neut)
+        self._lbl_total_pnl.setText(f"${total_pnl:+,.2f}")
+        self._lbl_total_pnl.setStyleSheet(f"color:{tc};border:none;")
 
     def add_position(self, fill_info: dict):
         """[FIX-M] 신규 포지션 추가 + 전략명 행사가 보강."""
         fill_info = dict(fill_info)
         fill_info.setdefault("current", fill_info.get("entry", 0.0))
+        # [FIX-STRAT] 실시간 체결/복원 모두 행사가 포함 전략명으로 보강
         fill_info["strategy"] = _enrich_strategy_name(fill_info)
         self._positions.append(fill_info)
         self._refresh_pos_table()
         self._tabs.setCurrentIndex(1)
-
-    def update_position_prices(self, oid: int, current_price: float):
-        """[FIX-K] oid 기준으로 가격 갱신."""
-        for pos in self._positions:
-            if pos.get("oid") == oid:
-                pos["current"] = current_price
-                break
-        self._refresh_pos_table()
 
     def _open_close_reserve_dialog(self, pos: dict) -> None:
         """청산 예약 다이얼로그 — 행의 📌 예약 버튼 클릭 시 호출."""

@@ -114,35 +114,57 @@ class RightPanelMixin:
         # ════════════════════════════════════════════════════
         grp_a = QHBoxLayout(); grp_a.setSpacing(4)
 
-        def _mk_btn(text, bg, fg, fn, obj_name=None):
+        from combo_ui_panel_constants import _pal as _rp_pal
+        _t = _rp_pal()
+        _is_dark = _t.get("win_bg", "#fff")[1:3].lower() < "88"
+
+        # [THEME] 역할별 색상 — 테마에 따라 밝기 자동 조정
+        _ROLE_COLORS = {
+            "gain":    ("#00bb66", "#166534"),   # (다크, 라이트)
+            "gold":    ("#d4a017", "#92610a"),
+            "danger":  ("#5a1a1a", "#fca5a5"),
+            "info":    ("#1a2a4a", "#1e40af"),
+            "warn":    ("#2a1a0a", "#d97706"),
+            "cancel":  ("#2a0a0a", "#dc2626"),
+        }
+        def _role_bg(role):
+            idx = 0 if _is_dark else 1
+            return _ROLE_COLORS.get(role, ("#222", "#eee"))[idx]
+
+        def _mk_btn(text, bg, fg, fn, obj_name=None, role=None):
             b = QPushButton(text)
             b.setFixedHeight(28)
+            # role 지정 시 테마 기반 색상, 아니면 전달된 값 그대로
+            _bg = _role_bg(role) if role else bg
+            _fg = fg  # fg(텍스트)는 의미색이라 유지
             nm = obj_name or ""
             if nm:
                 b.setObjectName(nm)
                 b.setStyleSheet(
-                    f"QPushButton#{nm}{{background:{bg};color:{fg};"
-                    f"border:1px solid {fg};border-radius:4px;font-size:11px;"
+                    f"QPushButton#{nm}{{background:{_bg};color:{_fg};"
+                    f"border:1px solid {_fg};border-radius:4px;font-size:11px;"
                     f"font-weight:bold;padding:3px 8px;}}"
-                    f"QPushButton#{nm}:hover{{background:{fg};color:#000;}}"
-                    f"QPushButton#{nm}:disabled{{background:#111;color:#444;border-color:#333;}}")
+                    f"QPushButton#{nm}:hover{{background:{_fg};color:{_t.get('win_bg','#000')};}}"
+                    f"QPushButton#{nm}:disabled{{background:{_t.get('group_bg','#222')};"
+                    f"color:{_t.get('tbl_grid','#555')};border-color:{_t.get('group_border','#333')};}}")
             else:
                 b.setStyleSheet(
-                    f"background:{bg};color:{fg};font-size:11px;"
-                    f"font-weight:bold;padding:3px 8px;border-radius:4px;")
+                    f"background:{_bg};color:{_fg};font-size:11px;"
+                    f"font-weight:bold;padding:3px 8px;border-radius:4px;"
+                    f"border:1px solid {_fg};")
             b.clicked.connect(fn)
             return b
 
-        grp_a.addWidget(_mk_btn("📊 손익 계산",  "#1a5c2e", "#00ff88", self._calc_pnl))
-        grp_a.addWidget(_mk_btn("💰 증거금 조회", "#1a1a0e", "#ffd700", self._on_check_margin, "btn_check_margin"))
+        grp_a.addWidget(_mk_btn("📊 손익 계산",  "#1a5c2e", "#00ff88", self._calc_pnl, role="gain"))
+        grp_a.addWidget(_mk_btn("💰 증거금 조회", "#1a1a0e", "#ffd700", self._on_check_margin, "btn_check_margin", role="gold"))
         self.btn_check_margin = grp_a.itemAt(1).widget()
-        grp_a.addWidget(_mk_btn("🗑 초기화",      "#5a1a1a", "#ff6666", self._reset_legs))
-        grp_a.addWidget(_mk_btn("🔍 Optimiser ▼", "#1a2a4a", "#90caf9", self._toggle_optimizer_panel))
+        grp_a.addWidget(_mk_btn("🗑 초기화",      "#5a1a1a", "#ff6666", self._reset_legs, role="danger"))
+        grp_a.addWidget(_mk_btn("🔍 Optimiser ▼", "#1a2a4a", "#90caf9", self._toggle_optimizer_panel, role="info"))
         self._btn_opt_toggle = grp_a.itemAt(3).widget()
 
         # 구분선
         sep = QLabel("│")
-        sep.setStyleSheet("color:#333;font-size:16px;border:none;")
+        sep.setStyleSheet(f"color:{_t.get('group_border','#333')};font-size:16px;border:none;")
         sep.setFixedWidth(12)
         sep.setAlignment(Qt.AlignCenter)
         grp_a.addWidget(sep)
@@ -152,22 +174,22 @@ class RightPanelMixin:
         # ════════════════════════════════════════════════════
         self.btn_synthetic_order = _mk_btn(
             "⚡ 합성 주문", "#0e2e1a", "#00ff88",
-            self._on_synthetic_order, "btn_synthetic_order")
+            self._on_synthetic_order, "btn_synthetic_order", role="gain")
         grp_a.addWidget(self.btn_synthetic_order)
 
         self.btn_open_orders = _mk_btn(
             "📋 미체결", "#1a1a3a", "#aabbff",
-            self._on_open_orders, "btn_open_orders")
+            self._on_open_orders, "btn_open_orders", role="info")
         grp_a.addWidget(self.btn_open_orders)
 
         self.btn_modify_order = _mk_btn(
             "✏ 정정", "#2a1a0a", "#ffaa44",
-            self._on_modify_order, "btn_modify_order")
+            self._on_modify_order, "btn_modify_order", role="warn")
         grp_a.addWidget(self.btn_modify_order)
 
         self.btn_cancel_order = _mk_btn(
             "✖ 취소", "#2a0a0a", "#ff4444",
-            self._on_cancel_order, "btn_cancel_order")
+            self._on_cancel_order, "btn_cancel_order", role="cancel")
         grp_a.addWidget(self.btn_cancel_order)
 
         v.addLayout(grp_a)
@@ -267,8 +289,10 @@ class RightPanelMixin:
 
         # 실계좌 경고 아이콘 (평소 숨김)
         self._acct_warn_lbl = QLabel("⚠ 실계좌 — 주문 전 반드시 확인")
+        # 경고색은 의미색이라 테마 무관하게 주황 유지 (단, 배경은 테마 적용)
         self._acct_warn_lbl.setStyleSheet(
-            "color:#ff9800;font-size:11px;font-weight:bold;border:none;")
+            f"color:#ff9800;font-size:11px;font-weight:bold;border:none;"
+            f"background:transparent;")
         self._acct_warn_lbl.setVisible(False)
         h.addWidget(self._acct_warn_lbl)
 

@@ -25,12 +25,6 @@ from PyQt5.QtGui import QColor
 
 from combo_ui_panel_constants import _f, get_tab_style, get_tbl_style
 from combo_ui_scenario_tab import ScenarioTab
-try:
-    from combo_ui_spike_tab import SpikeMonitorTab as _SpikeMonitorTab
-    _HAS_SPIKE_TAB = True
-except Exception as _e:
-    print(f"[combo_ui_panel_build] ⚠ SpikeMonitorTab 로드 실패: {_e}")
-    _SpikeMonitorTab = None
     _HAS_SPIKE_TAB = False
 
 
@@ -139,14 +133,6 @@ class _SyntheticPanelBuildMixin:
 
         self._scenario_tab = ScenarioTab()
         self._tabs.addTab(self._scenario_tab, "시나리오")
-
-        # [v1.0] 급변 감시 탭 — 로드 실패 시 조용히 스킵
-        if _HAS_SPIKE_TAB and _SpikeMonitorTab is not None:
-            try:
-                self._spike_tab = _SpikeMonitorTab()
-                self._tabs.addTab(self._spike_tab, "⚡급변")
-            except Exception as _e:
-                print(f"[SyntheticPanel] ⚠ 급변 감시 탭 생성 실패: {_e}")
 
         root.addWidget(self._tabs)
 

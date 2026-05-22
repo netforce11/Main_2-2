@@ -50,6 +50,13 @@ def _opt_tick(net: float, symbol: str = "") -> float:
     return 0.10 if net >= 3.00 else 0.05
 
 
+def _effective_spread_width(sleep_cfg, symbol: str) -> float:
+    """[XSP-FIX] XSP는 1pt, SPX는 sleep_cfg.spread_width 그대로 사용."""
+    if symbol.upper() in _XSP_SYMBOLS:
+        return 1.0
+    return float(sleep_cfg.spread_width)
+
+
 def _round_to_tick(net: float, symbol: str = "") -> float:
     """net 가격을 심볼 틱 단위로 반올림 (부동소수점 오차 방지)."""
     from decimal import Decimal, ROUND_HALF_UP
@@ -166,7 +173,8 @@ def _scan_and_check_inner(watcher) -> None:
                 if not strike or not legs: continue
                 if not (dmin <= abs(und - strike) / und <= dmax): continue
                 if net_price > 0:
-                    mp = (sleep_cfg.spread_width - net_price) * 100
+                    _eff_w = _effective_spread_width(sleep_cfg, _sym)
+                    mp = (_eff_w - net_price) * 100
                     if mp <= 0: continue
                     roi = mp / (net_price * 100) * 100
                     if not (sleep_cfg.roi_min <= roi <= sleep_cfg.roi_max):
@@ -206,7 +214,8 @@ def _scan_and_check_inner(watcher) -> None:
                 if not strike or not legs: continue
                 if not (dmin <= abs(und - strike) / und <= dmax): continue
                 if net_price > 0:
-                    mp = (sleep_cfg.spread_width - net_price) * 100
+                    _eff_w = _effective_spread_width(sleep_cfg, _sym)
+                    mp = (_eff_w - net_price) * 100
                     if mp <= 0: continue
                     roi = mp / (net_price * 100) * 100
                     if not (sleep_cfg.roi_min <= roi <= sleep_cfg.roi_max):
@@ -248,7 +257,7 @@ def _scan_and_fire_call_only(watcher, ref, und: float, sleep_cfg) -> None:
     if not call_strikes or not chain_call: return
 
     symbol  = _get_symbol(ref).replace("SPXW", "SPX")   # [FIX]
-    width   = sleep_cfg.spread_width
+    width   = _effective_spread_width(sleep_cfg, symbol)  # [XSP-FIX]
     dmin    = getattr(sleep_cfg, 'call_dist_min', sleep_cfg.strike_dist_min) / 100.0
     dmax    = getattr(sleep_cfg, 'call_dist_max', sleep_cfg.strike_dist_max) / 100.0
     roi_min = getattr(sleep_cfg, 'call_roi_min', sleep_cfg.roi_min)
@@ -306,7 +315,7 @@ def _scan_and_fire_call(watcher, ref, und: float, sleep_cfg) -> None:
     if not call_strikes or not chain_call: return
 
     symbol = _get_symbol(ref).replace("SPXW", "SPX")   # [FIX]
-    width  = sleep_cfg.spread_width
+    width  = _effective_spread_width(sleep_cfg, symbol)  # [XSP-FIX]
     dmin   = sleep_cfg.call_dist_min / 100.0
     dmax   = sleep_cfg.call_dist_max / 100.0
 
@@ -452,7 +461,7 @@ def _peek_call_net(ref, und: float, sleep_cfg) -> float | None:
     call_strikes = getattr(ref, '_call_strikes', [])
     if not call_strikes or not chain_call: return None
     symbol = _get_symbol(ref)
-    width  = sleep_cfg.spread_width
+    width  = _effective_spread_width(sleep_cfg, symbol)  # [XSP-FIX]
     dmin   = sleep_cfg.call_dist_min / 100.0
     dmax   = sleep_cfg.call_dist_max / 100.0
     for buy_strike in sorted(call_strikes, key=lambda s: abs(und - s)):
@@ -483,7 +492,7 @@ def _scan_and_fire_call_b(watcher, ref, und: float, sleep_cfg,
     expiry       = getattr(ref, '_current_expiry', '') or ''
     if not call_strikes or not chain_call: return
     symbol = _get_symbol(ref).replace("SPXW", "SPX")   # [FIX]
-    width  = sleep_cfg.spread_width
+    width  = _effective_spread_width(sleep_cfg, symbol)  # [XSP-FIX]
     dmin   = sleep_cfg.call_dist_min / 100.0
     dmax   = sleep_cfg.call_dist_max / 100.0
 
@@ -549,7 +558,8 @@ def _peek_put_net(put_chain: list, und: float, sleep_cfg,
         if not strike or not legs: continue
         if not (dmin <= abs(und - strike) / und <= dmax): continue
         if net_price > 0:
-            mp = (sleep_cfg.spread_width - net_price) * 100
+            _eff_w2 = _effective_spread_width(sleep_cfg, sym)  # [XSP-FIX]
+            mp = (_eff_w2 - net_price) * 100
             if mp <= 0: continue
             roi = mp / (net_price * 100) * 100
             if not (sleep_cfg.roi_min <= roi <= sleep_cfg.roi_max): continue
@@ -584,7 +594,7 @@ def _fire_call_from_peek(watcher, ref, und: float, sleep_cfg) -> None:
     if not call_strikes or not chain_call:
         tg("⚠️ [조건B] 콜 발사 실패 — _chain_call 없음"); return
     symbol = _get_symbol(ref).replace("SPXW", "SPX")   # [FIX]
-    width  = sleep_cfg.spread_width
+    width  = _effective_spread_width(sleep_cfg, symbol)  # [XSP-FIX]
     dmin   = sleep_cfg.call_dist_min / 100.0
     dmax   = sleep_cfg.call_dist_max / 100.0
 

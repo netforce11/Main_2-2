@@ -42,8 +42,9 @@ except ImportError:
         class ZoneInfo:
             def __new__(cls, key): return _pytz.timezone(key)
 
-_MARKET_OPEN           = dt_time(9, 30)
-_MARKET_CLOSE          = dt_time(16, 0)
+_MARKET_OPEN           = dt_time(9,  30)
+_MARKET_CLOSE          = dt_time(16,  0)
+_SPX_D1_CLOSE          = dt_time(17, 15)   # D+1 옵션 마감 (CBOE 16:00~17:15 ET)
 _AFTER_HOURS_SURCHARGE = 0.25
 
 
@@ -52,15 +53,28 @@ _AFTER_HOURS_SURCHARGE = 0.25
 # ══════════════════════════════════════════════════════════════
 
 def _is_after_hours() -> bool:
+    """정규장(09:30~16:00) 및 D+1 연장(16:00~17:15) 외 시간을 after_hours로 판단.
+    SPX/XSP D+1 옵션은 16:00~17:15 ET까지 거래 가능 → 이 구간은 할증 면제.
+    """
     try:
         now_et = datetime.now(ZoneInfo("America/New_York")).time()
-        return not (_MARKET_OPEN <= now_et <= _MARKET_CLOSE)
+        # 정규장 또는 D+1 연장 구간이면 할증 없음
+        if _MARKET_OPEN <= now_et < _SPX_D1_CLOSE:
+            return False
+        return True
     except Exception:
         return False
 
 
 def _get_session_info() -> tuple:
-    """ET 기준 세션 판단. Returns: (after_hours, label, tif, outside_rth)"""
+    """ET 기준 세션 판단. Returns: (after_hours, label, tif, outside_rth)
+    세션 구분:
+      09:30~16:00  정규장        DAY  / rth=False
+      16:00~17:15  D+1 연장      GTX  / rth=True   ← SPX D+1 옵션 거래 가능
+      17:15~20:00  애프터(거래불가) GTX / rth=True  ← 주문 차단
+      20:00~04:00  심야(거래불가)  GTX / rth=True   ← 주문 차단
+      04:00~09:30  프리마켓       GTX  / rth=True   ← 주문 차단
+    """
     _PRE_START = dt_time(4,  0)
     _AFTER_END = dt_time(20, 0)
     try:
@@ -68,13 +82,15 @@ def _get_session_info() -> tuple:
     except Exception:
         return False, "알수없음", "DAY", False
     if _MARKET_OPEN <= now_et < _MARKET_CLOSE:
-        return False, "정규장(09:30~16:00)", "DAY", False
+        return False, "정규장(09:30~16:00)",      "DAY", False
+    elif _MARKET_CLOSE <= now_et < _SPX_D1_CLOSE:
+        return True,  "D+1연장(16:00~17:15)",     "GTX", True
+    elif _SPX_D1_CLOSE <= now_et < _AFTER_END:
+        return True,  "애프터(17:15~20:00/거래불가)", "GTX", True
     elif _PRE_START <= now_et < _MARKET_OPEN:
-        return True,  "프리마켓(04:00~09:30)", "GTX", True
-    elif _MARKET_CLOSE <= now_et < _AFTER_END:
-        return True,  "애프터(16:00~20:00)",   "GTX", True
+        return True,  "프리마켓(04:00~09:30/거래불가)", "GTX", True
     else:
-        return True,  "심야(20:00~04:00)",     "GTX", True
+        return True,  "심야(20:00~04:00/거래불가)", "GTX", True
 
 
 # ══════════════════════════════════════════════════════════════
@@ -313,6 +329,15 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None,
     self._log(f"  단건 청산 oid 등록: {oid}")
 
     after_hours, session_label, tif, outside_rth = _get_session_info()
+    # [FIX] 17:15 이후(D+1 마감 후)~프리마켓 종료까지 SPX 옵션 거래 불가 → 차단
+    _now_et = datetime.now(ZoneInfo("America/New_York")).time()
+    _tradeable = (
+        (dt_time(9, 30) <= _now_et < dt_time(17, 15))   # 정규장 + D+1 연장
+    )
+    if not _tradeable:
+        _log_fn = getattr(self, '_log', print)
+        _log_fn(f"⛔ [{session_label}] SPX 옵션 거래 불가 시간 — 주문 차단")
+        return None
     ord_               = IbOrder()
     ord_.action        = close_action
     ord_.orderType     = order_type

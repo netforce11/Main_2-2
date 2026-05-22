@@ -154,8 +154,9 @@ class SleepOrderMixin(SleepOrderOrdersMixin):
         if not put_strikes or not expiry: return []
 
         target_expiry = _offset_expiry(expiry, expiry_offset) or expiry
-        step         = _detect_strike_step(put_strikes)
-        width        = sleep_cfg.spread_width
+        step  = _detect_strike_step(put_strikes)
+        # [XSP-FIX] XSP는 1pt 간격, SPX는 sleep_cfg.spread_width 사용
+        width = 1 if symbol.upper() in {"XSP","XSPC","XSPP"}                   else sleep_cfg.spread_width
         n_step       = max(1, round(width / step)) if step > 0 else 1
         actual_width = n_step * step
 

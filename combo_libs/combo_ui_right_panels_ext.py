@@ -25,6 +25,7 @@ except ImportError:
     PG = False
 
 from combo_constants import STRATEGY_DESC
+from combo_ui_panel_constants import _pal as _ext_pal
 from combo_pnl_calc import (
     _make_price_range, _leg_pnl_at_expiry,
     _find_breakevens, _fill_scenario_table,
@@ -62,14 +63,31 @@ def _build_result_panel(self) -> QGroupBox:
     v  = QVBoxLayout(gb); v.setSpacing(4); v.setContentsMargins(6, 6, 6, 6)
 
     kpi_row = QHBoxLayout(); kpi_row.setSpacing(8); self._kpi_widgets = {}
+    _t = _ext_pal()
+    _is_dark = _t.get("win_bg", "#fff")[1:3].lower() < "88"
+    # 의미색: 다크/라이트 분기
+    _C_GAIN  = "#00cc66" if _is_dark else "#15803d"
+    _C_LOSS  = "#ff4444" if _is_dark else "#dc2626"
+    _C_GOLD  = "#e6b800" if _is_dark else "#92610a"
+    _C_BLUE  = "#7eb8ff" if _is_dark else "#1d4ed8"
+    _C_WARN  = "#ff7733" if _is_dark else "#c2410c"
+    _C_SUB   = _t.get("hdr_fg",  "#888888")
+    _C_VAL   = _t.get("group_title", "#ffd700")
+    _KPI_BOX_BG  = _t.get("group_bg",     "#0a0a1e")
+    _KPI_BOX_BDR = _t.get("group_border", "#2a2a4a")
+
     for key, label, col in [
-        ("max_profit","최대 이익","#00ff88"), ("max_loss","최대 손실","#ff4444"),
-        ("breakeven1","손익분기①","#ffd700"), ("breakeven2","손익분기②","#ffd700"),
-        ("cost","순 비용","#90caf9"),         ("rr","R:R","#ff8844"),
+        ("max_profit","최대 이익", _C_GAIN),
+        ("max_loss",  "최대 손실", _C_LOSS),
+        ("breakeven1","손익분기①", _C_GOLD),
+        ("breakeven2","손익분기②", _C_GOLD),
+        ("cost",      "순 비용",   _C_BLUE),
+        ("rr",        "R:R",       _C_WARN),
     ]:
         box = QWidget(); bv = QVBoxLayout(box); bv.setContentsMargins(6,4,6,4)
         box.setStyleSheet(
-            "QWidget{border:1px solid #2a2a4a;border-radius:5px;background:#0a0a1e;}"
+            f"QWidget{{border:1px solid {_KPI_BOX_BDR};border-radius:5px;"
+            f"background:{_KPI_BOX_BG};}}"
             "QLabel{border:none;background:transparent;}"
         )
         lk = QLabel(label)
@@ -87,9 +105,9 @@ def _build_result_panel(self) -> QGroupBox:
         ("credit","수취 크레딧"),      ("margin","예상 증거금"),
     ]):
         lk = QLabel(label + ":")
-        lk.setStyleSheet("color:#aaa;font-size:13px;border:none;")
+        lk.setStyleSheet(f"color:{_C_SUB};font-size:13px;border:none;")
         lv = QLabel("―")
-        lv.setStyleSheet("color:#ffd700;font-size:14px;font-weight:bold;border:none;")
+        lv.setStyleSheet(f"color:{_C_VAL};font-size:14px;font-weight:bold;border:none;")
         sg.addWidget(lk, i//2, (i%2)*2); sg.addWidget(lv, i//2, (i%2)*2+1)
         self._spread_labels[key] = lv
     v.addLayout(sg)
@@ -103,10 +121,13 @@ def _build_result_panel(self) -> QGroupBox:
     self.tbl_scenario.setEditTriggers(QAbstractItemView.NoEditTriggers)
     self.tbl_scenario.setAlternatingRowColors(True)
     self.tbl_scenario.setStyleSheet(
-        "QTableWidget{background:#07070f;alternate-background-color:#0c0c20;"
-        "color:#ccc;gridline-color:#1a1a3a;}"
-        "QHeaderView::section{background:#0a0a1e;color:#90caf9;"
-        "border:1px solid #1a1a3a;font-weight:bold;}")
+        f"QTableWidget{{background:{_t.get('tbl_bg','#07070f')};"
+        f"alternate-background-color:{_t.get('group_bg','#0c0c20')};"
+        f"color:{_t.get('widget_fg','#cccccc')};"
+        f"gridline-color:{_t.get('tbl_grid','#1a1a3a')};}}"
+        f"QHeaderView::section{{background:{_t.get('hdr_bg','#0a0a1e')};"
+        f"color:{_t.get('hdr_fg','#90caf9')};"
+        f"border:1px solid {_t.get('hdr_border','#1a1a3a')};font-weight:bold;}}")
     v.addWidget(self.tbl_scenario, 1)
     gb.setMinimumHeight(80)
     return gb
@@ -124,8 +145,19 @@ def _build_spread_chart_panel(self) -> QGroupBox:
         from PyQt5.QtWidgets import QComboBox, QHBoxLayout as _HBox, QLabel as _Lbl
         opt_row = _HBox(); opt_row.setSpacing(8)
 
+        _ct = _ext_pal()
+        _combo_ss = (
+            f"QComboBox{{background:{_ct.get('input_bg','#1a1a2e')};"
+            f"color:{_ct.get('group_title','#ffd700')};"
+            f"border:1px solid {_ct.get('input_border','#3a3a6a')};"
+            "border-radius:3px;font-size:11px;padding:1px 4px;}"
+            "QComboBox::drop-down{border:none;}"
+            f"QComboBox QAbstractItemView{{background:{_ct.get('combo_popup_bg','#0a0a1e')};"
+            f"color:{_ct.get('combo_popup_fg','#cccccc')};}}"
+        )
+        _lbl_ss = f"color:{_ct.get('hdr_fg','#aaaaaa')};font-size:11px;border:none;"
         lbl_color = _Lbl("선 색상:")
-        lbl_color.setStyleSheet("color:#aaa;font-size:11px;border:none;")
+        lbl_color.setStyleSheet(_lbl_ss)
         self._chart_color_combo = QComboBox()
         self._chart_color_combo.setFixedHeight(22)
         self._chart_color_combo.setFixedWidth(100)
@@ -138,25 +170,17 @@ def _build_spread_chart_panel(self) -> QGroupBox:
         for name, _ in _CHART_COLORS:
             self._chart_color_combo.addItem(name)
         self._chart_color_combo.setCurrentIndex(0)   # 기본값: 빨간색
-        self._chart_color_combo.setStyleSheet(
-            "QComboBox{background:#1a1a2e;color:#ffd700;border:1px solid #3a3a6a;"
-            "border-radius:3px;font-size:11px;padding:1px 4px;}"
-            "QComboBox::drop-down{border:none;}"
-            "QComboBox QAbstractItemView{background:#0a0a1e;color:#ccc;}")
+        self._chart_color_combo.setStyleSheet(_combo_ss)
 
         lbl_width = _Lbl("굵기:")
-        lbl_width.setStyleSheet("color:#aaa;font-size:11px;border:none;")
+        lbl_width.setStyleSheet(_lbl_ss)
         self._chart_width_combo = QComboBox()
         self._chart_width_combo.setFixedHeight(22)
         self._chart_width_combo.setFixedWidth(70)
         for w in ["얇게(1)", "보통(2)", "굵게(3)", "매우굵게(4)"]:
             self._chart_width_combo.addItem(w)
         self._chart_width_combo.setCurrentIndex(2)   # 기본값: 굵게(3)
-        self._chart_width_combo.setStyleSheet(
-            "QComboBox{background:#1a1a2e;color:#ffd700;border:1px solid #3a3a6a;"
-            "border-radius:3px;font-size:11px;padding:1px 4px;}"
-            "QComboBox::drop-down{border:none;}"
-            "QComboBox QAbstractItemView{background:#0a0a1e;color:#ccc;}")
+        self._chart_width_combo.setStyleSheet(_combo_ss)
 
         # 변경 시 즉시 반영
         self._chart_color_combo.currentIndexChanged.connect(
@@ -179,7 +203,9 @@ def _build_spread_chart_panel(self) -> QGroupBox:
         self._pw_pnl.showGrid(x=True, y=True, alpha=0.2)
         self._pw_pnl.setLabel('left', 'PnL ($)')
         self._pw_pnl.setLabel('bottom', '기초자산 가격')
-        self._pw_pnl.addLine(y=0, pen=pg.mkPen('#444', width=1))
+        _pg_t = _ext_pal()
+        _zero_col = _pg_t.get('tbl_grid', '#444444')
+        self._pw_pnl.addLine(y=0, pen=pg.mkPen(_zero_col, width=1))
         # 기본값: 빨간색 굵게(3)
         self._curve_pnl = self._pw_pnl.plot(
             pen=pg.mkPen('#ff4444', width=3), name="PnL")
@@ -313,7 +339,9 @@ def _calc_pnl(self):
     elif strat_type in ("call_back_spread", "put_back_spread"):
         # ★ 백 스프레드 — 방향 강조 (크레딧 수취지만 방향성 전략)
         direction_txt = "강한 상승 ▲" if strat_type == "call_back_spread" else "강한 하락 ▼"
-        direction_col = "#00ff88"      if strat_type == "call_back_spread" else "#ff4444"
+        _bs_t = _ext_pal()
+        _bs_dark = _bs_t.get("win_bg","#fff")[1:3].lower() < "88"
+        direction_col = ("#00cc66" if _bs_dark else "#15803d") if strat_type == "call_back_spread"                    else ("#ff4444" if _bs_dark else "#dc2626")
         credit_amt    = abs(net_cost_100)
         kw['cost'].setText(f"크레딧 ${credit_amt:,.0f}")
         sl['max_gain'   ].setText(f"${max_profit*100:,.0f}  {direction_txt}")
@@ -401,8 +429,11 @@ def _colorize_scenario_table(self, net_cost: float):
             val = float(it_pnl.text().replace("$", "").replace(",", ""))
         except ValueError:
             continue
-        color = QColor("#003300") if val > 0 else (
-                QColor("#330000") if val < 0 else QColor("#1a1a0a"))
+        _sc_t    = _ext_pal()
+        _is_dark_sc = _sc_t.get("win_bg", "#fff")[1:3].lower() < "88"
+        color = (QColor("#003300") if _is_dark_sc else QColor("#dcfce7")) if val > 0 else (
+                (QColor("#330000") if _is_dark_sc else QColor("#fee2e2")) if val < 0
+                else (QColor("#1a1a0a") if _is_dark_sc else QColor("#f5f5f5")))
         for c in range(tbl.columnCount()):
             it = tbl.item(r, c)
             if it:
@@ -416,13 +447,17 @@ def _show_strat_desc(self):
     desc  = STRATEGY_DESC.get(strat, "설명 정보가 없습니다.")
     dlg   = QMessageBox(self)
     dlg.setWindowTitle("전략 설명"); dlg.setText(desc)
+    _dt = _ext_pal()
     dlg.setStyleSheet(
-        "QMessageBox{background:#0d0d22;color:#ccc;}"
-        "QLabel{color:#ffd700;font-size:13px;min-width:480px;}"
-        "QPushButton{background:#1a2a4a;color:#90caf9;"
-        "border:1px solid #3a3a6a;border-radius:4px;"
-        "padding:6px 18px;font-size:12px;}"
-        "QPushButton:hover{background:#2a3a6a;}")
+        f"QMessageBox{{background:{_dt.get('win_bg','#0d0d22')};"
+        f"color:{_dt.get('widget_fg','#cccccc')};}}"
+        f"QLabel{{color:{_dt.get('group_title','#ffd700')};"
+        "font-size:13px;min-width:480px;}"
+        f"QPushButton{{background:{_dt.get('btn_bg','#1a2a4a')};"
+        f"color:{_dt.get('btn_fg','#90caf9')};"
+        f"border:1px solid {_dt.get('btn_border','#3a3a6a')};"
+        "border-radius:4px;padding:6px 18px;font-size:12px;}"
+        f"QPushButton:hover{{background:{_dt.get('btn_hover','#2a3a6a')};}}")
     dlg.exec_()
 
 

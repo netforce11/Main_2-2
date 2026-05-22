@@ -305,7 +305,9 @@ def _do_chase(self, reason: str = "") -> None:
             _done[0] = True
             _cleanup()
             _raw_mid   = (result[1] + result[2]) / 2
-            _tick_s    = _get_tick_size(_raw_mid)
+            # [XSP-FIX] bag 심볼 전달로 XSP $0.01 틱 올바르게 적용
+            _bag_sym_a = getattr(getattr(self, '_chaser_bag_contract', None), 'symbol', '')
+            _tick_s    = _get_tick_size(_raw_mid, _bag_sym_a)
             _direction = "sell" if getattr(self, '_chaser_action', 'BUY').upper() == "SELL" else "buy"
             mid_val    = _snap_to_tick(_raw_mid, _tick_s, _direction)
             QTimer.singleShot(0, lambda: _do_chase_with_price(self, mid_val, reason))
@@ -413,7 +415,9 @@ def _read_mid_from_cache(self) -> Optional[float]:
             ask = entry.get(2)
             if bid and ask and bid > 0 and ask > 0:
                 raw_mid    = (bid + ask) / 2
-                tick       = _get_tick_size(raw_mid)
+                # [XSP-FIX] bag 심볼 전달
+                _bag_sym_b = getattr(getattr(self, '_chaser_bag_contract', None), 'symbol', '')
+                tick       = _get_tick_size(raw_mid, _bag_sym_b)
                 _direction = "sell" if getattr(self, '_chaser_action', 'BUY').upper() == "SELL" else "buy"
                 return _snap_to_tick(raw_mid, tick, _direction)
     return None

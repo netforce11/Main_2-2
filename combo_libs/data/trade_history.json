@@ -13110,5 +13110,16 @@
     "realized": 5.0,
     "close_type": "청산주문",
     "closed_at": "2026-05-19T00:43:13"
+  },
+  {
+    "oid": 58,
+    "strategy": "풋 스프레드 738/739 (풋매수 + 풋매도)",
+    "side": "BUY",
+    "qty": 1,
+    "entry": 0.23,
+    "exit": 0.25,
+    "realized": 2.0,
+    "close_type": "청산주문",
+    "closed_at": "2026-05-21T23:14:31"
   }
 ]

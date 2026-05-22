@@ -150,7 +150,12 @@ def _validate_expiry_not_past(yyyymmdd: str) -> str:
 
 def _calc_required_margin(legs: list) -> float:
     """
-    N-레그 전략 증거금 추정 (v2.8 데빗 스프레드 버그픽스).
+    N-레그 전략 증거금 추정 (v3.0 XSP 스프레드 너비 자동 감지).
+
+    ★ v3.0 추가:
+      XSP 심볼 감지 → 행사가 차이를 그대로 사용 (1pt 단위)
+      SPX/SPXW    → 행사가 차이 그대로 (5pt 단위)
+      증거금 공식 자체는 심볼 무관 (strike_diff가 자동으로 올바른 값)
 
     ★ 핵심 수정:
       데빗 스프레드 = BUY 프리미엄 합계 - SELL 프리미엄 합계
@@ -168,6 +173,15 @@ def _calc_required_margin(legs: list) -> float:
       4. [백 스프레드] BUY qty > SELL qty
            → 크레딧 수취 분 스프레드 + 초과 BUY 프리미엄
     """
+    # [XSP] 심볼 추출 — 레그에서 가져오거나 fallback
+    _sym = ""
+    for _l in legs:
+        _s = str(_l.get("symbol", "") or _l.get("sym", "") or "").upper()
+        if _s:
+            _sym = _s; break
+    _is_xsp = _sym in {"XSP", "XSPC", "XSPP"}
+    # XSP multiplier는 SPX와 동일(×100). 행사가 차이가 1pt이면 그대로 반영됨.
+    # 별도 보정 없이 strike_diff 계산에서 자동 처리됨.
     def _safe_qty(leg):
         try:
             return max(1, int(str(leg.get("qty", 1)).strip() or "1"))
