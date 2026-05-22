@@ -312,6 +312,29 @@ class SleepOrderMixin(SleepOrderOrdersMixin):
 
 # ── 유틸 (클래스 바깥) ───────────────────────────────────────────
 
+_XSP_SYMBOLS = {"XSP", "XSPC", "XSPP"}
+
+# 심볼별 기본 스프레드 간격 (사용자 spread_width 미설정 시 자동 적용)
+_DEFAULT_WIDTH = {
+    "SPX":5,"SPXW":5,"NDX":25,"RUT":5,"RUTW":5,
+    "VIX":1,"VIXW":1,
+    "XSP":1,"XSPC":1,"XSPP":1,
+    "AAPL":2,"MSFT":5,"NVDA":5,"AMZN":5,
+    "GOOGL":5,"META":5,"TSLA":5,"AMD":5,
+    "SPY":1,"QQQ":1,"IWM":1,
+}
+
+
+def _effective_spread_width(sleep_cfg, symbol: str) -> float:
+    """심볼별 스프레드 간격 자동 결정. 사용자 기본값(5)이면 테이블 자동 적용."""
+    user_w = int(getattr(sleep_cfg, 'spread_width', 5))
+    sym    = symbol.upper()
+    auto_w = _DEFAULT_WIDTH.get(sym)
+    if auto_w is not None and user_w == 5 and sym not in {"SPX","SPXW"}:
+        return float(auto_w)
+    return float(user_w)
+
+
 def _detect_strike_step(strikes: list) -> float:
     if len(strikes) < 2: return 5.0
     diffs = [abs(strikes[i] - strikes[i-1])

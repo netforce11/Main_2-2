@@ -253,6 +253,7 @@ class TradingDashboard(QMainWindow):
         self._watch_panel = WatchAlertPanel()
         self._watch_panel.set_main_window(self)
         self._watch_panel.show()
+        QTimer.singleShot(300, self._snap_watch_panel)
 
         # ✅ NEW: 메뉴바 좌측에 감시패널 토글 버튼 (누르면 show/hide)
         self._watch_btn = QPushButton("🔍 감시패널")
@@ -650,6 +651,19 @@ class TradingDashboard(QMainWindow):
             
             pass
 
+    def _snap_watch_panel(self):
+        """SPX 감시 패널: 타이틀바만 우측 하단에 노출."""
+        from PyQt5.QtWidgets import QApplication
+        p = self._watch_panel
+        screen = QApplication.primaryScreen().availableGeometry()
+        title_h = p.frameGeometry().height() - p.geometry().height()
+        title_h = title_h if title_h > 4 else 30
+        w = p.width() if p.width() > 100 else 480
+        h = p.height() if p.height() > 100 else 380
+        x = screen.right() - w - 10
+        y = screen.bottom() - title_h
+        p.setGeometry(x, y, w, h)
+
     def closeEvent(self, event):
         TelegramClient.get().stop_polling()   # 텔레그램 수신 루프 종료
         # ✅ 수정: 종료 시 관심종목 명시적 저장
@@ -683,5 +697,5 @@ if __name__ == "__main__":
 
     win = TradingDashboard()
     win.app = app   # chain_saver worker 종료 연결용
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec_())

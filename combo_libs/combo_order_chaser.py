@@ -31,15 +31,43 @@ CHASE_INTERVAL_MS  = 4_000
 CHASE_MAX_ATTEMPTS = 3
 CHASE_MIN_TICK     = 0.05
 CHASE_TICK_HIGH    = 0.10
-_PENNY_TICK_SYMBOLS = {"XSP"}
+
+# ── 옵션 호가 단위 (CBOE 기준) ────────────────────────────────
+# Penny Pilot ($0.01/$0.05): XSP, AAPL, NVDA, AMZN, GOOGL, MSFT,
+#   META, TSLA, AMD, INTC, BAC, GS, JPM, QQQ, SPY, IWM 등 주요 500종목
+# 비Penny ($0.05/$0.10): SPX, VIX, NDX, RUT 등 지수 옵션
+_PENNY_PILOT = {
+    # 지수 ETF
+    "XSP","SPY","QQQ","IWM","GLD","SLV","EEM","TLT","HYG","LQD",
+    # 빅테크/반도체
+    "AAPL","MSFT","NVDA","AMZN","GOOGL","GOOG","META","TSLA",
+    "AMD","INTC","QCOM","AVGO","MU","AMAT","LRCX","KLAC",
+    # 금융
+    "BAC","JPM","GS","MS","WFC","C","BRK","BLK",
+    # 기타 주요 종목
+    "NFLX","DIS","UBER","LYFT","COIN","RBLX","SNAP","PLTR",
+    "XOM","CVX","OXY","SLB","HAL",
+}
+_NON_PENNY = {
+    # 지수 옵션 (비Penny — 틱 0.05/$0.10)
+    "SPX","SPXW","NDX","VIX","RUT","RUTW","DJX",
+}
 
 # [FIX-C7-LOCK] 동시 chase 방지 락
 _chase_lock = threading.Lock()
 
 
 def _get_tick_size(price: float, symbol: str = "") -> float:
-    if symbol.upper() in _PENNY_TICK_SYMBOLS:
-        return 0.01
+    """
+    CBOE 공식 호가 단위 반환.
+    Penny Pilot 종목: $3 미만=$0.01, $3 이상=$0.05
+    비Penny(지수):   $3 미만=$0.05, $3 이상=$0.10
+    미등록 심볼:      보수적으로 비Penny 적용
+    """
+    s = symbol.upper()
+    if s in _PENNY_PILOT:
+        return 0.01 if price < 3.0 else 0.05
+    # 비Penny 또는 미등록 (SPX, VIX, NDX 포함)
     return CHASE_TICK_HIGH if price >= 3.0 else CHASE_MIN_TICK
 
 

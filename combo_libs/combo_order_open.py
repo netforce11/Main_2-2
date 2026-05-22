@@ -312,7 +312,10 @@ def _modify_tick(self, direction: int):
         return
 
     cur_price = o.get("lmt", 0.0) or 0.0
-    tick = 0.10 if cur_price >= 3.0 else 0.05
+    # [TICK-FIX] 심볼 기반 정확한 호가 단위 적용
+    from combo_order_chaser import _get_tick_size as _cts
+    _oo_sym = str(o.get("sym", "") or "").upper()
+    tick = _cts(cur_price, _oo_sym)
     new_price = round(cur_price + direction * tick, 2)
     if new_price <= 0:
         self._log("⚠ 가격이 0 이하로 내려갈 수 없음")

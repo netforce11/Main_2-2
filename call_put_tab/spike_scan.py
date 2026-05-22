@@ -51,22 +51,10 @@ def _opt_tick(net: float, symbol: str = "") -> float:
 
 
 def _effective_spread_width(sleep_cfg, symbol: str) -> float:
-    """
-    심볼별 스프레드 간격 자동 결정.
-    사용자 설정값이 기본값(5)이면 심볼 테이블에서 자동 적용.
-    """
-    _W = {
-        "SPX":5,"SPXW":5,"NDX":25,"RUT":5,"VIX":1,"VIXW":1,
-        "XSP":1,"XSPC":1,"XSPP":1,
-        "AAPL":2,"MSFT":5,"NVDA":5,"AMZN":5,"GOOGL":5,
-        "META":5,"TSLA":5,"AMD":5,"SPY":1,"QQQ":1,"IWM":1,
-    }
-    user_w = int(getattr(sleep_cfg, 'spread_width', 5))
-    sym    = symbol.upper()
-    auto_w = _W.get(sym)
-    if auto_w is not None and user_w == 5 and sym not in {"SPX","SPXW"}:
-        return float(auto_w)
-    return float(user_w)
+    """[XSP-FIX] XSP는 1pt, SPX는 sleep_cfg.spread_width 그대로 사용."""
+    if symbol.upper() in _XSP_SYMBOLS:
+        return 1.0
+    return float(sleep_cfg.spread_width)
 
 
 def _round_to_tick(net: float, symbol: str = "") -> float:

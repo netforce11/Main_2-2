@@ -25,7 +25,7 @@ from PyQt5.QtGui import QColor
 
 from combo_ui_panel_constants import _f, get_tab_style, get_tbl_style
 from combo_ui_scenario_tab import ScenarioTab
-    _HAS_SPIKE_TAB = False
+_HAS_SPIKE_TAB = False
 
 
 # ── 팔레트 헬퍼 ───────────────────────────────────────────────
