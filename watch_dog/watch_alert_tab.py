@@ -60,7 +60,7 @@ class WatchAlertPanel(QWidget):
         self.setWindowTitle("SPX 감시 패널")
         # ✅ FIX: 기본 닫기/최소화 버튼 숨기고 커스텀 타이틀바 사용
         self.setWindowFlags(
-            Qt.Tool | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint
+            Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Window
         )
         self.setFixedWidth(560)
         # 드래그 이동용 변수
@@ -687,11 +687,28 @@ class WatchAlertPanel(QWidget):
             subprocess.Popen(["notepad.exe", str(path)])
 
     def _position_bottom_left(self):
+        """타이틀바만 우측 하단에 노출, 몸통은 화면 아래로 숨김."""
         from PyQt5.QtWidgets import QApplication
         screen = QApplication.primaryScreen().availableGeometry()
-        x = screen.left() + 8
-        y = screen.bottom() - self.sizeHint().height() - 8
-        self.move(x, y)
+        self.adjustSize()
+        w = self.width() if self.width() > 100 else 560
+        h = self.sizeHint().height()
+        title_h = 32          # 커스텀 타이틀바 높이 (px)
+        x = screen.right() - w - 10
+        y = screen.bottom() - title_h   # 타이틀바만 노출
+        self.setGeometry(x, y, w, h)
+
+    def _show_full(self):
+        """패널을 우측 하단에 완전히 표시."""
+        from PyQt5.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().availableGeometry()
+        w = self.width() if self.width() > 100 else 560
+        h = self.sizeHint().height()
+        x = screen.right() - w - 10
+        y = screen.bottom() - h - 10
+        self.setGeometry(x, y, w, h)
+        self.show()
+        self.raise_()
 
     def closeEvent(self, event):
         event.ignore()

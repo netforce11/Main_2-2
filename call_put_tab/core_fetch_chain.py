@@ -125,13 +125,13 @@ class CoreFetchChainMixin:
             if self._fetch_gen != gen: return
             if not _alive(self): return
             if idx >= len(cancel_ids):
-                QTimer.singleShot(500, _prepare_and_subscribe)
+                QTimer.singleShot(200, _prepare_and_subscribe)
                 return
             try:
                 self.mw.ib.cancelMktData(cancel_ids[idx])
             except Exception:
                 pass
-            QTimer.singleShot(80, lambda: _cancel_seq(idx + 1))
+            QTimer.singleShot(30, lambda: _cancel_seq(idx + 1))
 
         def _prepare_and_subscribe():
             if self._fetch_gen != gen: return
@@ -216,7 +216,7 @@ class CoreFetchChainMixin:
                     self.mw.ib.reqMktData(r, c, ticks, False, False, [])
                 except Exception as e:
                     self._log(f"⚠ reqMktData 오류 rid={r}: {e}")
-                QTimer.singleShot(150, lambda: _send_req(ni, all_reqs, total, ticks))
+                QTimer.singleShot(30, lambda: _send_req(ni, all_reqs, total, ticks))
 
             if idx == 0 and sym in _DELAYED_SYMS:
                 _mdt_for_sym(sym, self.mw.ib)

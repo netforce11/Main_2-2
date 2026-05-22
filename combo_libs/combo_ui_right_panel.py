@@ -155,6 +155,85 @@ class RightPanelMixin:
             b.clicked.connect(fn)
             return b
 
+        # ── 세트 수량 스핀박스 ─────────────────────────────────────
+        _qty_lbl = QLabel("세트:")
+        _qty_lbl.setStyleSheet(f"color:{_t.get('hdr_fg','#aaa')};font-size:11px;border:none;")
+        grp_a.addWidget(_qty_lbl)
+        self.spin_set_qty = QSpinBox()
+        self.spin_set_qty.setRange(1, 20)
+        self.spin_set_qty.setValue(1)
+        self.spin_set_qty.setSuffix(" 세트")
+        self.spin_set_qty.setFixedHeight(26)
+        self.spin_set_qty.setFixedWidth(80)
+        _sp_bg  = _t.get('input_bg',    '#1a1a2e')
+        _sp_fg  = _t.get('widget_fg',   '#e0e0e0')
+        _sp_bdr = _t.get('input_border','#3a3a6a')
+        _sp_btn = _t.get('btn_bg',      '#2a2a4a')
+        _sp_arr = _t.get('group_title', '#ffd700')
+        self.spin_set_qty.setStyleSheet(
+            f"QSpinBox{{background:{_sp_bg};color:{_sp_fg};"
+            f"border:1px solid {_sp_bdr};"
+            "border-radius:3px;font-size:12px;font-weight:bold;padding:1px 4px;}"
+            f"QSpinBox::up-button{{width:20px;background:{_sp_btn};"
+            f"border-left:1px solid {_sp_bdr};}}"
+            f"QSpinBox::down-button{{width:20px;background:{_sp_btn};"
+            f"border-left:1px solid {_sp_bdr};}}"
+            f"QSpinBox::up-arrow{{color:{_sp_arr};}}"
+            f"QSpinBox::down-arrow{{color:{_sp_arr};}}"
+            f"QSpinBox:hover{{border:1px solid {_sp_arr};}}")
+        self.spin_set_qty.setToolTip("전략 세트 수량 (1세트 = 레그 구성 1개)")
+        # [SET-QTY] 수량 변경 시 증거금 탭 라벨 실시간 갱신
+        # ── 이전 세트 수량 추적용 ─────────────────────────────
+        self._prev_set_qty = 1
+
+        def _on_set_qty_changed(val):
+            prev = getattr(self, '_prev_set_qty', 1)
+            self._prev_set_qty = val
+
+            # ── 1) 레그 테이블 qty 열 갱신 ─────────────────────
+            # 각 레그의 수량을 (기본1 × 세트수) 로 업데이트
+            tbl = getattr(self, 'tbl_legs', None)
+            if tbl:
+                from PyQt5.QtWidgets import QTableWidgetItem
+                for r in range(tbl.rowCount()):
+                    it = tbl.item(r, 5)
+                    if it is None:
+                        it = QTableWidgetItem("1")
+                        tbl.setItem(r, 5, it)
+                    try:
+                        cur = int(it.text().strip()) if it.text().strip() else 1
+                        # 이전 세트 배수 제거 후 새 배수 적용
+                        base = round(cur / max(prev, 1))
+                        it.setText(str(max(1, base) * val))
+                    except Exception:
+                        it.setText(str(val))
+
+            # ── 2) 손익 자동 재계산 ─────────────────────────────
+            try:
+                from combo_ui_right_panels_ext import _calc_pnl as _cp
+                _cp(self, set_qty=self.spin_set_qty)
+            except Exception:
+                pass
+
+            # ── 3) 증거금 탭 갱신 ───────────────────────────────
+            cache = getattr(self, '_last_margin_cache', None)
+            panel = getattr(self, 'synthetic_panel', None)
+            if cache and panel:
+                panel.update_margin(
+                    available=cache['available'],
+                    required =round(cache['required_unit'] * val, 2),
+                    strategy =cache['strategy'],
+                    cost     =cache['cost'],
+                )
+            else:
+                try:
+                    self._on_check_margin()
+                except Exception:
+                    pass
+
+        self.spin_set_qty.valueChanged.connect(_on_set_qty_changed)
+        grp_a.addWidget(self.spin_set_qty)
+
         grp_a.addWidget(_mk_btn("📊 손익 계산",  "#1a5c2e", "#00ff88", self._calc_pnl, role="gain"))
         grp_a.addWidget(_mk_btn("💰 증거금 조회", "#1a1a0e", "#ffd700", self._on_check_margin, "btn_check_margin", role="gold"))
         self.btn_check_margin = grp_a.itemAt(1).widget()
@@ -475,8 +554,10 @@ RightPanelMixin._finish_whatif        = _finish_whatif          # type: ignore[a
 RightPanelMixin._send_whatif_order    = _send_whatif_order      # type: ignore[attr-defined]
 
 # v2.6 추가 바인딩
-from combo_ui_right_panels_ext import _calc_pnl
-RightPanelMixin._calc_pnl = _calc_pnl  # type: ignore[attr-defined]
+from combo_ui_right_panels_ext import _calc_pnl as _calc_pnl_raw
+def _calc_pnl_with_qty(self):
+    _calc_pnl_raw(self, set_qty=getattr(self,'spin_set_qty',None))
+RightPanelMixin._calc_pnl = _calc_pnl_with_qty  # type: ignore[attr-defined]
 
 from combo_order_chaser import cancel_bag_order
 RightPanelMixin._on_cancel_bag_order = cancel_bag_order  # type: ignore[attr-defined]
@@ -551,7 +632,8 @@ def _request_margin_then_order(self, legs, strat, cost_str, confirm=False):
         required = 0.0
         if legs:
             from combo_order_logic import _is_after_hours, _AFTER_HOURS_SURCHARGE
-            required = _calc_required_margin(legs)
+            _sq = int(getattr(getattr(self,'spin_set_qty',None),'value',lambda:1)())
+            required = _calc_required_margin(legs) * _sq
             if _is_after_hours():
                 required = round(required * (1 + _AFTER_HOURS_SURCHARGE), 2)
                 self._log("⚠ 장외 시간 — 증거금 25% 할증 적용")
@@ -564,6 +646,14 @@ def _request_margin_then_order(self, legs, strat, cost_str, confirm=False):
                 cost=cost_str,
             )
 
+        # [SET-QTY] 1세트 기준값 캐시 저장 → 수량 변경 시 즉시 반영
+        _sq2 = int(getattr(getattr(self,'spin_set_qty',None),'value',lambda:1)())
+        self._last_margin_cache = {
+            'available':    available,
+            'required_unit':round(required / max(_sq2, 1), 2),
+            'strategy':     strat,
+            'cost':         cost_str,
+        }
         self._log(f"💰 증거금 조회 완료: 가용={available:,.2f}  필요={required:,.2f}")
 
         if confirm and legs:

@@ -782,3 +782,16 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
         """[FIX-SCENARIO] 레그 설정 완료 시 호출 → 시나리오 탭 Greeks 갱신."""
         if hasattr(self, '_scenario_tab'):
             self._scenario_tab.set_greeks(legs, entry, und_price)
+
+    # ── 콜백 등록 메서드 (combo_order_logic 에서 주입) ──────────
+    def set_close_position_callback(self, cb):
+        self._close_position_cb = cb
+
+    def set_manual_modify_callback(self, cb):
+        self._manual_modify_cb = cb
+
+    def set_chaser_mode_callback(self, cb):
+        self._chaser_mode_cb = cb
+
+    def set_margin_mode_callback(self, cb):
+        self._margin_mode_cb = cb

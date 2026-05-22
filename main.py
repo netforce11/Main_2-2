@@ -253,21 +253,36 @@ class TradingDashboard(QMainWindow):
         self._watch_panel = WatchAlertPanel()
         self._watch_panel.set_main_window(self)
         self._watch_panel.show()
-        QTimer.singleShot(300, self._snap_watch_panel)
+        QTimer.singleShot(300, self._watch_panel._position_bottom_left)
 
         # ✅ NEW: 메뉴바 좌측에 감시패널 토글 버튼 (누르면 show/hide)
-        self._watch_btn = QPushButton("🔍 감시패널")
-        self._watch_btn.setCheckable(True)
-        self._watch_btn.setChecked(True)
-        self._watch_btn.setFixedHeight(22)
-        self._watch_btn.setStyleSheet(
-            "QPushButton{padding:0 8px;font-size:11px;border:1px solid #555;border-radius:3px;}"
-            "QPushButton:checked{background:#2a6;color:#fff;border-color:#2a6;}"
+        # ── 시스템 트레이 아이콘 (SPX 감시패널 show/hide) ──
+        from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction
+        from PyQt5.QtGui import QIcon, QPixmap, QColor
+        # 아이콘: 초록 원 16x16
+        _pix = QPixmap(16, 16)
+        _pix.fill(QColor("#00cc66"))
+        self._tray = QSystemTrayIcon(QIcon(_pix), self)
+        self._tray.setToolTip("SPX 감시패널")
+        _tmenu = QMenu()
+        _act_show = QAction("📂 감시패널 열기", self)
+        _act_hide = QAction("📁 감시패널 숨기기", self)
+        _act_quit = QAction("❌ 앱 종료", self)
+        _act_show.triggered.connect(self._watch_panel._show_full)
+        _act_hide.triggered.connect(self._watch_panel.hide)
+        _act_quit.triggered.connect(self.close)
+        _tmenu.addAction(_act_show)
+        _tmenu.addAction(_act_hide)
+        _tmenu.addSeparator()
+        _tmenu.addAction(_act_quit)
+        self._tray.setContextMenu(_tmenu)
+        # 트레이 아이콘 단일 클릭 → 토글
+        self._tray.activated.connect(
+            lambda reason: self._watch_panel._show_full()
+            if not self._watch_panel.isVisible()
+            else self._watch_panel.hide()
         )
-        self._watch_btn.toggled.connect(
-            lambda on: self._watch_panel.show() if on else self._watch_panel.hide()
-        )
-        self.menuBar().setCornerWidget(self._watch_btn, Qt.TopLeftCorner)
+        self._tray.show()
 
         self.tab_balance = add(BalanceGrid,        "2. 잔고/PnL",     self)
         self.tab_combo   = add(ComboStrategyGrid,  "4. 복합 전략",    self)

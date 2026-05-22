@@ -239,7 +239,8 @@ def _apply_chart_style(self, color_list=None):
 
 # ── N-레그 손익 계산 (v3.0 강화) ────────────────────────────────
 
-def _calc_pnl(self):
+def _calc_pnl(self, set_qty=None):
+    _qty_mult = int(set_qty.value() if set_qty else 1)
     """📊 손익 계산 버튼 핸들러. 최대 8레그 + 전략별 KPI 특화."""
     from combo_order_utils import _parse_legs_from_table, _calc_required_margin
 
@@ -267,23 +268,23 @@ def _calc_pnl(self):
         float(l.get("prem", 0) or 0) * int(l.get("qty", 1)) *
         (1 if l["dir"] == "BUY" else -1)
         for l in legs)
-    net_cost_100 = round(net_cost * 100, 2)
+    net_cost_100 = round(net_cost * 100 * _qty_mult, 2)
     max_profit   = max(total_pnl)
     max_loss     = min(total_pnl)
     breakevens   = _find_breakevens(price_range, total_pnl)
-    margin       = _calc_required_margin(legs)
+    margin       = _calc_required_margin(legs) * _qty_mult
     try:
         from combo_order_logic import _is_after_hours, _AFTER_HOURS_SURCHARGE
         if _is_after_hours():
             margin = round(margin * (1 + _AFTER_HOURS_SURCHARGE), 2)
     except Exception:
         pass
-    rr = abs(max_profit / max_loss) if max_loss < 0 else float('inf')
+    rr = abs(max_profit / max_loss) if max_loss < 0 else float('inf')  # R:R은 qty 무관
 
     # ── KPI 공통 갱신 ────────────────────────────────────────
     kw = self._kpi_widgets
-    kw['max_profit'].setText(f"${max_profit*100:,.0f}")
-    kw['max_loss'  ].setText(f"${max_loss*100:,.0f}")
+    kw['max_profit'].setText(f"${max_profit*100*_qty_mult:,.0f}")
+    kw['max_loss'  ].setText(f"${max_loss*100*_qty_mult:,.0f}")
     kw['breakeven1'].setText(f"{breakevens[0]:.1f}" if len(breakevens) > 0 else "―")
     kw['breakeven2'].setText(f"{breakevens[1]:.1f}" if len(breakevens) > 1 else "―")
     kw['rr'        ].setText(f"1 : {rr:.1f}" if rr != float('inf') else "∞")
@@ -412,7 +413,7 @@ def _calc_pnl(self):
 
     self._log(
         f"📊 [{strat_type}] 손익 계산 완료: {len(legs)}레그  "
-        f"최대이익=${max_profit*100:,.0f}  최대손실=${max_loss*100:,.0f}  "
+        f"최대이익=${max_profit*100*_qty_mult:,.0f}  최대손실=${max_loss*100*_qty_mult:,.0f}  "
         f"BEP={[f'{b:.1f}' for b in breakevens]}")
 
 

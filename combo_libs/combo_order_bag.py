@@ -523,7 +523,10 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         QTimer.singleShot(30000, _discard_close_oid)
 
     from ibapi.order import Order as IbOrder
-    _bag_qty = max((int(float(lg.get("qty", 1))) for lg in legs), default=1)
+    # [SET-QTY] edit_set_qty 위젯에서 세트 수량 읽기
+    _set_qty_w = getattr(getattr(self,'synthetic_panel',None),'spin_set_qty',None)
+    _set_qty   = int(_set_qty_w.value() if _set_qty_w else 1)
+    _bag_qty   = max((int(float(lg.get("qty", 1))) for lg in legs), default=1) * _set_qty
     ibord               = IbOrder()
     ibord.action        = bag_action
     ibord.orderType     = "LMT"
