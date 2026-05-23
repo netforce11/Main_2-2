@@ -499,7 +499,7 @@ def restore_on_reconnect(self) -> None:
         self._log("⚠ IB 서버 응답 없음(30초 타임아웃) — 파일 기반 복원으로 폴백")
         _restore_done(show_file=True)
 
-    QTimer.singleShot(30_000, _timeout)
+    QTimer.singleShot(5_000, _timeout)   # [FIX] 30초→5초
 
     try:
         ib.reqPositions()

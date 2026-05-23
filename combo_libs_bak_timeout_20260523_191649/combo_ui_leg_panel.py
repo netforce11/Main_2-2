@@ -1,0 +1,376 @@
+"""
+combo_ui_leg_panel.py — 레그 테이블 좌측 패널 빌드
+────────────────────────────────────────────────────
+포함: _build_leg_left (RightPanelMixin에 mixin)
+      _on_leg_item_changed / _recalc_net_price
+      _set_premium_cell / _set_strategy_by_name
+
+스트리밍 관련:
+      fill_premium_from_market / _cancel_stream / cancel_all_streams
+      → combo_ui_leg_stream.py 로 분리
+
+v2.6 변경:
+  - ➕ 레그 추가 / ➖ 마지막 레그 제거 버튼 (자동/수동 모드 공용)
+  - MAX_LEGS(8) 초과 시 버튼 자동 비활성
+  - 세트 입력 패널 제거 (v2.7)
+v3.0 변경:
+  - 📋 구성 가이드 버튼 추가 (전략별 팝업 직접 호출)
+  - 전략 콤보박스 옆 ❓(설명) + 📋(구성 가이드) 두 버튼 체계
+────────────────────────────────────────────────────
+"""
+
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QComboBox, QTableWidget, QHeaderView,
+    QLineEdit, QFrame,
+)
+from PyQt5.QtCore import QTimer
+from combo_constants import STRATEGIES, MAX_LEGS, STRATEGY_SETUP_GUIDE, _pal
+from combo_ui_net_price_display import NetPriceDisplay
+
+_TICKER_BASE = 8800
+
+
+def _build_leg_left(self) -> QWidget:
+    """좌측: 전략 유형 콤보 + 레그 모드 토글 + 레그 테이블 + 추가 레그 버튼."""
+    w = QWidget(); v = QVBoxLayout(w)
+    v.setSpacing(4); v.setContentsMargins(2, 2, 4, 2)
+
+    # ── 전략 유형 행 ──────────────────────────────────────────
+    row = QHBoxLayout()
+    row.addWidget(QLabel("전략 유형:"))
+    self.combo_strat = QComboBox()
+    self.combo_strat.addItems(STRATEGIES)
+    _t = _pal()
+    self.combo_strat.setStyleSheet(
+        f"QComboBox{{background:{_t['input_bg']};color:{_t['group_title']};"
+        f"border:1px solid {_t['input_border']};"
+        "border-radius:6px;font-size:14px;padding:3px;}}"
+        f"QComboBox QAbstractItemView{{background:{_t['combo_popup_bg']};"
+        f"color:{_t['combo_popup_fg']};"
+        f"selection-background-color:{_t['combo_sel_bg']};font-size:14px;}}"
+        "QComboBox::drop-down{border:none;}")
+    self.combo_strat.currentIndexChanged.connect(self._on_strat_change)
+    # ── 스프레드 간격 행 (v3.1) ──────────────────────────────
+    gap_row = QHBoxLayout(); gap_row.setSpacing(4)
+    gap_row.addWidget(QLabel("스프레드 간격:"))
+    from PyQt5.QtWidgets import QSpinBox
+    self._spn_gap = QSpinBox()
+    self._spn_gap.setRange(1, 200)
+    self._spn_gap.setValue(5)
+    self._spn_gap.setSuffix(" pt")
+    self._spn_gap.setFixedWidth(80)
+    self._spn_gap.setStyleSheet(
+        f"QSpinBox{{background:{_t['input_bg']};color:{_t['group_title']};"
+        f"border:1px solid {_t['input_border']};border-radius:4px;padding:2px;}}")
+    self._spn_gap.valueChanged.connect(lambda v: _on_gap_changed(self, v))
+    gap_row.addWidget(self._spn_gap)
+    lbl_hint = QLabel("(버터플라이·스프레드 자동 적용)")
+    lbl_hint.setStyleSheet("color:#888;font-size:11px;")
+    gap_row.addWidget(lbl_hint)
+    gap_row.addStretch()
+    v.addLayout(gap_row)
+
+    row.addWidget(self.combo_strat, 1)
+
+    # ❓ 전략 설명 버튼
+    btn_info = QPushButton("❓")
+    btn_info.setFixedSize(26, 26)
+    btn_info.setToolTip("전략 설명 보기")
+    btn_info.setStyleSheet(
+        f"QPushButton{{background:{_t['group_bg']};color:{_t['group_title']};"
+        f"border:1px solid {_t['input_border']};"
+        "border-radius:6px;font-size:14px;font-weight:bold;}}"
+        f"QPushButton:hover{{background:{_t['btn_hover']};color:{_t['btn_hover_bdr']};}}")
+    btn_info.clicked.connect(self._show_strat_desc)
+    row.addWidget(btn_info)
+
+    # 📋 전략 구성 가이드 버튼 (v3.0 신규)
+    btn_guide = QPushButton("📋")
+    btn_guide.setFixedSize(26, 26)
+    btn_guide.setToolTip("전략 구성 가이드 보기")
+    btn_guide.setStyleSheet(
+        f"QPushButton{{background:{_t['group_bg']};color:#44cc88;"
+        f"border:1px solid {_t['input_border']};"
+        "border-radius:6px;font-size:14px;}}"
+        "QPushButton:hover{background:#2a5a2a;color:#88ff44;}"
+        f"QPushButton:disabled{{background:{_t['group_bg']};color:{_t['input_border']};"
+        f"border-color:{_t['input_border']};}}")
+    btn_guide.clicked.connect(lambda: _show_guide_popup(self))
+    self._btn_guide = btn_guide
+    row.addWidget(btn_guide)
+    v.addLayout(row)
+
+    # ── 레그 모드 행 ──────────────────────────────────────────
+    mode_row = QHBoxLayout(); mode_row.setSpacing(4)
+    mode_row.addWidget(QLabel("레그 설정"))
+    mode_row.addStretch()
+    _t2 = _pal()
+    _on  = (f"QPushButton{{background:{_t2['group_bg']};color:#00ff88;font-size:10px;"
+            f"font-weight:bold;padding:2px 8px;border-radius:6px;border:1px solid #00ff88;}}"
+            f"QPushButton:!checked{{background:{_t2['group_bg']};color:{_t2['input_border']};"
+            f"border:1px solid {_t2['input_border']};}}"
+            f"QPushButton:hover{{background:{_t2['btn_hover']};}}")
+    _off = (f"QPushButton{{background:{_t2['group_bg']};color:{_t2['input_border']};font-size:10px;"
+            f"font-weight:bold;padding:2px 8px;border-radius:6px;border:1px solid {_t2['input_border']};}}"
+            f"QPushButton:checked{{background:{_t2['group_bg']};color:#ffd700;border:1px solid #ffd700;}}"
+            f"QPushButton:hover{{background:{_t2['btn_hover']};}}")
+    self._btn_leg_auto   = QPushButton("🔗 자동 입력")
+    self._btn_leg_manual = QPushButton("✏ 수동 입력")
+    for btn, style, checked in [
+        (self._btn_leg_auto,   _on,  True),
+        (self._btn_leg_manual, _off, False),
+    ]:
+        btn.setCheckable(True); btn.setChecked(checked)
+        btn.setFixedHeight(22); btn.setStyleSheet(style)
+    self._btn_leg_auto.clicked.connect(lambda: self._set_leg_mode("auto"))
+    self._btn_leg_manual.clicked.connect(lambda: self._set_leg_mode("manual"))
+    mode_row.addWidget(self._btn_leg_auto)
+    mode_row.addWidget(self._btn_leg_manual)
+    v.addLayout(mode_row)
+    self._leg_mode = "auto"
+
+    # ── 레그 테이블 ───────────────────────────────────────────
+    self.tbl_legs = QTableWidget(0, 7)
+    self.tbl_legs.setHorizontalHeaderLabels(
+        ["레그", "방향", "C/P", "행사가", "프리미엄($)", "수량", "만기"])
+    self.tbl_legs.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    self.tbl_legs.verticalHeader().setVisible(False)
+    self.tbl_legs.setAlternatingRowColors(True)
+    _t3 = _pal()
+    self.tbl_legs.setStyleSheet(
+        f"QTableWidget{{background:{_t3['tbl_bg']};"
+        f"alternate-background-color:{_t3['group_bg']};"
+        f"color:{_t3['widget_fg']};gridline-color:{_t3['tbl_grid']};}}"
+        f"QHeaderView::section{{background:{_t3['hdr_bg']};color:{_t3['hdr_fg']};"
+        f"border:1px solid {_t3['hdr_border']};font-weight:bold;}}")
+    v.addWidget(self.tbl_legs, 1)
+
+    # ── 수동 모드 버튼 행 ─────────────────────────────────────
+    self._manual_btn_row = QWidget()
+    mbh = QHBoxLayout(self._manual_btn_row)
+    mbh.setContentsMargins(0, 1, 0, 1); mbh.setSpacing(4)
+    from combo_ui_leg_extra import _manual_add_leg, _manual_del_leg
+    _t4 = _pal()
+    for text, fg, border, fn in [
+        ("➕ 레그 추가",  "#90caf9", _t4['input_border'],
+         lambda: _manual_add_leg(self)),
+        ("➖ 레그 제거",  "#ff6666", "#5a1a1a",
+         lambda: _manual_del_leg(self)),
+    ]:
+        btn = QPushButton(text); btn.setFixedHeight(22)
+        btn.setStyleSheet(
+            f"background:{_t4['group_bg']};color:{fg};font-size:10px;font-weight:bold;"
+            f"padding:2px 8px;border-radius:6px;border:1px solid {border};")
+        btn.clicked.connect(fn)
+        mbh.addWidget(btn)
+    mbh.addWidget(QLabel("방향·C/P·행사가·프리미엄·수량·만기 직접 입력"))
+    mbh.addStretch()
+    self._manual_btn_row.setVisible(False)
+    v.addWidget(self._manual_btn_row)
+
+    # ── ➕ 추가 레그 버튼 행 (자동/수동 공용) ─────────────────
+    extra_row = QHBoxLayout(); extra_row.setSpacing(6)
+    from combo_ui_leg_extra import _extra_add_leg, _extra_del_leg
+    _t5 = _pal()
+    self._btn_extra_add = QPushButton(f"➕ 레그 추가  (최대 {MAX_LEGS}개)")
+    self._btn_extra_add.setFixedHeight(24)
+    self._btn_extra_add.setStyleSheet(
+        f"QPushButton{{background:{_t5['group_bg']};color:#44cc88;font-size:11px;"
+        "font-weight:bold;padding:2px 10px;border-radius:6px;"
+        "border:1px solid #1a6a3a;}}"
+        f"QPushButton:hover{{background:{_t5['btn_hover']};}}"
+        f"QPushButton:disabled{{color:{_t5['input_border']};"
+        f"border-color:{_t5['input_border']};}}")
+    self._btn_extra_add.clicked.connect(lambda: _extra_add_leg(self))
+
+    self._btn_extra_del = QPushButton("➖ 마지막 레그 제거")
+    self._btn_extra_del.setFixedHeight(24)
+    self._btn_extra_del.setStyleSheet(
+        f"QPushButton{{background:{_t5['group_bg']};color:#cc4444;font-size:11px;"
+        "font-weight:bold;padding:2px 10px;border-radius:6px;"
+        "border:1px solid #6a1a1a;}}"
+        f"QPushButton:hover{{background:{_t5['btn_hover']};}}"
+        f"QPushButton:disabled{{color:{_t5['input_border']};"
+        f"border-color:{_t5['input_border']};}}")
+    self._btn_extra_del.clicked.connect(lambda: _extra_del_leg(self))
+
+    extra_row.addWidget(self._btn_extra_add)
+    extra_row.addWidget(self._btn_extra_del)
+    extra_row.addStretch()
+    v.addLayout(extra_row)
+
+    # ── 방향 배너 ─────────────────────────────────────────────
+    from combo_direction_banner import DirectionBanner
+    self.direction_banner = DirectionBanner(self)
+    v.addWidget(self.direction_banner)
+
+    # ── Net Price 전광판 ──────────────────────────────────────
+    self.net_price_display = NetPriceDisplay(self)
+    v.addWidget(self.net_price_display)
+
+    # 재귀 방지 플래그 + itemChanged 연결
+    self._leg_item_changing = False
+    self._mid_ticks: dict   = {}
+
+    def _on_item_changed(item):
+        if getattr(self, '_leg_item_changing', False):
+            return                          # 블로킹 중이면 모든 콜백 차단
+        _on_leg_item_changed(self, item)    # Net Price 재계산
+        self.direction_banner.refresh(self.tbl_legs)  # 방향 배너
+        # 행사가(col 3) 변경 시 conId 조회 → Mid-price 스트리밍
+        from combo_ui_leg_extra import _on_strike_changed
+        _on_strike_changed(self, item)
+
+    self.tbl_legs.itemChanged.connect(_on_item_changed)
+
+    # 초기 구성 가이드 버튼 상태 갱신
+    _update_guide_btn_state(self)
+
+    return w
+
+
+# ── 구성 가이드 버튼 상태 갱신 ──────────────────────────────────
+
+def _update_guide_btn_state(self):
+    """현재 전략에 가이드가 있으면 📋 버튼 활성화."""
+    btn = getattr(self, '_btn_guide', None)
+    if btn is None:
+        return
+    strat = self.combo_strat.currentText() if hasattr(self, 'combo_strat') else ""
+    has_guide = (strat in STRATEGY_SETUP_GUIDE or
+                 any(k in strat or strat in k for k in STRATEGY_SETUP_GUIDE))
+    btn.setEnabled(has_guide)
+    btn.setToolTip("전략 구성 가이드 보기" if has_guide
+                   else "이 전략은 구성 가이드가 없습니다")
+
+
+# ── 구성 가이드 팝업 직접 호출 ──────────────────────────────────
+
+def _show_guide_popup(self):
+    """📋 버튼 클릭 → 현재 전략의 구성 가이드 팝업 강제 표시 (suppress 무시)."""
+    strat = self.combo_strat.currentText() if hasattr(self, 'combo_strat') else ""
+    guide = STRATEGY_SETUP_GUIDE.get(strat)
+    if guide is None:
+        for key, val in STRATEGY_SETUP_GUIDE.items():
+            if key in strat or strat in key:
+                guide = val
+                break
+    if guide is None:
+        return
+    try:
+        from combo_strategy_guide_popup import StrategyGuidePopup, _SUPPRESS_SET
+        # 버튼 직접 클릭 시에는 suppress 무시하고 강제 표시
+        title = guide.get("title", "")
+        _SUPPRESS_SET.discard(title)
+        popup = StrategyGuidePopup(guide, parent=self)
+        popup.show()
+    except Exception:
+        pass
+
+
+# ── Net Price 재계산 ─────────────────────────────────────────
+
+def _on_leg_item_changed(self, item):
+    if getattr(self, '_leg_item_changing', False):
+        return
+    if item.column() in (4, 5):
+        _recalc_net_price(self)
+    # 전략 변경 시마다 가이드 버튼 상태 갱신
+    _update_guide_btn_state(self)
+
+
+def _recalc_net_price(self) -> float:
+    rows = self.tbl_legs.rowCount()
+    buy_total = sell_total = 0.0
+    for r in range(rows):
+        def _cell(c, _r=r):
+            it = self.tbl_legs.item(_r, c)
+            return it.text().strip() if it else ""
+        direction = _cell(1).upper()
+        prem_str  = _cell(4)
+        qty_str   = _cell(5)
+        if not prem_str or prem_str in ("―", ""):
+            continue
+        try:
+            prem = float(prem_str)
+            qty  = int(qty_str) if qty_str else 1
+        except ValueError:
+            continue
+        if direction == "BUY":
+            buy_total  += prem * qty
+        else:
+            sell_total += prem * qty
+
+    net       = round(buy_total - sell_total, 2)
+    lmt_price = round(abs(net), 2)
+
+    display = getattr(self, 'net_price_display', None)
+    if display is not None:
+        if lmt_price == 0.0:
+            display.reset()
+        else:
+            display.refresh(round(buy_total, 2), round(sell_total, 2))
+
+    return lmt_price
+
+
+# ── 스트리밍 API (combo_ui_leg_stream.py 에서 re-export) ─────
+
+def fill_premium_from_market(self, row: int, con_id: int):
+    from combo_ui_leg_stream import fill_premium_from_market as _f
+    _f(self, row, con_id)
+
+
+def _cancel_stream(self, ticker_id: int):
+    from combo_ui_leg_stream import _cancel_stream as _f
+    _f(self, ticker_id)
+
+
+def cancel_all_streams(self):
+    from combo_ui_leg_stream import cancel_all_streams as _f
+    _f(self)
+
+
+def _set_premium_cell(self, row: int, value: float):
+    from combo_ui_leg_stream import _set_premium_cell as _f
+    _f(self, row, value)
+
+
+# ── 세트 입력 / 단축키 위임 (하위 호환 유지) ────────────────────
+
+def _apply_set_input(self, sell_edit, buy_edit):
+    from combo_ui_leg_setinput import _apply_set_input as _f
+    _f(self, sell_edit, buy_edit)
+
+
+def _set_strategy_by_name(self, strat_name: str):
+    from combo_ui_leg_setinput import _set_strategy_by_name as _f
+    _f(self, strat_name)
+# ── 스프레드 간격 변경 핸들러 (v3.1) ────────────────────────────
+def _on_gap_changed(self, gap: int):
+    self._spread_gap = max(1, gap)
+    strat = self.combo_strat.currentText() if hasattr(self, "combo_strat") else ""
+    _BF = {"콜 버터플라이 스프레드": "C", "풋 버터플라이 스프레드": "P"}
+    _IBF = "아이언 버터플라이"
+    _SP2 = ("콜 스프레드", "콜 데빗 스프레드", "풋 스프레드", "풋 데빗 스프레드")
+    item = self.tbl_legs.item(0, 3)
+    if not item or not item.text().strip():
+        return
+    try:
+        leg0 = float(item.text().strip())
+    except ValueError:
+        return
+    from combo_constants import mk_item
+    tbl = self.tbl_legs
+    def _set(row, strike):
+        if row < tbl.rowCount():
+            tbl.item(row, 3) and tbl.item(row, 3).setText(str(int(strike))) or             tbl.setItem(row, 3, mk_item(str(int(strike))))
+    g = self._spread_gap
+    if strat in _BF:
+        _set(1, leg0 + g); _set(2, leg0 + g * 2)
+    elif strat == _IBF:
+        _set(0, leg0 - g); _set(2, leg0); _set(3, leg0 + g)
+    elif strat in _SP2:
+        sign = -1 if "풋" in strat else 1
+        _set(1, leg0 + sign * g)

@@ -35,6 +35,22 @@ from combo_order_chaser import register_chaser
 from combo_order_callbacks import connect_order_callbacks
 
 
+
+# ══════════════════════════════════════════════════════════════
+# 거래소 선택 헬퍼 (SMART / CBOE 체크박스)
+# ══════════════════════════════════════════════════════════════
+
+def _get_selected_exchange(self) -> str:
+    """chk_exch_cboe 체크 여부에 따라 'CBOE' 또는 'SMART' 반환.
+    위젯이 없으면 기본값 'SMART' 반환."""
+    try:
+        if getattr(self, 'chk_exch_cboe', None) and self.chk_exch_cboe.isChecked():
+            return "CBOE"
+    except Exception:
+        pass
+    return "SMART"
+
+
 # ══════════════════════════════════════════════════════════════
 # 틱 단위 가격 선택 다이얼로그 (v3.4 그대로)
 # ══════════════════════════════════════════════════════════════
@@ -194,11 +210,12 @@ def _sleep_place_sell_order(self, legs: list, lmt_price: float,
     sym_w  = getattr(self, 'edit_sym_combo', None)
     symbol = sym_w.text().strip().upper() if sym_w else "SPX"
 
+    _exch = _get_selected_exchange(self)
     bag = Contract()
     bag.symbol   = symbol.replace("SPXW", "SPX")
     bag.secType  = "BAG"
     bag.currency = "USD"
-    bag.exchange = "SMART"
+    bag.exchange = _exch
 
     combo_legs_out = []
     for leg in legs:
@@ -206,7 +223,7 @@ def _sleep_place_sell_order(self, legs: list, lmt_price: float,
             symbol=symbol, strike=leg["strike"],
             right=leg["cp"], expiry=leg["expiry"])
         cl          = ComboLeg()
-        cl.exchange = "SMART"
+        cl.exchange = _exch
         cl.ratio    = int(float(leg.get("qty", 1)))
         orig_dir    = str(leg.get("dir", "BUY")).upper()
         cl.action   = "SELL" if orig_dir == "BUY" else "BUY"
@@ -296,11 +313,14 @@ def _place_combo_legs(self, legs: list, strat: str) -> None:
     sym_w  = getattr(self, 'edit_sym_combo', None)
     symbol = (sym_w.text().strip().upper() if sym_w else "SPX")
 
+    # ── 거래소 선택 (SMART / CBOE 체크박스) ──────────────────
+    _exch = _get_selected_exchange(self)
+
     bag = Contract()
     bag.symbol   = symbol.replace("SPXW", "SPX")
     bag.secType  = "BAG"
     bag.currency = "USD"
-    bag.exchange = "SMART"
+    bag.exchange = _exch
 
     combo_legs = []
     for leg in legs:
@@ -311,7 +331,7 @@ def _place_combo_legs(self, legs: list, strat: str) -> None:
         cl.conId    = 0
         cl.ratio    = int(float(leg["qty"]))
         cl.action   = leg["dir"]
-        cl.exchange = "SMART"
+        cl.exchange = _exch
         combo_legs.append((cl, opt_contract))
 
     _place_bag_with_conids(self, bag, combo_legs, legs, strat)
@@ -520,7 +540,7 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         def _discard_close_oid(target_oid=oid):
             if hasattr(self, '_close_oid_set'):
                 self._close_oid_set.discard(target_oid)
-        QTimer.singleShot(30000, _discard_close_oid)
+        QTimer.singleShot(10000, _discard_close_oid)  # [FIX] 30초→10초
 
     from ibapi.order import Order as IbOrder
     # [SET-QTY] edit_set_qty 위젯에서 세트 수량 읽기
@@ -542,7 +562,7 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
         ib.placeOrder(oid, bag, ibord)
         self._log(
             f"⚡ BAG 주문: OID={oid}  ${lmt_price:.2f}"
-            f"  TIF:{tif}  outsideRth:{outside_rth}  레그{total}개  qty={ibord.totalQuantity}")
+            f"  거래소:{bag.exchange}  TIF:{tif}  outsideRth:{outside_rth}  레그{total}개  qty={ibord.totalQuantity}")
 
         self._chaser_bag_contract = bag
         self._chaser_bag_order    = ibord
@@ -566,6 +586,7 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
             "strategy": strat, "qty": int(ibord.totalQuantity),
             "entry": lmt_price, "current": lmt_price,
             "side": bag_action, "oid": oid, "legs": legs, "status": "미체결",
+            "exchange": getattr(bag, 'exchange', 'SMART'),
         }
 
         _leg_data = getattr(self, '_leg_data', {})

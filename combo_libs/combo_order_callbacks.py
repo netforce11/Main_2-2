@@ -247,7 +247,7 @@ def _on_order_status(self, oid: int, status: str,
         _deactivate_chaser_safe(self, reason="체결 완료")
         self._chaser_current_oid = None
         from PyQt5.QtCore import QTimer as _QT
-        _QT.singleShot(30_000, lambda: getattr(
+        _QT.singleShot(10_000, lambda: getattr(  # [FIX] 30초→10초
             self, '_exec_known_oids', set()).discard(oid))
 
     # ── 취소 확인 ────────────────────────────────────────────
@@ -467,9 +467,10 @@ def _start_position_price_stream(self, pending: dict) -> None:
         self._pos_stream_slots[oid].append(slot)
         try:
             from ibapi.contract import Contract as IbContract
+            from combo_order_bag import _get_selected_exchange as _gse
             c = IbContract()
             c.conId    = con_id
-            c.exchange = "SMART"
+            c.exchange = _gse(self)
             ib.reqMktData(tid, c, "", False, False, [])
             self._log(
                 f"📡 실시간 손익 구독: 레그{i+1} "

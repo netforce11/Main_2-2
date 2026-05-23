@@ -1,0 +1,10 @@
+--- combo_ui_synthetic_panel_patch.py	2026-05-23 05:39:40.545799206 +0000
++++ combo_ui_synthetic_panel_patch.py	2026-05-23 06:41:40.561841028 +0000
+@@ -123,6 +123,7 @@
+ 
+         # 칼럼 9: 청산 예약 + 수동 삭제 버튼
+         _cell_w   = QWidget()
++        _cell_w.hide()  # [FIX] setCellWidget 전 독립창 방지
+         _cell_lay = QHBoxLayout(_cell_w)
+         _cell_lay.setContentsMargins(1, 0, 1, 0)
+         _cell_lay.setSpacing(2)

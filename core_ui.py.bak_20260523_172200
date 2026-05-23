@@ -1,0 +1,381 @@
+"""
+core_ui.py — 공통 UI 헬퍼 / _ResizableFrame / GridTab
+core.py 300줄 초과로 분리.
+
+[테마 연동 수정]
+- _apply_table_theme() : THEME_PALETTES 기반으로 5가지 테마 완전 대응
+- make_table()         : CURRENT_THEME 자동 참조
+- _ResizableFrame      : 하드코딩 색상 제거 → 테마 팔레트 참조
+- _FloatWin            : 하드코딩 색상 제거 → 테마 팔레트 참조
+- _btn_ss()            : 함수로 변경 → 테마 변경 시 즉시 반영
+- apply_theme_to_all_tables() : 전체 테이블 일괄 갱신 (테마 전환 시 호출)
+- apply_theme_to_all_frames() : 전체 프레임 일괄 갱신 (테마 전환 시 호출)
+"""
+from datetime import datetime
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QTableWidget, QTableWidgetItem,
+    QHeaderView, QAbstractItemView, QSizePolicy,
+    QPushButton, QSlider, QSizeGrip, QFrame,
+)
+from PyQt5.QtCore import Qt, QObject
+from PyQt5.QtGui import QFont, QColor, QBrush
+
+import core_theme as _core   # CURRENT_THEME / THEME_PALETTES 런타임 참조 (순환 임포트 방지)
+
+from core_theme import DEFAULT_FONT_SIZE
+
+# ══════════════════════════════════════════════════════════════
+# 내부 팔레트 참조 헬퍼
+# ══════════════════════════════════════════════════════════════
+
+def _pal() -> dict:
+    """현재 테마 팔레트를 반환 (런타임에 매번 참조 → 테마 전환 즉시 반영)."""
+    return _core.THEME_PALETTES.get(_core.CURRENT_THEME,
+                                    _core.THEME_PALETTES["light"])
+
+
+# ══════════════════════════════════════════════════════════════
+# 7. 공통 UI 헬퍼
+# ══════════════════════════════════════════════════════════════
+
+# 전역 테이블 목록 (테마 전환 시 일괄 적용)
+_all_tables: list = []
+# 전역 frame 목록 (_ResizableFrame / _FloatWin 테마 전환 시 일괄 갱신)
+_all_frames: list = []
+
+
+def _apply_table_theme(tbl: QTableWidget, dark: bool = None):
+    """
+    테이블에 현재 CURRENT_THEME 팔레트 QSS 직접 적용.
+
+    [호환성] dark 인수는 무시됩니다. CURRENT_THEME 를 직접 읽습니다.
+    기존 코드에서 dark=True / dark=False 를 넘겨도 안전하게 무시됩니다.
+    """
+    t = _pal()
+    tbl.setStyleSheet(
+        f"QTableWidget{{"
+        f"background:{t['tbl_bg']};color:{t['widget_fg']};"
+        f"gridline-color:{t['tbl_grid']};border:1px solid {t['tbl_border']};"
+        f"alternate-background-color:{t['group_bg']};}}"
+        f"QTableWidget::item{{padding:2px;color:{t['widget_fg']};}}"
+        f"QTableWidget::item:selected{{background:{t['tbl_sel_bg']};color:{t['tbl_sel_fg']};}}"
+        f"QHeaderView::section{{"
+        f"background:{t['hdr_bg']};color:{t['hdr_fg']};"
+        f"border:1px solid {t['hdr_border']};padding:3px;}}"
+    )
+
+
+def apply_theme_to_all_tables():
+    """
+    전역 _all_tables 에 등록된 모든 QTableWidget에 현재 테마를 일괄 적용.
+    main.py 의 테마 전환 콜백에서 호출하세요.
+    """
+    for tbl in list(_all_tables):
+        try:
+            _apply_table_theme(tbl)
+        except RuntimeError:
+            pass   # 이미 삭제된 위젯은 무시
+
+
+def apply_theme_to_all_frames():
+    """
+    전역 _all_frames 에 등록된 모든 _ResizableFrame / _FloatWin 에
+    현재 테마를 일괄 적용.
+    """
+    for frame in list(_all_frames):
+        try:
+            frame._refresh_theme()
+        except (RuntimeError, AttributeError):
+            pass
+
+
+def make_table(headers: list, rows: int = 0) -> QTableWidget:
+    """기본 스타일 테이블 생성 (현재 테마 자동 대응, 전역 목록에 등록)"""
+    t = QTableWidget(rows, len(headers))
+    t.setHorizontalHeaderLabels(headers)
+    t.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    t.verticalHeader().setVisible(False)
+    t.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    t.setSelectionBehavior(QAbstractItemView.SelectRows)
+    t.setAlternatingRowColors(True)
+    _apply_table_theme(t)          # dark 인수 없이 → CURRENT_THEME 자동 적용
+    _all_tables.append(t)
+    return t
+
+
+def tbl_set(tbl: QTableWidget, row: int, col: int,
+            text: str, color: str = None):
+    """테이블 셀 값 설정"""
+    item = tbl.item(row, col)
+    if item is None:
+        item = QTableWidgetItem()
+        item.setTextAlignment(Qt.AlignCenter)
+        tbl.setItem(row, col, item)
+    item.setText(str(text))
+    if color:
+        item.setForeground(QBrush(QColor(color)))
+
+
+def ts() -> str:
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def ts_full() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# ══════════════════════════════════════════════════════════════
+# 미니바 버튼 스타일 — 함수로 변경 (테마 팔레트 참조)
+# ══════════════════════════════════════════════════════════════
+
+def _btn_ss() -> str:
+    """미니바 버튼 QSS — 호출 시마다 현재 테마 반영."""
+    t = _pal()
+    return (
+        f"QPushButton{{background:{t['btn_bg']};color:{t['group_title']};"
+        f"border:1px solid {t['btn_border']};"
+        f"border-radius:4px;font-size:8px;padding:0px;}}"
+        f"QPushButton:hover{{background:{t['btn_hover']};}}"
+    )
+
+# 하위 호환: 일부 코드에서 _BTN_SS 문자열을 직접 참조하는 경우
+_BTN_SS = _btn_ss()
+
+
+# ══════════════════════════════════════════════════════════════
+# 8. 그리드 탭 베이스 (12×4 엑셀 좌표) + 위젯 리사이즈
+# ══════════════════════════════════════════════════════════════
+
+class _FloatWin(QWidget):
+    """위젯을 독립 플로팅 창으로 띄우는 래퍼."""
+    def __init__(self, inner: QWidget, title: str, parent=None):
+        super().__init__(parent, Qt.Window)
+        self.setWindowTitle(title)
+        self.resize(600, 400)
+        self._inner = inner
+        self._refresh_theme()
+        vl = QVBoxLayout(self)
+        vl.setContentsMargins(4, 4, 4, 4)
+        inner.setParent(self)
+        vl.addWidget(inner)
+        _all_frames.append(self)
+
+    def _refresh_theme(self):
+        t = _pal()
+        self.setStyleSheet(
+            f"QWidget{{background:{t['win_bg']};color:{t['widget_fg']};}}"
+        )
+
+    def closeEvent(self, ev):
+        """창 닫으면 inner 위젯을 원래 frame으로 돌려보냄."""
+        if hasattr(self, '_on_close_cb') and self._on_close_cb:
+            self._on_close_cb(self._inner)
+        try:
+            _all_frames.remove(self)
+        except ValueError:
+            pass
+        ev.accept()
+
+
+class _ResizableFrame(QFrame):
+    """
+    각 위젯 블록 래퍼.
+    상단 미니바 버튼:
+      ←  → : 열(가로) stretch 감소/증가  (0.2 단위, 범위 0.2~20)
+      ↑  ↓ : 행(세로) stretch 감소/증가  (0.2 단위, 범위 0.2~20)
+      ⤢    : 플로팅 팝업 창으로 분리
+      ▲    : 접기  /  ▼ : 펼치기(복구)
+    """
+    _COLLAPSED_H  = 18
+    _STRETCH_MIN  = 2
+    _STRETCH_MAX  = 200
+    _STRETCH_STEP = 2
+    _SCALE        = 10
+
+    def __init__(self, inner: QWidget, coord_txt: str,
+                 grid_ref, row: int, col: int, rspan: int, cspan: int,
+                 parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QFrame.StyledPanel)
+        self._collapsed    = False
+        self._normal_min_h = 0
+        self._grid_ref     = grid_ref
+        self._row          = row
+        self._col          = col
+        self._rspan        = rspan
+        self._cspan        = cspan
+        self._float_win    = None
+        self._coord_txt    = coord_txt
+        self._mini_btns    = []
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(2, 1, 2, 1)
+        outer.setSpacing(0)
+
+        # ── 상단 미니바 ──────────────────────────────────────
+        bar = QWidget()
+        bar.setFixedHeight(18)
+        bar.setStyleSheet("background:transparent;border:none;")
+        bh = QHBoxLayout(bar)
+        bh.setContentsMargins(2, 0, 2, 0)
+        bh.setSpacing(1)
+
+        self._coord_lbl = QLabel(coord_txt)
+        bh.addWidget(self._coord_lbl)
+        bh.addStretch()
+
+        def _mkbtn(text, tip, cb):
+            b = QPushButton(text)
+            b.setFixedSize(16, 14)
+            b.setToolTip(tip)
+            b.clicked.connect(cb)
+            self._mini_btns.append(b)
+            return b
+
+        bh.addWidget(_mkbtn("←", "가로 축소 (0.2단위)",
+                            lambda: self._adj_col(-self._STRETCH_STEP)))
+        bh.addWidget(_mkbtn("→", "가로 확장 (0.2단위)",
+                            lambda: self._adj_col(+self._STRETCH_STEP)))
+        bh.addWidget(_mkbtn("↑", "세로 축소 (0.2단위)",
+                            lambda: self._adj_row(-self._STRETCH_STEP)))
+        bh.addWidget(_mkbtn("↓", "세로 확장 (0.2단위)",
+                            lambda: self._adj_row(+self._STRETCH_STEP)))
+
+        self._btn_float  = _mkbtn("⤢", "팝업 창으로 분리", self._on_float)
+        self._btn_toggle = _mkbtn("▲", "접기", self._on_toggle)
+        bh.addWidget(self._btn_float)
+        bh.addWidget(self._btn_toggle)
+
+        outer.addWidget(bar)
+
+        # ── 내용 위젯 ────────────────────────────────────────
+        self._inner = inner
+        outer.addWidget(inner, 1)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # 테마 초기 적용
+        self._refresh_theme()
+
+        # 전역 목록에 등록
+        _all_frames.append(self)
+
+    def _refresh_theme(self):
+        """테마 전환 시 호출 — 테두리/배경/버튼 스타일 즉시 갱신."""
+        t = _pal()
+        # 프레임 자체 스타일
+        self.setStyleSheet(
+            f"QFrame#outer{{border:1px solid {t['group_border']};"
+            f"border-radius:3px;background:{t['group_bg']};}}"
+        )
+        # 직접 setStyleSheet 으로 프레임 색 적용 (objectName 없이도 동작)
+        QFrame.setStyleSheet(self,
+            f"border:1px solid {t['group_border']};"
+            f"border-radius:3px;"
+            f"background:{t['group_bg']};"
+        )
+        # 좌표 라벨
+        if hasattr(self, '_coord_lbl'):
+            self._coord_lbl.setStyleSheet(
+                f"color:{t['group_title']};font-size:8px;font-weight:bold;"
+                "border:none;background:transparent;"
+            )
+        # 미니바 버튼 전체 갱신
+        ss = _btn_ss()
+        for b in self._mini_btns:
+            try:
+                b.setStyleSheet(ss)
+            except RuntimeError:
+                pass
+
+    # ── stretch 조절 헬퍼 ────────────────────────────────────
+    def _cur_col(self, c: int) -> int:
+        v = self._grid_ref.columnStretch(c)
+        return v if v > 0 else self._SCALE
+
+    def _cur_row(self, r: int) -> int:
+        v = self._grid_ref.rowStretch(r)
+        return v if v > 0 else self._SCALE
+
+    def _adj_col(self, delta: int):
+        g = self._grid_ref
+        for c in range(self._col, self._col + self._cspan):
+            nxt = max(self._STRETCH_MIN,
+                      min(self._STRETCH_MAX, self._cur_col(c) + delta))
+            g.setColumnStretch(c, nxt)
+
+    def _adj_row(self, delta: int):
+        g = self._grid_ref
+        for r in range(self._row, self._row + self._rspan):
+            nxt = max(self._STRETCH_MIN,
+                      min(self._STRETCH_MAX, self._cur_row(r) + delta))
+            g.setRowStretch(r, nxt)
+
+    # ── 플로팅 팝업 ──────────────────────────────────────────
+    def _on_float(self):
+        if self._float_win and self._float_win.isVisible():
+            self._float_win.raise_()
+            return
+        win = _FloatWin(self._inner,
+                        f"위젯 [{self._row},{self._col}]", self.window())
+        win._on_close_cb = self._return_inner
+        self._float_win = win
+        self._btn_float.setText("◩")
+        self._btn_float.setToolTip("팝업 창 올리기")
+        win.show()
+
+    def _return_inner(self, inner: QWidget):
+        inner.setParent(self)
+        self.layout().insertWidget(1, inner, 1)
+        self._btn_float.setText("⤢")
+        self._btn_float.setToolTip("팝업 창으로 분리")
+        self._float_win = None
+
+    # ── 접기(▲) / 펼치기 복구(▼) ────────────────────────────
+    def _on_toggle(self):
+        if self._collapsed:
+            self._collapsed = False
+            self._btn_toggle.setText("▲")
+            self._btn_toggle.setToolTip("접기")
+            self._inner.setVisible(True)
+            self.setMaximumHeight(16777215)
+            if self._normal_min_h > 0:
+                self.setMinimumHeight(0)
+        else:
+            self._normal_min_h = self.height()
+            self._collapsed = True
+            self._btn_toggle.setText("▼")
+            self._btn_toggle.setToolTip("펼치기 (복구)")
+            self._inner.setVisible(False)
+            self.setFixedHeight(self._COLLAPSED_H)
+
+
+class GridTab(QWidget):
+    """
+    12열 × N행 그리드 베이스.
+    add(widget, row, col, rspan, cspan) → _ResizableFrame 으로 배치.
+    상단 미니바:  ← →(가로stretch)  ↑ ↓(세로stretch)  ⤢(팝업)  ▲(접기)
+    """
+    ROWS = 4
+    COLS = 12
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._grid = QGridLayout(self)
+        self._grid.setSpacing(3)
+        self._grid.setContentsMargins(4, 4, 4, 4)
+        for c in range(self.COLS): self._grid.setColumnStretch(c, 1)
+        for r in range(self.ROWS): self._grid.setRowStretch(r, 1)
+
+    def add(self, widget: QWidget, row: int, col: int,
+            rspan: int = 1, cspan: int = 1) -> QWidget:
+        frame = _ResizableFrame(
+            widget, f"[{row},{col}]",
+            self._grid, row, col, rspan, cspan)
+        self._grid.addWidget(frame, row, col, rspan, cspan)
+        return frame
+
+
+# ══════════════════════════════════════════════════════════════
+# 9. 폰트 조절 바 + 탭 래퍼
+# ══════════════════════════════════════════════════════════════

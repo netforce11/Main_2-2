@@ -1,0 +1,278 @@
+"""
+sleep_order_config.py — 수면 예약 주문 전체 설정  v3.1
+════════════════════════════════════════
+섹션 A : 예약 주문
+섹션 B1: Debit Spread 급락 캐치
+섹션 B2: 단일 옵션 급락 캐치
+섹션 B3: 콤보 비중 주문 [신규]  ← 콜+풋 동시 또는 단방향 선택
+섹션 C : 자동 매도
+"""
+from __future__ import annotations
+import json, copy
+from pathlib import Path
+from Sleep_Order.sleep_order_config_props import _SingleSellProps
+from Sleep_Order.sleep_order_config_single import SINGLE_DEFAULTS
+
+try:
+    from core import SAVE_DIR
+except ImportError:
+    SAVE_DIR = Path(".")
+
+_CONFIG_FILE = SAVE_DIR / "sleep_order_settings.json"
+
+_DEFAULTS: dict = {
+    # ── A: 예약 주문 ─────────────────────────────────────
+    "schedule_start":       "04:40",
+    "schedule_end":         "05:14",
+    "expiry_offset":        1,
+    "strike_dist_min":      0.60,
+    "strike_dist_max":      0.95,
+    "spread_width":         5,    # [XSP] 1~100 설정 가능 (XSP=1, SPX=5)
+    "target_price_1":       0.50,
+    "target_price_2":       0.40,
+    "max_budget":           100,
+    "schedule_enabled":     False,
+    "roi_min":              0,
+    "roi_max":              1200,
+    "aggressive_entry":     True,
+    "aggressive_ticks":     1,
+    "cancel_cooldown_sec":  120,
+    "dry_run":              False,
+    # ── 정정 주문 설정 ────────────────────────────────────
+    "correction_enabled":   False,   # 정정 활성화 체크박스
+    "correction_wait_sec":  3,       # N초 미체결 시 정정
+
+    # ── B1: Debit Spread 급락 캐치 ───────────────────────
+    "spike_enabled":            False,
+    "spike_use_own_schedule":   True,
+    "spike_start":              "16:53",
+    "spike_end":                "05:14",
+    "spike_ref_mode":           "time",
+    "spike_ref_minutes":        3,
+    "tick_window":              7,
+    "drop_ratio":               40,
+    "abs_floor":                0.20,
+    "order_mode":               "ask+1",
+    "fixed_price":              0.15,
+    "spike_budget":             100,
+    "modify_wait_sec":          2,
+    "modify_step":              0.05,
+    "modify_max_count":         3,
+    "modify_price_cap":         0.30,
+
+    # ── B2: 단일 옵션 급락 캐치 ──────────────────────────
+    "single_spike_enabled":         False,
+    "single_spike_use_own_schedule":True,
+    "single_spike_start":           "16:53",
+    "single_spike_end":             "05:14",
+    "single_spike_ref_mode":        "time",
+    "single_spike_ref_minutes":     3,
+    "single_tick_window":           7,
+    "single_drop_ratio":            40,
+    "single_abs_floor":             0.20,
+    "single_strike_mode":           "atm_offset",
+    "single_strike_value":          0.0,
+    "single_dist_pct":              0.50,
+    "single_dist_min":              0.30,
+    "single_dist_max":              0.80,
+    "single_cp":                    "P",
+    "single_order_mode":            "ask+1",
+    "single_fixed_price":           0.15,
+    "single_budget":                100,
+    "single_modify_wait_sec":       2,
+    "single_modify_step":           0.05,
+    "single_modify_max_count":      3,
+    "single_modify_price_cap":      0.30,
+
+    # ── B3: 콤보 비중 주문 ──────────────────────────────
+    # direction: "put_only" | "call_only" | "both"
+    "combo_direction":          "put_only",
+    # ratio_mode: "equal" | "custom"  (both 선택 시에만 유효)
+    "combo_ratio_mode":         "equal",
+    # call 비중 0.0~1.0  (put 비중 = 1 - call_ratio)
+    "combo_call_ratio":         0.5,
+    # 콜 스프레드 전용 예산 (direction=call_only 또는 both 시 사용)
+    "combo_call_budget":        100,
+    # 풋 스프레드 전용 예산 (direction=put_only 또는 both 시 사용)
+    "combo_put_budget":         100,
+
+    # ── B3-BOTH: 콜 독립 발사 조건 (direction=both 전용) ─
+    # True = 콜도 아래 조건을 독립적으로 충족해야 발사
+    # False = 풋 조건 충족 시 콜 무조건 동반 발사 (구 동작)
+    "call_independent_trigger": True,
+    # 콜 스프레드 목표 진입가 (이하일 때 발사)
+    "call_target_price":        0.50,
+    # 콜 ROI 하한/상한 (%, 0=무제한)
+    "call_roi_min":             0,
+    "call_roi_max":             1200,
+    # 콜 행사가 거리 하한/상한 (%, 지수대비) — 0이면 풋과 동일 조건 사용
+    "call_dist_min":            0.60,
+    "call_dist_max":            0.95,
+
+    # ── C: 자동 매도 ─────────────────────────────────────
+    "auto_sell_enabled":        False,
+    "auto_sell_mode":           "multiplier",
+    "auto_sell_fixed_price":    2.50,
+    "auto_sell_multiplier":     3.0,
+    "single_auto_sell_enabled":     False,
+    "single_auto_sell_mode":        "multiplier",
+    "single_auto_sell_fixed_price": 2.50,
+    "single_auto_sell_multiplier":  3.0,
+}
+
+_DEFAULTS.update(SINGLE_DEFAULTS)
+
+
+class SleepOrderConfigStore(_SingleSellProps):
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._data: dict = {}
+            cls._instance._load()
+        return cls._instance
+
+    def _load(self) -> None:
+        self._data = copy.deepcopy(_DEFAULTS)
+        if _CONFIG_FILE.exists():
+            try:
+                saved = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+                self._data.update(saved)
+            except Exception as e:
+                print(f"[SleepCfg] 로드 실패: {e}")
+
+    def save(self) -> None:
+        try:
+            _CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _CONFIG_FILE.write_text(
+                json.dumps(self._data, ensure_ascii=False, indent=2),
+                encoding="utf-8")
+        except Exception as e:
+            print(f"[SleepCfg] 저장 실패: {e}")
+
+    def get(self, key: str, default=None):
+        return self._data.get(key, _DEFAULTS.get(key, default))
+
+    def set(self, key: str, value) -> None:
+        self._data[key] = value
+
+    def all(self) -> dict:
+        return copy.deepcopy(self._data)
+
+    # ── A 프로퍼티 ───────────────────────────────────────
+    @property
+    def schedule_start(self) -> str:      return str(self._data.get("schedule_start", "04:40"))
+    @property
+    def schedule_end(self) -> str:        return str(self._data.get("schedule_end",   "05:14"))
+    @property
+    def expiry_offset(self) -> int:       return int(self._data.get("expiry_offset", 1))
+    @property
+    def strike_dist_min(self) -> float:   return float(self._data.get("strike_dist_min", 0.60))
+    @property
+    def strike_dist_max(self) -> float:   return float(self._data.get("strike_dist_max", 0.95))
+    @property
+    def spread_width(self) -> int:        return int(self._data.get("spread_width", 5))   # [XSP]
+    @property
+    def target_price_1(self) -> float:    return float(self._data.get("target_price_1", 0.50))
+    @property
+    def target_price_2(self) -> float:    return float(self._data.get("target_price_2", 0.40))
+    @property
+    def max_budget(self) -> int:          return int(self._data.get("max_budget", 100))
+    @property
+    def schedule_enabled(self) -> bool:   return bool(self._data.get("schedule_enabled", False))
+    @property
+    def roi_min(self) -> int:             return int(self._data.get("roi_min", 0))
+    @property
+    def roi_max(self) -> int:             return int(self._data.get("roi_max", 1200))
+    @property
+    def aggressive_entry(self) -> bool:   return bool(self._data.get("aggressive_entry", True))
+    @property
+    def aggressive_ticks(self) -> int:    return int(self._data.get("aggressive_ticks", 1))
+    @property
+    def cancel_cooldown_sec(self) -> int: return int(self._data.get("cancel_cooldown_sec", 120))
+    @property
+    def dry_run(self) -> bool:            return bool(self._data.get("dry_run", False))
+    @property
+    def correction_enabled(self) -> bool: return bool(self._data.get("correction_enabled", False))
+    @property
+    def correction_wait_sec(self) -> int: return int(self._data.get("correction_wait_sec", 3))
+
+    # ── B1 프로퍼티 ──────────────────────────────────────
+    @property
+    def spike_enabled(self) -> bool:          return bool(self._data.get("spike_enabled", False))
+    @property
+    def spike_use_own_schedule(self) -> bool: return bool(self._data.get("spike_use_own_schedule", True))
+    @property
+    def spike_start(self) -> str:
+        return str(self._data.get("spike_start", "16:53")) if self.spike_use_own_schedule else self.schedule_start
+    @property
+    def spike_end(self) -> str:
+        return str(self._data.get("spike_end", "05:14")) if self.spike_use_own_schedule else self.schedule_end
+    @property
+    def spike_ref_mode(self) -> str:      return str(self._data.get("spike_ref_mode", "time"))
+    @property
+    def spike_ref_minutes(self) -> int:   return int(self._data.get("spike_ref_minutes", 3))
+    @property
+    def tick_window(self) -> int:         return int(self._data.get("tick_window", 7))
+    @property
+    def drop_ratio(self) -> int:          return int(self._data.get("drop_ratio", 40))
+    @property
+    def abs_floor(self) -> float:         return float(self._data.get("abs_floor", 0.20))
+    @property
+    def order_mode(self) -> str:          return str(self._data.get("order_mode", "ask+1"))
+    @property
+    def fixed_price(self) -> float:       return float(self._data.get("fixed_price", 0.15))
+    @property
+    def spike_budget(self) -> int:        return int(self._data.get("spike_budget", 100))
+    @property
+    def modify_wait_sec(self) -> int:     return int(self._data.get("modify_wait_sec", 2))
+    @property
+    def modify_step(self) -> float:       return float(self._data.get("modify_step", 0.05))
+    @property
+    def modify_max_count(self) -> int:    return int(self._data.get("modify_max_count", 3))
+    @property
+    def modify_price_cap(self) -> float:  return float(self._data.get("modify_price_cap", 0.30))
+
+    # ── B3 콤보 비중 프로퍼티 ────────────────────────────
+    @property
+    def combo_direction(self) -> str:
+        return str(self._data.get("combo_direction", "put_only"))
+    @property
+    def combo_ratio_mode(self) -> str:
+        return str(self._data.get("combo_ratio_mode", "equal"))
+    @property
+    def combo_call_ratio(self) -> float:
+        return float(self._data.get("combo_call_ratio", 0.5))
+    @property
+    def combo_put_ratio(self) -> float:
+        return round(1.0 - self.combo_call_ratio, 4)
+    @property
+    def combo_call_budget(self) -> int:
+        return int(self._data.get("combo_call_budget", 100))
+    @property
+    def combo_put_budget(self) -> int:
+        return int(self._data.get("combo_put_budget", 100))
+
+    # ── B3-BOTH: 콜 독립 발사 조건 프로퍼티 ─────────────
+    @property
+    def call_independent_trigger(self) -> bool:
+        return bool(self._data.get("call_independent_trigger", True))
+    @property
+    def call_target_price(self) -> float:
+        return float(self._data.get("call_target_price", 0.50))
+    @property
+    def call_roi_min(self) -> int:
+        return int(self._data.get("call_roi_min", 0))
+    @property
+    def call_roi_max(self) -> int:
+        return int(self._data.get("call_roi_max", 1200))
+    @property
+    def call_dist_min(self) -> float:
+        return float(self._data.get("call_dist_min", 0.60))
+    @property
+    def call_dist_max(self) -> float:
+        return float(self._data.get("call_dist_max", 0.95))
+
+
+sleep_cfg = SleepOrderConfigStore()
