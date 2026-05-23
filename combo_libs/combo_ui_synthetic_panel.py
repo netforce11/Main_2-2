@@ -364,16 +364,7 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
                 f"${pnl:+,.2f}" if (is_filled or is_closing) else "―", pnl_col))
             tbl.setItem(r, 6, _it(pnl_rate_txt, pnl_rate_col))
 
-            delta_pct_txt, delta_pct_col = _calc_delta_pnl_pct(pos)
-            delta_it = QTableWidgetItem(delta_pct_txt)
-            delta_it.setTextAlignment(Qt.AlignCenter)
-            delta_it.setForeground(QColor(delta_pct_col))
-            delta_it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-            delta_font = QFont()
-            delta_font.setPointSize(14)
-            delta_it.setFont(delta_font)
-            tbl.setItem(r, 7, delta_it)
-            tbl.setItem(r, 8, _it(st_text, st_col))
+            tbl.setItem(r, 7, _it(st_text, st_col))
 
             _cell_w   = QWidget()
             _cell_lay = QHBoxLayout(_cell_w)
@@ -406,7 +397,7 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
             _btn_del.clicked.connect(
                 lambda _, o=_pos_oid: self._manual_delete_position(o))
             _cell_lay.addWidget(_btn_del)
-            tbl.setCellWidget(r, 9, _cell_w)
+            tbl.setCellWidget(r, 8, _cell_w)
 
         tc = ("#00ff88" if total_pnl > 0
               else "#ff4444" if total_pnl < 0 else "#888899")
@@ -782,16 +773,3 @@ class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
         """[FIX-SCENARIO] 레그 설정 완료 시 호출 → 시나리오 탭 Greeks 갱신."""
         if hasattr(self, '_scenario_tab'):
             self._scenario_tab.set_greeks(legs, entry, und_price)
-
-    # ── 콜백 등록 메서드 (combo_order_logic 에서 주입) ──────────
-    def set_close_position_callback(self, cb):
-        self._close_position_cb = cb
-
-    def set_manual_modify_callback(self, cb):
-        self._manual_modify_cb = cb
-
-    def set_chaser_mode_callback(self, cb):
-        self._chaser_mode_cb = cb
-
-    def set_margin_mode_callback(self, cb):
-        self._margin_mode_cb = cb

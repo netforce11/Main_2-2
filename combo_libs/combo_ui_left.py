@@ -62,11 +62,16 @@ _COL_IV     = 3
 _COL_DIST   = 4
 
 
+_LEFT_PANEL_REF = None  # [SPIKE-FIX] SpikeTab._find_ref() 폴백
+
+
 class LeftPanelMixin(_SleepOrderMixin):
     """좌측 패널(옵션 체인) 빌드·동기화 Mixin."""
 
     # ── 빌드 ──────────────────────────────────────────────────
     def _build_left_panel(self) -> QGroupBox:
+        global _LEFT_PANEL_REF
+        _LEFT_PANEL_REF = self
         return self._build_chain_panel()
 
     def _build_chain_panel(self) -> QGroupBox:

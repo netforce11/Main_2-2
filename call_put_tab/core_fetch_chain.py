@@ -100,12 +100,12 @@ class CoreFetchChainMixin:
         """und_price 미수신 시 재시도 처리."""
         sym   = self.edit_sym.text().strip().upper() or "SPX"
         retry = getattr(self, '_fetch_retry', 0)
-        if retry >= 5:
+        if retry >= 3:
             self._fetch_retry = 0
             self._log(f"⚠ 현재가 수신 실패 ({sym}) — TWS 연결 상태를 확인하세요.")
             return
         self._fetch_retry = retry + 1
-        self._log(f"현재가 수신 중… ({sym}) 잠시 후 재시도합니다. ({self._fetch_retry}/5)")
+        self._log(f"현재가 수신 중… ({sym}) 잠시 후 재시도합니다. ({self._fetch_retry}/3)")
         if self._fetch_retry == 1:
             self._req_und(sym)
         t = getattr(self, '_fetch_retry_timer', None)
@@ -116,7 +116,7 @@ class CoreFetchChainMixin:
             t = self._fetch_retry_timer
         else:
             t.stop()
-        t.start(2000)
+        t.start(800)
 
     def _fetch_chain_seq(self, gen, cancel_ids, sym, expiry, tag, step, n):
         """체인 구독 시퀀스: cancel → prepare → send_req."""

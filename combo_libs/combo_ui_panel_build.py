@@ -25,7 +25,6 @@ from PyQt5.QtGui import QColor
 
 from combo_ui_panel_constants import _f, get_tab_style, get_tbl_style
 from combo_ui_scenario_tab import ScenarioTab
-_HAS_SPIKE_TAB = False
 
 
 # ── 팔레트 헬퍼 ───────────────────────────────────────────────
@@ -322,7 +321,7 @@ class _SyntheticPanelBuildMixin:
 
         self._tbl_pos = QTableWidget(0, 10)
         self._tbl_pos.setHorizontalHeaderLabels(
-            ["만기", "전략명", "수량", "진입가", "현재가", "손익", "수익률", "5P손익(%)", "상태", "청산예약"])
+            ["만기", "전략명", "수량", "진입가", "현재가", "손익", "수익률", "상태", "청산예약"])
         self._tbl_pos.setFont(_f(12))
         self._tbl_pos.horizontalHeader().setFont(_f(11, bold=True))
         self._tbl_pos.horizontalHeader().setSectionResizeMode(

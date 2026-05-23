@@ -59,6 +59,11 @@ class DebitSpikeWatcher:
                 c.on_cancelled(); return True
         return False
 
+    def any_fired(self) -> bool:
+        """발사된 캐처가 하나라도 있으면 True — 중복 주문 차단용."""
+        with self._mu:
+            return any(c._fired for c in self._catchers.values())
+
     def evict_out_of_range(self, und_price: float) -> None:
         from Sleep_Order.sleep_order_config import sleep_cfg
         dmin = sleep_cfg.strike_dist_min / 100.0

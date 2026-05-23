@@ -136,6 +136,18 @@ class ChainSpikeMonitor:
         self._set_status(f"⚡ 감시중  {self.start_hhmm}~{self.end_hhmm}")
         self._log_info(msg)
         self._schedule_next()
+        # [FIX] 시작 직후 즉시 상태 갱신 (시간 윈도우 전이면 대기 메시지)
+        now_et  = _now_et()
+        now_min = now_et.hour * 60 + now_et.minute
+        start_m = _hhmm_to_minutes(self.start_hhmm)
+        end_m   = _hhmm_to_minutes(self.end_hhmm)
+        if now_min < start_m:
+            remain_m = start_m - now_min
+            self._set_status(
+                f"⏳ 감시 등록됨 — {self.start_hhmm} 까지 {remain_m}분 대기"
+                f"  (현재 ET {now_et.strftime('%H:%M')})")
+        elif now_min > end_m:
+            self._set_status(f"⚠ 감시 시간({self.start_hhmm}~{self.end_hhmm}) 이미 종료 — 내일 적용")
         # 종료 타이머 설정
         end_min = _hhmm_to_minutes(self.end_hhmm)
         now_min = _now_et().hour * 60 + _now_et().minute
@@ -183,6 +195,11 @@ class ChainSpikeMonitor:
             if now_m > end_m:
                 self._on_timeout()
             else:
+                # [FIX] 시작 전 — 남은 시간 표시 후 계속 대기
+                remain = (start_m - now_m)
+                self._set_status(
+                    f"⏳ 감시 대기중  {self.start_hhmm} 까지 {remain}분 남음"
+                    f"  (현재 ET {now.strftime('%H:%M')})")
                 if self._active: self._schedule_next()
             return
 
@@ -195,17 +212,32 @@ class ChainSpikeMonitor:
         chain_call = getattr(ref, '_chain_call', {})
         time_str   = now.strftime("%H:%M:%S")
 
+        # [BUG-C FIX] 체인 비어있으면 구독 재요청
+        if not chain_put and not chain_call:
+            try:
+                if hasattr(ref, '_sleep_get_chain'):
+                    ref._sleep_get_chain()
+                self._set_status("🔄 체인 구독 재요청...")
+            except Exception:
+                pass
+
         # 풋 행사가 스캔
+        hit = 0
         for st in self.strikes_put:
             price = float(chain_put.get(st) or 0)
             if price > 0:
-                self._evaluate(time_str, st, "P", price)
+                self._evaluate(time_str, st, "P", price); hit += 1
 
         # 콜 행사가 스캔
         for st in self.strikes_call:
             price = float(chain_call.get(st) or 0)
             if price > 0:
-                self._evaluate(time_str, st, "C", price)
+                self._evaluate(time_str, st, "C", price); hit += 1
+
+        if hit == 0 and self._active:
+            self._set_status(
+                f"⚡ 감시중 — 가격 대기 "
+                f"(P:{len(chain_put)}행사가 C:{len(chain_call)}행사가 수신)")
 
         if self._active:
             self._schedule_next()

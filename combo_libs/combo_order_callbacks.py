@@ -96,7 +96,11 @@ def _on_order_status(self, oid: int, status: str,
         close_oids_check.add(oid)
         is_close_match = True
 
-    if not is_pending_match and not is_close_match:
+    # [FIX-EXT] 외부(IBKR 앱 등)에서 낸 주문도 취소 콜백 처리
+    # _cancel_sent_oid 로 cancelOrder 보낸 OID면 통과
+    is_cancel_sent = (getattr(self, '_cancel_sent_oid', None) == oid)
+
+    if not is_pending_match and not is_close_match and not is_cancel_sent:
         return
 
     panel = getattr(self, 'synthetic_panel', None)
@@ -250,6 +254,13 @@ def _on_order_status(self, oid: int, status: str,
     elif status in _STATUS_CANCELLED:
         self._log(f"✕ OID={oid} 취소 확인됨")
         _set_panel_cancelled(panel, oid)
+        # [FIX-EXT] 외부 주문 취소 시 미체결 캐시·탭 갱신
+        _cached = getattr(self, '_cached_open_orders', [])
+        _updated = [o for o in _cached if o.get('oid') != oid]
+        if len(_updated) != len(_cached):
+            self._cached_open_orders = _updated
+            if panel and hasattr(panel, 'update_open_orders'):
+                panel.update_open_orders(_updated)
         _deactivate_chaser_safe(self, reason="취소 확인")
         try:
             from combo_order_special_condition import SpecialFillWatcher

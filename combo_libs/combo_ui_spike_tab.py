@@ -61,10 +61,35 @@ class SpikeMonitorTab(QWidget):
     # ── UI 빌드 ──────────────────────────────────────────────────
 
     def _build(self) -> None:
-        t   = _pal()
-        root = QVBoxLayout(self)
+        from PyQt5.QtWidgets import QTabWidget
+        from futures_monitor_tab import FuturesMonitorTab
+        t    = _pal()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        tabs = QTabWidget()
+        tabs.setStyleSheet(
+            f"QTabBar::tab{{background:{t.get('tab_bg','#161b22')};"
+            f"color:{t.get('tab_fg','#8b949e')};"
+            "padding:4px 12px;border-radius:3px 3px 0 0;}"
+            f"QTabBar::tab:selected{{background:{t.get('tab_sel_bg','#0d1117')};"
+            f"color:{t.get('tab_sel_fg','#58a6ff')};}}")
+
+        # ── 급변 감시 탭
+        _spike_w = QWidget()
+        root = QVBoxLayout(_spike_w)
         root.setContentsMargins(8, 8, 8, 6)
         root.setSpacing(5)
+        tabs.addTab(_spike_w, "⚡ 급변 감시")
+
+        # ── 선물 감시 탭
+        self._futures_tab = FuturesMonitorTab()
+        tabs.addTab(self._futures_tab, "📈 선물 감시")
+
+        outer.addWidget(tabs)
+
+        # root 는 _spike_w 의 레이아웃 — 기존 코드와 동일
+        root = root  # 아래 _build 내 root. 변수 참조 유지
 
         # ── 행 1: 시간 설정 ─────────────────────────────────────
         r1 = QHBoxLayout(); r1.setSpacing(8)
@@ -307,35 +332,51 @@ class SpikeMonitorTab(QWidget):
         mon.on_event  = lambda e: self._bridge.event_sig.emit(e)
 
     def _find_ref(self):
-        """ref 탐색 — strategy_panel / combo_tab / LeftPanelMixin 모두 지원."""
-        try:
-            # 1) 부모 위젯 트리 탐색
-            parent = self.parent()
-            while parent is not None:
-                # LeftPanelMixin / SleepOrderMixin 직접 상속
-                if hasattr(parent, '_sleep_get_chain'):
-                    return parent
-                # mw.tab_combo 경유
-                mw = getattr(parent, 'mw', None)
-                if mw:
-                    for attr in ('tab_combo', 'combo_tab', 'tab_strategy'):
-                        t = getattr(mw, attr, None)
-                        if t and hasattr(t, '_sleep_get_chain'):
-                            return t
-                    # mw 자신이 _chain_put/_chain_call 보유 시
-                    if hasattr(mw, '_chain_put'):
-                        return mw
-                parent = parent.parent() if callable(
-                    getattr(parent, 'parent', None)) else None
-        except Exception:
-            pass
-        # 2) strategy_panel 자신이 _chain_put 보유하는 경우
+        """
+        ref 탐색 — 4단계 우선순위.
+        1) 부모 트리에서 _sleep_get_chain 속성 탐색
+        2) 부모 트리에서 _chain_put 속성 탐색
+        3) QApplication 최상위 윈도우에서 탐색
+        4) 싱글톤 레지스트리에서 탐색
+        """
+        # ── 1) 부모 트리 탐색 ────────────────────────────────────
         try:
             p = self.parent()
             while p is not None:
-                if hasattr(p, '_chain_put') or hasattr(p, 'tbl_chain_put'):
-                    return p
-                p = p.parent() if callable(getattr(p, 'parent', None)) else None
+                if hasattr(p, '_sleep_get_chain'): return p
+                if hasattr(p, '_chain_put'):       return p
+                mw = getattr(p, 'mw', None)
+                if mw:
+                    for attr in ('tab_combo','combo_tab','tab_strategy',
+                                 'left_panel','combo_left'):
+                        t = getattr(mw, attr, None)
+                        if t and (hasattr(t,'_sleep_get_chain') or
+                                  hasattr(t,'_chain_put')):
+                            return t
+                    if hasattr(mw, '_chain_put'): return mw
+                p = p.parent() if callable(getattr(p,'parent',None)) else None
+        except Exception:
+            pass
+
+        # ── 2) QApplication 전체 윈도우 탐색 ────────────────────
+        try:
+            from PyQt5.QtWidgets import QApplication
+            for w in QApplication.topLevelWidgets():
+                for attr in ('tab_combo','combo_tab','left_panel',
+                             'combo_left','tab_strategy'):
+                    t = getattr(w, attr, None)
+                    if t and (hasattr(t,'_sleep_get_chain') or
+                              hasattr(t,'_chain_put')):
+                        return t
+                if hasattr(w, '_chain_put'): return w
+        except Exception:
+            pass
+
+        # ── 3) 글로벌 레지스트리 ─────────────────────────────────
+        try:
+            from combo_ui_left import _LEFT_PANEL_REF
+            if _LEFT_PANEL_REF is not None:
+                return _LEFT_PANEL_REF
         except Exception:
             pass
         return None

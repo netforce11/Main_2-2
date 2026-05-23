@@ -457,17 +457,23 @@ def _on_chaser_mode_changed(self, mode: str):
 def _on_pos_reconnect_hook(self):
     """
     재연결 후 합성 잔고 복원.
-    [FIX-RECONN-RACE] _pos_hook_active 를 try/except 앞에서 먼저 세팅
-    → 빠른 재연결 두 번에도 중복 실행 안 됨.
+    [FIX-RECONN-v2] 재접속 시 _pos_hook_active 무조건 초기화
+    → 이전 접속 잔류 플래그로 복원 차단되던 문제 해결
     """
     import importlib.util, sys
     from pathlib import Path
 
-    # [FIX-RECONN-RACE] 중복 방지 플래그 — 먼저 세팅
-    if getattr(self, '_pos_hook_active', False):
-        self._log("⚠ 재연결 훅 이미 진행 중 — 중복 무시")
+    # [FIX-RECONN-v3] 타임스탬프 기반 중복 방지
+    # 같은 connected 이벤트에서 1초 이내 중복 호출 차단
+    import time as _time
+    _now = _time.monotonic()
+    _last = getattr(self, '_reconn_hook_ts', 0)
+    if _now - _last < 1.0:
+        self._log("⚠ 재연결 훅 중복 호출 무시 (1초 이내)")
         return
-    self._pos_hook_active = True  # 먼저 세팅 후 처리 시작
+    self._reconn_hook_ts    = _now
+    self._pos_hook_active   = False   # 항상 초기화
+    self._pos_hook_active   = True
 
     # [FIX-CACHE] 재연결 시 체결 캐시 초기화 (오래된 OID 데이터 혼입 방지)
     self._exec_avg_cache = {}
