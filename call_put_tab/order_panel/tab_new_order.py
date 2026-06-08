@@ -1,20 +1,19 @@
 """
 order_panel/tab_new_order.py — 탭1 「⚡ 신규」 UI 빌드
 ════════════════════════════════════════════════════════
+[수정] 가격·수량·TIF 한 줄 압축 / 예상 수수료 라벨 제거
 포함:
   build_new_order_tab(mixin) → QWidget
     상단: 대상(side/strike) + 주문확인 + 계좌모드
-    중단: 유형·어댑티브·MAX/$200 / 가격·수량·TIF / 수수료
+    중단: 유형·어댑티브·MAX/$200 / 가격|수량|TIF 한 줄
     하단: 매수/매도·+1호가·긴급매도 버튼 (tab_new_order_buttons.py)
 """
-
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QLineEdit, QComboBox,
     QRadioButton, QButtonGroup, QSpinBox, QCheckBox,
 )
 from PyQt5.QtCore import Qt
-
 from .helpers import _animate_press
 from .tab_new_order_buttons import build_new_order_buttons
 
@@ -23,7 +22,7 @@ def build_new_order_tab(m) -> QWidget:
     """신규 주문 탭 위젯 전체를 생성하여 반환."""
     new_w  = QWidget()
     root_v = QVBoxLayout(new_w)
-    root_v.setSpacing(5); root_v.setContentsMargins(6, 6, 6, 6)
+    root_v.setSpacing(4); root_v.setContentsMargins(6, 6, 6, 4)
 
     # ── 대상 행 ─────────────────────────────────────────────
     tgt_row = QHBoxLayout()
@@ -37,7 +36,6 @@ def build_new_order_tab(m) -> QWidget:
         "color:#ffd700;font-weight:bold;font-size:15px;"
         "background:#0a0a1e;border:1px solid #333;")
     tgt_row.addWidget(m.qord_side); tgt_row.addWidget(m.qord_strike)
-
     m.chk_order_confirm = QCheckBox("주문확인"); m.chk_order_confirm.setChecked(True)
     m.chk_order_confirm.setStyleSheet(
         "QCheckBox{color:#aaa;font-size:12px;spacing:4px;}"
@@ -49,7 +47,6 @@ def build_new_order_tab(m) -> QWidget:
     m.chk_order_confirm.toggled.connect(
         lambda on: setattr(m, '_skip_order_confirm', not on))
     tgt_row.addWidget(m.chk_order_confirm)
-
     m.lbl_acct_mode = QLabel("계좌: ―")
     m.lbl_acct_mode.setStyleSheet(
         "color:#666;font-size:11px;font-weight:bold;border:none;"
@@ -62,13 +59,12 @@ def build_new_order_tab(m) -> QWidget:
     m.lbl_qord_src.setStyleSheet("color:#ff8800;font-size:12px;border:none;")
     m.lbl_qord_src.setWordWrap(True)
     root_v.addWidget(m.lbl_qord_src)
+
     line = QLabel(); line.setFixedHeight(1); line.setStyleSheet("background:#333;border:none;")
     root_v.addWidget(line)
 
     # ── 유형 + 어댑티브 + MAX/$200 ──────────────────────────
-    gl  = QGridLayout(); gl.setSpacing(4)
     _ls = "color:#aaa;font-size:13px;border:none;"
-
     type_w = QWidget(); type_h = QHBoxLayout(type_w)
     type_h.setContentsMargins(0, 0, 0, 0); type_h.setSpacing(6)
     m.qord_lmt = QRadioButton("지정가"); m.qord_mkt = QRadioButton("시장가")
@@ -108,6 +104,7 @@ def build_new_order_tab(m) -> QWidget:
     type_h.addSpacing(6)
     type_h.addWidget(m.lbl_adapt_dot); type_h.addWidget(m.chk_adaptive)
     type_h.addWidget(m.combo_adapt_priority); type_h.addStretch()
+
     _abtn_s = ("QPushButton{background:#1a2a3a;color:#90caf9;font-size:12px;"
                "font-weight:bold;padding:1px 5px;border-radius:3px;border:1px solid #2a4a6a;}"
                "QPushButton:hover{background:#2a3a5a;}"
@@ -115,58 +112,74 @@ def build_new_order_tab(m) -> QWidget:
     m.btn_qty_max = QPushButton("MAX"); m.btn_qty_max.setFixedHeight(22); m.btn_qty_max.setFixedWidth(38)
     m.btn_qty_200 = QPushButton("$200"); m.btn_qty_200.setFixedHeight(22); m.btn_qty_200.setFixedWidth(38)
     m.btn_qty_max.setStyleSheet(_abtn_s); m.btn_qty_200.setStyleSheet(_abtn_s)
-    m.btn_qty_max.clicked.connect(m._calc_qty_max); m.btn_qty_200.clicked.connect(m._calc_qty_200)
+    m.btn_qty_max.clicked.connect(m._calc_qty_max)
+    m.btn_qty_200.clicked.connect(m._calc_qty_200)
     type_h.addWidget(m.btn_qty_max); type_h.addWidget(m.btn_qty_200)
+    root_v.addWidget(type_w)
 
-    # ── 가격·수량·수수료·TIF ─────────────────────────────────
-    m.qord_price = QLineEdit(); m.qord_price.setPlaceholderText("가격 입력")
-    m.qord_price.setStyleSheet(
-        "color:#ffd700;font-weight:bold;font-size:15px;"
-        "background:#0a0a1e;border:1px solid #444;")
-
-    qty_w = QWidget(); qty_h = QHBoxLayout(qty_w)
-    qty_h.setContentsMargins(0, 0, 0, 0); qty_h.setSpacing(3)
-    m.qord_qty = QSpinBox(); m.qord_qty.setRange(1, 9999); m.qord_qty.setValue(1)
-    m.qord_qty.setFixedHeight(26)
-    m.qord_qty.setStyleSheet(
-        "background:#0a0a1e;color:#fff;border:1px solid #444;font-size:14px;")
+    # ── 가격 | 수량 1,5,10 | TIF 한 줄 ─────────────────────
     _QS = ("QPushButton{background:#2d2d5e;color:#ffd700;"
            "border:1px solid #4a4a8a;border-radius:3px;font-size:13px;font-weight:bold;}"
            "QPushButton:hover{background:#3d4d6e;}"
            "QPushButton:pressed{background:#1d1d4e;}")
+
+    compact_row = QHBoxLayout(); compact_row.setSpacing(4)
+
+    # 가격
+    m.qord_price = QLineEdit(); m.qord_price.setPlaceholderText("가격")
+    m.qord_price.setFixedHeight(26); m.qord_price.setFixedWidth(80)
+    m.qord_price.setStyleSheet(
+        "color:#ffd700;font-weight:bold;font-size:14px;"
+        "background:#0a0a1e;border:1px solid #444;")
+    compact_row.addWidget(m.qord_price)
+
+    # 구분선
+    sep = QLabel("|"); sep.setStyleSheet("color:#444;border:none;font-size:14px;")
+    compact_row.addWidget(sep)
+
+    # 수량
+    m.qord_qty = QSpinBox(); m.qord_qty.setRange(1, 9999); m.qord_qty.setValue(1)
+    m.qord_qty.setFixedHeight(26); m.qord_qty.setFixedWidth(54)
+    m.qord_qty.setStyleSheet(
+        "background:#0a0a1e;color:#fff;border:1px solid #444;font-size:14px;")
+    compact_row.addWidget(m.qord_qty)
+
+    # 1, 5, 10 버튼
     for lbl2, v2 in [("1", 1), ("5", 5), ("10", 10)]:
         bq = QPushButton(lbl2); bq.setFixedWidth(28); bq.setFixedHeight(26)
         bq.setStyleSheet(_QS)
         bq.clicked.connect(lambda _, v=v2: m.qord_qty.setValue(v))
-        qty_h.addWidget(bq)
-    qty_h.insertWidget(0, m.qord_qty)
+        compact_row.addWidget(bq)
 
-    gl.addWidget(QLabel("유형:", styleSheet=_ls), 0, 0); gl.addWidget(type_w, 0, 1)
-    gl.addWidget(QLabel("가격:", styleSheet=_ls), 1, 0); gl.addWidget(m.qord_price, 1, 1)
-    gl.addWidget(QLabel("수량:", styleSheet=_ls), 2, 0); gl.addWidget(qty_w, 2, 1)
-    root_v.addLayout(gl)
+    # 구분선
+    sep2 = QLabel("|"); sep2.setStyleSheet("color:#444;border:none;font-size:14px;")
+    compact_row.addWidget(sep2)
 
-    m.lbl_commission = QLabel("")
-    m.lbl_commission.setStyleSheet(
-        "color:#FFA500;font-size:13px;border:none;"
-        "background:#0d0d20;padding:2px 4px;border-radius:3px;")
-    m.lbl_commission.setAlignment(Qt.AlignRight)
-    root_v.addWidget(m.lbl_commission)
-    m.qord_qty.valueChanged.connect(m._update_commission_label)
-    m._update_commission_label(m.qord_qty.value())
-
-    tif_row = QHBoxLayout()
-    tif_row.addWidget(QLabel("TIF:", styleSheet=_ls))
+    # TIF
+    tif_lbl = QLabel("TIF:"); tif_lbl.setStyleSheet(_ls)
+    compact_row.addWidget(tif_lbl)
     m.qord_tif = QComboBox(); m.qord_tif.addItems(["DAY", "GTC", "IOC", "GTD"])
-    m.qord_tif.setFixedHeight(24)
+    m.qord_tif.setFixedHeight(26); m.qord_tif.setFixedWidth(58)
     m.qord_tif.setStyleSheet(
         "QComboBox{background:#0a0a1e;color:#ffd700;border:1px solid #444;"
         "font-size:13px;padding:1px;}"
         "QComboBox QAbstractItemView{background:#0a0a1e;color:#ffd700;font-size:13px;}"
         "QComboBox::drop-down{border:none;}")
-    tif_row.addWidget(m.qord_tif); tif_row.addStretch()
-    root_v.addLayout(tif_row)
+    compact_row.addWidget(m.qord_tif)
+    compact_row.addStretch()
+
+    root_v.addLayout(compact_row)
+
+    # ── 예상 수수료 — 숨김 처리 (로직 유지, UI 제거) ────────
+    m.lbl_commission = QLabel("")
+    m.lbl_commission.setVisible(False)   # 화면에서 제거, 참조는 유지
+    m.qord_qty.valueChanged.connect(m._update_commission_label)
+    m._update_commission_label(m.qord_qty.value())
 
     # ── 버튼 영역 (별도 모듈) ────────────────────────────────
     build_new_order_buttons(m, root_v)
+
+    # ── 잔고 인라인 패널 ─────────────────────────────────────
+    root_v.addWidget(m._build_inline_position_panel())
+
     return new_w

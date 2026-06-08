@@ -192,6 +192,11 @@ class LeftPanelMixin(_SleepOrderMixin):
         inner.setSizes([300, 300])
         v.addWidget(inner, 1)
         gb.setMinimumWidth(300)
+        # [FIX-FLOAT] 이 QGroupBox가 parent 없이 독립창으로 뜨는 현상 방지
+        # Qt은 layout에 추가되지 않은 show()된 QWidget을 toplevel로 처리함
+        # → windowFlags를 명시적으로 Widget으로 고정
+        from PyQt5.QtCore import Qt as _Qt
+        gb.setWindowFlags(_Qt.Widget)  # toplevel 방지
         return gb
 
     def _build_call_chain(self) -> QWidget:

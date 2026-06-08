@@ -1,21 +1,13 @@
 """
 order_panel/order_actions.py — 미체결 조회·테이블 갱신·KST·수수료·유형토글
 ════════════════════════════════════════════════════════════════════
-포함 메서드 (OrderPanelMixin에 mixin):
-  _update_kst_labels()          KST 시각 라벨 1초 갱신
-  _update_commission_label()    예상 수수료 표시
-  _on_qord_type_toggle()        지정가/시장가 토글
-  _fetch_open_orders()          미체결 주문 조회 (openOrder 패치)
-  _populate_open_order_tables() 미체결 버퍼 → 테이블 렌더링
-  _fill_amend_from_table()      정정 탭 자동 입력
-  _fill_cancel_from_table()     취소 탭 자동 입력
-  _try_connect_exec_refresh()   연결 시 체결 자동갱신 훅 설정
+[v6.7 수정]
+  reqOpenOrders() → reqAllOpenOrders()
+  : 현재 API 세션 주문만 조회 → TWS 전체 미체결 조회 (수동 주문 포함)
 """
-
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QMessageBox, QTableWidgetItem
 from PyQt5.QtGui import QColor
-
 from .helpers import _kst_now
 
 
@@ -66,9 +58,6 @@ class OrderActionsMixin:
                 ib.openOrderEnd = ib._orig_openOrderEnd
 
         def _on_open_order_end():
-            # [버그수정 P2-④] 정상 수신 시 타임아웃 타이머 중지
-            # 기존: singleShot이라 취소 불가 → 5초 후 _populate_open_order_tables 중복 호출
-            # 수정: 인스턴스 타이머를 stop()하여 이중 렌더링 방지
             t = getattr(self, '_oo_timeout_timer', None)
             if t is not None:
                 t.stop()
@@ -79,19 +68,22 @@ class OrderActionsMixin:
         ib._orig_openOrderEnd = getattr(ib, 'openOrderEnd', lambda: None)
         ib.openOrder    = _on_open_order
         ib.openOrderEnd = _on_open_order_end
+
         try:
-            ib.reqOpenOrders()
-            self._log("📋 미체결 주문 조회 요청...")
+            # [v6.7] reqOpenOrders → reqAllOpenOrders
+            # reqOpenOrders    : 현재 API 세션 주문만 반환 (TWS 수동 주문 누락)
+            # reqAllOpenOrders : TWS 전체 미체결 반환 (수동 주문 + 재시작 전 주문 포함)
+            ib.reqAllOpenOrders()
+            self._log("📋 미체결 주문 조회 요청 (reqAllOpenOrders)...")
         except Exception as e:
             self._log(f"❌ 주문 조회 오류: {e}")
 
-        # [버그수정 P2-④] 안전망 타이머를 인스턴스 변수로 보관
-        # openOrderEnd 정상 수신 시 _on_open_order_end에서 stop() 호출됨
         if not hasattr(self, '_oo_timeout_timer'):
             self._oo_timeout_timer = QTimer(self)
             self._oo_timeout_timer.setSingleShot(True)
         else:
             self._oo_timeout_timer.stop()
+
         self._oo_timeout_timer.timeout.disconnect() if self._oo_timeout_timer.receivers(
             self._oo_timeout_timer.timeout) > 0 else None
         self._oo_timeout_timer.timeout.connect(lambda: (
@@ -112,10 +104,10 @@ class OrderActionsMixin:
                 r = tbl.rowCount(); tbl.insertRow(r)
                 price_str = f"{o['price']:.2f}" if o['price'] else o['type']
                 col = "#00ff88" if o['action'] == "BUY" else "#ff6666"
-                tbl.setItem(r, 0, _mk(str(o['oid']),                  "#ffd700"))
-                tbl.setItem(r, 1, _mk(o['symbol'],                    "#ccc"))
-                tbl.setItem(r, 2, _mk(f"{o['action']} {o['qty']}",   col))
-                tbl.setItem(r, 3, _mk(price_str,                      "#90caf9"))
+                tbl.setItem(r, 0, _mk(str(o['oid']),                "#ffd700"))
+                tbl.setItem(r, 1, _mk(o['symbol'],                  "#ccc"))
+                tbl.setItem(r, 2, _mk(f"{o['action']} {o['qty']}", col))
+                tbl.setItem(r, 3, _mk(price_str,                    "#90caf9"))
         self._log(f"📋 미체결 주문 {len(orders)}건 수신")
 
     def _fill_amend_from_table(self, row):

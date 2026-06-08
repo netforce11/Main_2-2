@@ -15,6 +15,12 @@ def _build_bottom_section(self, side):
     # ════════════════════════════════════════════════════
     side.addWidget(_make_sep())
 
+    # ── [체결 마커 v2] UI 패널 ─────────────────────────────
+    from chart_exec_marker_ui import build_exec_marker_panel
+    side.addWidget(build_exec_marker_panel(self))
+    side.addWidget(_make_sep())
+    # ── [체결 마커 v2] 끝 ─────────────────────────────────
+
     self.btn_memo_toggle = QPushButton("📝 메모")
     self.btn_memo_toggle.setCheckable(True)
     self.btn_memo_toggle.setChecked(True)   # 기본: 열린 상태

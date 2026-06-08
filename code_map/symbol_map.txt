@@ -1,0 +1,3832 @@
+======================================
+  Python 심볼 맵 — Main2_1
+  (class / def / import 추출)
+  생성: 20260602_203608
+======================================
+
+════ 핵심 엔트리포인트 ════
+
+── 📄 main.py
+  [import] 62:import os
+  [import] 72:import sys, threading
+  [import] 73:from datetime import datetime
+  [import] 75:from PyQt5.QtWidgets import QApplication
+  [import] 76:from PyQt5.QtGui import QFont
+  [import] 90:import pyqtgraph as pg
+  [import] 96:from PyQt5.QtWidgets import (
+  [import] 101:from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
+  [import] 102:from PyQt5.QtGui import QKeySequence
+  [import] 103:from PyQt5.QtWidgets import QShortcut
+  [import] 106:from core_theme import (
+  [import] 110:from main_color_config import build_theme_bar, apply_theme
+  [import] 111:from core import (
+  [import] 116:from core_ui import apply_theme_to_all_tables, apply_theme_to_all_frames
+  [import] 119:from shared_chain_store   import SharedChainStore
+  [import] 120:from price_history_buffer import PriceHistoryBuffer
+  [import] 136:from call_put_tab import CallPutGrid, init_chain_saver
+  [import] 137:from watch_dog    import WatchAlertPanel   # SPX 감시 패널
+  [import] 138:from telegram_bot import TgConfigWidget    # 텔레그램 설정 탭
+  [import] 139:from telegram_bot.tg_client import TelegramClient
+  [import] 140:from tab_sniper  import SniperGrid
+  [import] 141:from tab_oi      import OITrackerGrid
+  [import] 142:from tab_combo_strategy import ComboStrategyGrid
+  [import] 143:from tab_balance      import BalanceGrid        # Account_info/ 패키지 사용
+  [import] 144:from tab_multi_price  import MultiPriceGrid     # Account_info/ 패키지 사용
+  [import] 145:from tab_greeks       import GreeksGrid         # Account_info/ 패키지 사용
+  [import] 146:from tab_chart   import ChartGrid           # tab_chart_libs/ 경로는 tab_chart.py 내부 등록
+  [import] 147:from tab_trading import TradingGrid
+  [import] 148:from tab_kr_futures  import KRFuturesGrid
+  [import] 149:from tab_spx_history import SpxHistoryGrid
+  [import] 150:from tab_opt_intraday import OptIntradayGrid
+  [import] 151:from kr_chart_tab import KoreaChartGrid       # ← Korea_1분 차트 탭
+  [import] 162:from strategy_report.tab_report import ReportTab
+  [import] 163:from Main_config import ConfigTab, _get_heartbeat_mgr   # 기본 설정 탭
+  169:class EmptyGrid(GridTab):
+  184:class _ChartGrabBridge(QObject):
+  189:class TradingDashboard(QMainWindow):
+
+── 📄 core.py
+  [import] 12:import os, json, csv
+  [import] 13:from datetime import datetime, timedelta, time as dt_time, date as dt_date
+  [import] 14:from pathlib import Path
+  [import] 44:from PyQt5.QtWidgets import (
+  [import] 50:from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QSize
+  [import] 51:from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
+  [import] 52:from PyQt5.QtGui import QFont, QColor, QBrush
+  [import] 125:from core_theme import (
+  [import] 229:from core_expiry import (
+  [import] 233:from core_io import (
+  [import] 237:from core_ui import (
+  [import] 241:from core_tab_wrapper import TabWrapper
+  [import] 242:from core_contract import IBapi, make_opt_contract, make_und_contract, _resolve_spx_trading_class
+  137:class SignalBridge(QObject):
+  175:class TickRouter(QObject):
+
+── 📄 core_ui.py
+  [import] 14:from datetime import datetime
+  [import] 15:from PyQt5.QtWidgets import (
+  [import] 21:from PyQt5.QtCore import Qt, QObject
+  [import] 22:from PyQt5.QtGui import QFont, QColor, QBrush
+  [import] 24:import core_theme as _core   # CURRENT_THEME / THEME_PALETTES 런타임 참조 (순환 임포트 방지)
+  [import] 26:from core_theme import DEFAULT_FONT_SIZE
+  32:def _pal() -> dict:
+  48:def _apply_table_theme(tbl: QTableWidget, dark: bool = None):
+  69:def apply_theme_to_all_tables():
+  81:def apply_theme_to_all_frames():
+  93:def make_table(headers: list, rows: int = 0) -> QTableWidget:
+  107:def tbl_set(tbl: QTableWidget, row: int, col: int,
+  120:def ts() -> str:
+  124:def ts_full() -> str:
+  132:def _btn_ss() -> str:
+  150:class _FloatWin(QWidget):
+  182:class _ResizableFrame(QFrame):
+  354:class GridTab(QWidget):
+
+── 📄 core_theme.py
+  [import] 24:from __future__ import annotations
+  517:def set_theme(name: str) -> None:
+  526:def current_palette() -> dict[str, str]:
+  535:def make_style(fs: int = DEFAULT_FONT_SIZE, theme: str = None) -> str:
+  750:def make_theme_selector(parent=None, on_change=None):
+
+── 📄 core_contract.py
+  [import] 28:from PyQt5.QtCore import pyqtSignal, QObject
+  [import] 29:from datetime import datetime
+  33:def _get_core():
+  37:def _bridge():
+  277:def _resolve_spx_trading_class(symbol: str, expiry: str, tag: str = "") -> str:
+  343:def make_opt_contract(symbol: str, strike: float, right: str,
+  440:def make_und_contract(symbol: str) -> "Contract":
+
+── 📄 core_expiry.py
+  [import] 16:import os, json, csv
+  [import] 17:from datetime import datetime, timedelta, time as dt_time, date as dt_date
+  [import] 18:from pathlib import Path
+  29:def _easter(year: int) -> datetime:
+  44:def _us_market_holidays(year: int) -> set:
+  99:def is_trading_day(d) -> bool:
+  108:def next_wd(base: datetime, wd: int) -> datetime:
+  113:def next_trading_friday(base: datetime, skip: int = 0) -> datetime:
+  129:def _third_friday(year: int, month: int) -> dt_date:
+  147:def _monthly_expiry_dates(today: datetime) -> set:
+  167:def build_expiry_list(sym: str = "SPX"):
+
+── 📄 core_io.py
+  [import] 8:import os, json, csv
+  [import] 9:from datetime import datetime, timedelta, time as dt_time, date as dt_date
+  [import] 10:from pathlib import Path
+  32:def save_json(filename: str, data: dict):
+  46:def load_json(filename: str, default=None):
+  68:def append_csv(filename: str, row: dict):
+  86:def load_csv(filename: str) -> list:
+  114:def is_market_open() -> bool:
+  126:def auto_mdt(ib) -> int:
+  157:def apply_saved_settings() -> None:
+  182:def get_data_dir() -> Path:
+  191:def get_conid_cache_path() -> Path:
+
+── 📄 core_tab_wrapper.py
+  [import] 5:from PyQt5.QtWidgets import (
+  [import] 9:from PyQt5.QtCore import Qt, QTimer
+  [import] 11:from core import DEFAULT_FONT_SIZE, SAVE_DIR, _all_tables, _apply_table_theme
+  [import] 12:from core_io import save_json, load_json
+  14:class TabWrapper(QWidget):
+
+════ 📦 call_put_tab ════
+
+  ── 📄 call_put_tab/alert_engine.py
+     33:def _is_market_hours() -> bool:
+     44:class CondARow:
+     55:class CondBRow:
+     70:class AlertEngine:
+     84:    def __init__(
+     108:    def start(self) -> None:
+     112:    def stop(self) -> None:
+     116:    def is_running(self) -> bool:
+     119:    def reset_counts(self) -> None:
+     133:    def _auto_reset_row(row) -> bool:
+     145:    def _auto_reset_vix(self) -> bool:
+     155:    def add_strike(self, strike: float, opt_type: str,
+     166:    def remove_strike(self, strike: float, opt_type: str) -> None:
+     170:    def clear_strikes(self) -> None:
+     175:    def push_spx(self, price: float) -> None:
+     203:    def push_opt(self, strike: float, opt_type: str,
+     218:    def push_vix(self, vix_now: float, vix_prev: float) -> None:
+     239:    def _eval_cond_a(self, row: CondARow,
+     267:    def _eval_cond_b(self, row: CondBRow,
+     297:    def _fire(self, level: int, msg: str) -> None:
+
+  ── 📄 call_put_tab/alert_logger.py
+     32:class AlertLogger:
+     42:    def __init__(self, log_dir=DEFAULT_LOG_DIR):
+     53:    def _log_path(self, date_str: str = "") -> Path:
+     59:    def today_path(self) -> Path:
+     64:    def write(self, level: str, msg: str) -> None:
+     75:    def write_info(self, msg: str) -> None:
+     81:    def load_today(self) -> List[str]:
+     85:    def load_date(self, date_str: str) -> List[str]:
+     89:    def _load(self, path: Path) -> List[str]:
+     100:    def list_log_files(self) -> List[str]:
+
+  ── 📄 call_put_tab/auto_fetch_next_day.py
+     50:def _now_kst() -> datetime.datetime:
+     57:def _today_kst() -> datetime.date:
+     62:def _next_trading_day(ref: Optional[datetime.date] = None) -> datetime.date:
+     72:def _date_to_expiry_str(d: datetime.date) -> str:
+     81:class AutoFetchNextDayMixin:
+     105:    def _init_auto_fetch(self) -> None:
+     119:    def _build_auto_fetch_panel(self) -> QGroupBox:
+     209:    def _af_on_toggle(self, checked: bool) -> None:
+     229:    def _af_on_time_changed(self, t: QTime) -> None:
+     238:    def _af_tick(self) -> None:
+     266:    def _af_do_fetch(self) -> None:
+     303:    def _af_set_expiry(self, target_date: datetime.date) -> None:
+     337:    def _af_get_settings(self) -> dict:
+     344:    def _af_apply_settings(self, d: dict) -> None:
+
+  ── 📄 call_put_tab/auto_spx_fetch.py
+     43:def _us_holidays(year: int) -> set:
+     50:    def _nearest_weekday(d: date) -> date:
+     58:    def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+     97:def _calc_easter(year: int) -> datetime.date:
+     112:def _today_et() -> datetime.date:
+     131:def _prev_trading_day(ref: Optional[datetime.date] = None) -> datetime.date:
+     149:class AutoSpxFetchMixin:
+     171:    def _init_auto_spx_fetch(self) -> None:
+     187:    def _asf_patch_user_actions(self) -> None:
+     206:    def _cancel_auto_spx_fetch(self) -> None:
+     215:    def _asf_do(self) -> None:
+     234:    def _asf_retry_connected(self) -> None:
+     248:    def _asf_run(self) -> None:
+
+  ── 📄 call_put_tab/core_conn_account.py
+     8:class ConnAccountMixin:
+     19:    def get_trading_port(self, is_live: bool, use_gateway: bool = False) -> int:
+     23:    def set_trading_mode(self, is_live: bool, use_gateway: bool = False):
+     50:    def reconnect_with_mode(self, is_live: bool, use_gateway: bool = False):
+     67:    def _connect_to_port(self, port: int):
+     77:    def _on_bridge_open_order(self, oid: int, sym: str, side: str,
+     112:    def _flush_open_orders(self):
+     118:    def _fetch_and_show_account(self):
+     160:    def _apply_account_label(self, acct: str):
+
+  ── 📄 call_put_tab/core_conn_expiry.py
+     17:class ConnExpiryMixin:
+     29:    def _refresh_expiry_list(self):
+     66:    def _tag_monthly_expiries(self, expiry_list: list) -> list:
+     84:    def _fetch_expiry_secdef(self, sym: str):
+     161:    def _fetch_expiry_from_ibkr(self, sym: str):
+     238:    def _apply_ibkr_expiry(self, sym: str, raw_list: list):
+     289:    def _apply_expiry_combo(self):
+     328:    def _apply_local_expiry_fallback(self, sym: str):
+     407:    def _on_exp_change(self, idx):
+     413:    def _open_calendar(self):
+     426:    def _on_date_edit_changed(self, qdate):
+     429:    def _get_expiry(self, silent: bool = False):
+     461:    def _strikes_for_zone(self, atm, step, n):
+
+  ── 📄 call_put_tab/core_conn_fill.py
+     20:    def _tg_send(msg: str) -> None:
+     24:class ConnFillMixin:
+     27:    def _hook_fill_callbacks(self):
+     124:    def _on_fill_event(self, sym: str, qty: float, side: str, price: float):
+
+  ── 📄 call_put_tab/core_conn_ibkr.py
+     21:class ConnIbkrMixin:
+     24:    def _on_connected(self):
+     64:    def _auto_fetch_spxw_today(self):
+     92:    def _on_error(self, rid, code, msg):
+     113:    def _apply_mdt(self):
+     121:    def _apply_mdt_manual(self):
+
+  ── 📄 call_put_tab/core_conn.py
+     22:class CoreConnMixin(
+
+  ── 📄 call_put_tab/core_conn_signals.py
+     27:class ConnSignalsMixin(TickCacheMixin, ConnWatchdogMixin, ConnFillMixin):
+     38:    def _connect_signals(self):
+     79:    def _log(self, msg: str):
+     86:    def on_tab_activate(self):
+     92:    def on_tab_deactivate(self):
+
+  ── 📄 call_put_tab/core_conn_spxw.py
+     25:def _today_et() -> date:
+     40:def _monthly_expiry_set_et() -> set:
+     59:class ConnSpxwMixin:
+     62:    def _build_spxw_combo(self):
+     109:    def _on_spxw_select(self, idx):
+     165:    def _on_zone_change(self, btn):
+
+  ── 📄 call_put_tab/core_conn_tick_cache.py
+     75:class TickCacheMixin:
+     82:    def _init_tick_cache(self):
+     100:    def _on_tick_price(self, reqId: int, tickType: int, price: float, attrib=None):
+     147:    def _on_tick_option(self, reqId: int, tickType: int,
+     171:    def _flush_tick_ui(self):
+     186:    def _flush_one_req(self, req_id: int):
+     249:    def _set_cell_price(self, tbl, row: int, col: int,
+     279:    def _apply_greeks_to_row(self, tbl, row: int,
+     320:    def _get_spx_ref_price(self) -> float | None:
+     335:    def _update_dist_pct(self, tbl, row: int, req_id: int):
+     384:    def _apply_tick_price_direct(self, req_id: int, price_ticks: dict):
+     395:    def _refresh_opt_panel_from_cache(self, req_id: int):
+     409:    def get_cached_price(self, req_id: int, tick_type: int) -> float | None:
+     416:    def get_cached_greek(self, req_id: int, field: str) -> float | None:
+     421:    def pause_tick_ui_flush(self):
+     426:    def resume_tick_ui_flush(self):
+     432:def _flush_chain_price(cp, reqId: int) -> None:
+     462:def _notify_sleep_watcher(cp, reqId: int) -> None:
+     507:def _patch_chain_price(combo_tab, cp, reqId: int) -> None:
+
+  ── 📄 call_put_tab/core_conn_watchdog.py
+     27:def _tg_send(msg: str) -> None:
+     36:    def _send():
+     56:class ConnWatchdogMixin:
+     60:    def _watch_dog(self):
+     98:    def _reconnect_flow(self):
+
+  ── 📄 call_put_tab/core_expiry_utils.py
+     17:def _is_monthly_expiry(dt) -> bool:
+
+  ── 📄 call_put_tab/core_fetch_chain.py
+     35:class CoreFetchChainMixin:
+     38:    def _arm_fetch_timeout(self):
+     47:    def _force_release_busy(self):
+     52:    def _fetch(self):
+     99:    def _fetch_retry_und(self):
+     121:    def _fetch_chain_seq(self, gen, cancel_ids, sym, expiry, tag, step, n):
+     231:    def _init_tbl(self, tbl, strikes):
+     240:    def on_tab_deactivate(self):
+     253:    def on_tab_activate(self):
+
+  ── 📄 call_put_tab/core_fetch_contracts.py
+     28:def make_opt_contract_safe(sym: str, strike: float, right: str, expiry: str, tag: str):
+     44:def _mdt_for_sym(sym: str, ib) -> int:
+     66:def _alive(widget) -> bool:
+     75:class CoreFetchContractsMixin:
+     91:    def _cl_front_month() -> str:
+     124:    def _es_front_month() -> str:
+     167:    def _make_fut_contract(self, sym: str):
+     190:    def _next_trading_day() -> str:
+     218:    def _auto_select_next_expiry(self):
+
+  ── 📄 call_put_tab/core_fetch_pos.py
+     27:def _normalize_sym(sym: str) -> str:
+     31:def _fmt_expiry_short(expiry8: str) -> str:
+     35:class CoreFetchPosMixin:
+     39:    def _is_expired(expiry_str: str) -> bool:
+     54:    def _calc_expiry_pnl(qty: int, avg_cost: float) -> float:
+     62:    def _refresh_positions(self):
+     192:    def _on_pos_reconnect_hook(self):
+     212:    def _ensure_pnl_checkbox(self):
+     233:    def _apply_positions(self, pos_buf: dict):
+     366:    def _on_pnl_mode_changed(self, checked: bool):
+     377:    def _start_server_pnl(self):
+     480:    def _stop_server_pnl(self):
+     507:    def _update_pos_pnl(self):
+     551:    def _update_pos_pnl_single(self, row_idx: int, key: tuple,
+     582:    def _connect_exec_auto_refresh(self):
+
+  ── 📄 call_put_tab/core_fetch.py
+     29:class CoreFetchMixin(CoreFetchWatchlistMixin, CoreFetchPosMixin):
+
+  ── 📄 call_put_tab/core_fetch_subscribe.py
+     21:class CoreFetchSubscribeMixin(CoreFetchChainMixin, CoreFetchContractsMixin):
+     24:    def _req_und(self, sym: str):
+     90:    def _refresh_und(self):
+
+  ── 📄 call_put_tab/core_fetch_table.py
+     41:class _DummyLabel:
+     43:    def setText(self, *_): pass
+     46:class CoreFetchTableMixin(CoreFetchSubscribeMixin):
+     55:    def _tbl_click(self, row, col, side):
+     153:    def _tbl_dbl(self, row, col, side):
+     182:    def _fetch_option_snapshot(self, strike: float, side: str):
+     276:    def _on_opt_snapshot_done(self, bars, strike: float, side: str):
+     335:    def _on_opt_snapshot_timeout(self):
+     348:    def _fetch_option_daily(self, n_days: int = 1):
+     485:    def _notify_sniper_sync(self):
+
+  ── 📄 call_put_tab/core_fetch_watchlist.py
+     31:class CoreFetchWatchlistMixin(CoreFetchTableMixin):
+     38:    def _is_futures_sym(sym: str) -> bool:
+     46:    def _active_watchlist(self):
+     53:    def _w_add(self):
+     67:    def _w_del(self):
+     75:    def _w_move_up(self):
+     86:    def _w_move_down(self):
+     97:    def _w_save(self):
+     111:    def _w_load(self):
+     155:    def _apply_watchlist_font(self):
+     176:    def _on_watch_dbl(self, item):
+     251:    def _on_watch_single_click(self, item):
+
+  ── 📄 call_put_tab/__init__.py
+
+  ── 📄 call_put_tab/_init_saver.py
+     21:def init_chain_saver(main_win) -> ChainScheduler:
+
+  ── 📄 call_put_tab/order_amend_cancel.py
+     25:class OrderAmendCancelMixin:
+     28:    def _amend_order(self):
+     103:    def _cancel_order(self):
+
+  ── 📄 call_put_tab/order_logic.py
+     24:class OrderLogicMixin(OrderAmendCancelMixin, OrderQuickMixin, OrderSniperMixin):
+     40:def get_emergency_sell_lmt_price(
+
+  ── 📄 call_put_tab/order_panel_common.py
+     41:def _make_order_tbl(sel_color: str = "#1a3a6b") -> QTableWidget:
+
+  ── 📄 call_put_tab/order_panel.py
+     33:class OrderPanelMixin(
+     50:    def _build_quick_order_panel(self) -> QWidget:
+
+  ── 📄 call_put_tab/order_panel_util.py
+     14:class OrderUtilMixin:
+     17:    def _build_inline_position_panel(self) -> QGroupBox:
+     72:    def _build_pos_sell_panel(self) -> QWidget:
+     129:    def _on_qord_type_toggle(self):
+     139:    def _update_commission_label(self, qty: int = 1):
+     144:    def _validate_quick_order(self, action: str) -> tuple:
+     164:    def _qord_place_validated(self, action: str):
+     174:    def _on_position_row_click(self, row: int, col: int = 0):
+     254:    def _show_pos_sell_panel(self, side, strike, qty=1, price=None):
+     264:    def _pos_sell_execute(self):
+
+  ── 📄 call_put_tab/order_quick.py
+     19:class OrderQuickMixin:
+     22:    def _qord_fill(self, side: str, strike: str,
+     31:    def _qord_place(self, action: str):
+     139:    def _get_current_price_for_qty(self):
+     160:    def _calc_qty_max(self):
+     200:    def _calc_qty_200(self):
+
+  ── 📄 call_put_tab/order_sniper_exec.py
+     19:class OrderSniperExecMixin:
+     22:    def _sniper_tick(self, rid: int, tt: int, price: float):
+     69:    def _sniper_check(self):
+     126:    def _sniper_fire(self, rid: int, sn: dict) -> bool:
+
+  ── 📄 call_put_tab/order_sniper_manage.py
+     24:class OrderSniperManageMixin(OrderSniperPersistMixin):
+     27:    def set_sniper_target(self, strike: str, right: str, expiry: str):
+     52:    def _sniper_add(self):
+     148:    def _sniper_row_click(self, row: int, col: int):
+     169:    def _sniper_remove(self, rid: int):
+     187:    def _sniper_clear_all(self):
+
+  ── 📄 call_put_tab/order_sniper_persist.py
+     12:class OrderSniperPersistMixin:
+     15:    def _sniper_save(self):
+     45:    def _sniper_load(self):
+
+  ── 📄 call_put_tab/order_sniper.py
+     17:class OrderSniperMixin(OrderSniperManageMixin, OrderSniperExecMixin):
+
+  ── 📄 call_put_tab/patch_auto_fetch.py
+     51:def backup(p: Path):
+     57:def apply(path: Path, old: str, new: str) -> bool:
+
+  ── 📄 call_put_tab/spike_scan.py
+     20:def tg(msg: str) -> None:
+     22:    def _run():
+     28:def _ensure_fire_lock(watcher) -> threading.Lock:
+     41:def _get_symbol(ref) -> str:
+     47:def _opt_tick(net: float, symbol: str = "") -> float:
+     53:def _effective_spread_width(sleep_cfg, symbol: str) -> float:
+     60:def _round_to_tick(net: float, symbol: str = "") -> float:
+     69:def calc_entry_price(net: float, sleep_cfg, symbol: str = "") -> float:
+     75:def _now_str() -> str:
+     86:def _check_call_anomaly(buy_prem: float, sell_prem: float,
+     107:def scan_and_check(watcher) -> None:
+     117:def _scan_and_check_inner(watcher) -> None:
+     252:def _scan_and_fire_call_only(watcher, ref, und: float, sleep_cfg) -> None:
+     310:def _scan_and_fire_call(watcher, ref, und: float, sleep_cfg) -> None:
+     367:def _fire_put(watcher, ref, legs: list, net: float,
+     414:def _fire_call(watcher, ref, call_item: dict, sleep_cfg) -> None:
+     459:def _peek_call_net(ref, und: float, sleep_cfg) -> float | None:
+     487:def _scan_and_fire_call_b(watcher, ref, und: float, sleep_cfg,
+     549:def _peek_put_net(put_chain: list, und: float, sleep_cfg,
+     570:def _fire_put_from_chain(watcher, ref, put_chain: list,
+     589:def _fire_call_from_peek(watcher, ref, und: float, sleep_cfg) -> None:
+     642:def _tg_wait_secondary(side: str, current_net, threshold: float,
+     656:def _tg_both_summary(ref, sleep_cfg) -> None:
+     668:def fire_order(watcher, legs: list, net: float,
+
+  ── 📄 call_put_tab/tab_options_chain_b_fetch.py
+     18:def _mk_contract(symbol: str, expiry: str,
+     37:class ChainBFetch:
+     49:    def __init__(self, conn):
+     62:    def request(self, strikes: List[float],
+     95:    def cancel(self):
+     104:    def get_info(self, req_id: int) -> Optional[Tuple[float, str]]:
+     115:    def is_active(self) -> bool:
+     119:    def active_req_ids(self) -> List[int]:
+
+  ── 📄 call_put_tab/tab_options_chain_b.py
+     24:def _norm_cdf(x: float) -> float:
+     35:def black_scholes(S: float, K: float, T: float,
+     64:class ChainBTable(QWidget):
+     71:    def __init__(self, side: str = "C", parent=None):
+     81:    def _build_ui(self):
+     114:    def reset(self, strikes: List[float]):
+     126:    def update_row(self,
+     188:    def _set(self, row: int, col: int, text: str, color: Optional[str] = None):
+
+  ── 📄 call_put_tab/tab_options_chain_mode.py
+     15:class ChainModeWidget(QWidget):
+     22:    def __init__(self, parent=None):
+     30:    def _build_ui(self):
+     56:    def _on_click(self, btn: QRadioButton):
+     66:    def mode(self) -> str:
+     70:    def set_mode(self, mode: str):
+
+  ── 📄 call_put_tab/tab_options_chart.py
+     34:class ChartMixin(HistoryMixin):
+     40:    def _build_chart_panel(self):
+     46:    def _on_und_label_clicked(self):
+     71:    def _on_chart_type_toggle(self):
+     77:    def _on_tz_toggle(self):
+     83:    def _is_dst(self, dt=None):
+     90:    def _et_to_kst(self, dt_et):
+     93:    def _fmt_chart_time(self, dt_et):
+     98:    def _wrap_tbl(self, tbl, title, color):
+     113:    def _on_tick_price(self, rid, tt, price, attrib=None):
+     131:    def _apply_tick_price(self, rid, tt, price):
+     293:    def _buf_update_price(self, rid, side, row, bid=None, ask=None, last=None):
+     303:    def _refresh_opt_panel(self, side: str, strike: float):
+     326:    def _on_tick_option(self, rid, tt, iv, delta, op, gamma, vega, theta):
+     343:    def _apply_tick_option(self, rid, tt, delta, theta, gamma, iv=None, vega=None):
+     404:    def _buf_update_greeks(self, rid, side, row, iv, delta, gamma, vega, theta):
+     416:    def _update_watch_prev(self, side, strike, delta, theta, gamma):
+     422:    def _update_und_display(self):
+     510:    def _upd_spread(self):
+     517:    def _push_price(self, price):
+     552:    def _redraw_candles(self):
+     580:    def _redraw_chart_axes(self):
+     583:    def _push_greeks(self, delta):
+     591:    def _fetch_fallback_close(self, sym):
+     636:    def _apply_fallback_price(self, price, source_sym):
+     647:    def _apply_fallback_price_slot(self, price: float, source_sym: str):
+     651:    def _log_fallback_fail_slot(self, query_sym: str):
+     656:    def grab_chart_image(self) -> bytes:
+
+  ── 📄 call_put_tab/tab_options_panels.py
+     25:def _mk(text: str, color: str = "#dde0f0") -> QTableWidgetItem:
+     32:class PanelsMixin(PricePanelMixin):
+     37:    def _wrap_tbl(self, tbl, title, color):
+     46:    def _build_ctrl_panel(self) -> QSplitter:
+     211:    def _build_tbl_panel(self) -> QSplitter:
+     243:    def _build_iv_panel(self) -> QWidget:
+     252:    def _build_bot_panel(self) -> QSplitter:
+     312:    def _on_spin_n_changed(self, value: int):
+     354:    def _force_downgrade_spin_n(self):
+     377:    def _on_watch_blink(self):
+     393:    def _open_watch_popup(self):
+
+  ── 📄 call_put_tab/tab_options_price.py
+     26:def _mk(text: str, color: str = "#dde0f0") -> QTableWidgetItem:
+     54:class PricePanelMixin:
+     58:    def _build_price_panel(self) -> QGroupBox:
+     146:    def _build_position_panel(self) -> QGroupBox:
+     199:    def _build_price_pos_widget(self) -> QWidget:
+     239:    def _pp_set_quote(self, ask, bid):
+     244:    def _update_price_panel(self):
+     299:    def _update_price_panel_opt(self, side, strike, bid, ask, delta=None):
+     334:    def _pp_switch_to_und(self):
+     341:    def _safe_strike_int(self, strike) -> str:
+     348:    def _on_pp_quote_click(self, row: int, col: int):
+
+  ── 📄 call_put_tab/tab_options.py
+     55:def _mk(text: str, color: str = "#dde0f0") -> QTableWidgetItem:
+     62:class CallPutGrid(
+     81:    def __init__(self, mw):
+     137:    def _spl_style(self) -> str:
+     153:    def _spl(self, orient) -> QSplitter:
+     161:    def _wrap(widget) -> QWidget:
+     175:    def _wrap_scroll(widget, *, horizontal: bool = False) -> QScrollArea:
+     196:    def _build(self):
+     238:    def _build_watchlist_panel(self) -> QWidget:
+
+  ── 📄 call_put_tab/tab_options_settings.py
+     36:class SettingsMixin:
+     45:    def _build_layout_group(self) -> QGroupBox:
+     78:    def _save_layout_simple(self):
+     89:    def _load_layout_simple(self):
+     104:    def _auto_load_layout(self):
+     113:    def _save_window_geometry(self):
+     121:    def _restore_window_geometry(self):
+     132:    def _hook_window_geometry(self):
+     146:    def _get_extra_settings(self) -> dict:
+     170:    def _apply_extra_settings(self, s: dict):
+     221:    def _get_layout_snapshot(self) -> dict:
+     235:    def _apply_layout_snapshot(self, snap: dict):
+     250:    def _refresh_layout_presets(self):
+     259:    def _save_layout_preset(self):
+     271:    def _load_layout_preset(self):
+     281:    def _del_layout_preset(self):
+
+  ── 📄 call_put_tab/watch_alert_tab.py
+     16:class SpxAlertPanel(QDialog):
+     24:    def __init__(self, parent=None):
+     44:    def _build_ui(self):
+     66:    def _snap_to_bottom_right(self):
+     95:    def _get_title_bar_height(self) -> int:
+     106:    def _expand_panel(self):
+     116:    def mouseDoubleClickEvent(self, event):
+
+  ── 📄 call_put_tab/watch_cond_widget.py
+     53:def _label(text, color="#ccc", size=_FONT_SIZE):
+     58:def _op_cb(items=None):
+     65:def _val_ed(placeholder="0.00", width=70):
+     72:def _chk(label):
+     77:def _btn(text, bg="#1a3a6b", fg="#90caf9"):
+     85:def _row_chk_op_val(chk_label, op_items=None, val_ph="0.000"):
+     88:def _apply_font(widget, size=_FONT_SIZE):
+     93:def _tbl_item(text, color="#ddd"):
+     100:def _del_btn():
+     112:class WatchAlertTabMixin:
+     114:    def _init_spx_engine(self):
+     123:    def _build_spx_tab(self):
+     135:    def _build_spx_header(self):
+     151:    def _build_spx_cond_a(self):
+     197:    def _build_spx_cond_b(self):
+     245:    def _build_spx_ctrl(self):
+     261:    def _build_spx_log_box(self):
+     272:    def _spx_add_cond_a(self):
+     285:    def _spx_del_row_a(self):
+     294:    def _spx_add_cond_b_manual(self):
+     301:    def _spx_add_cond_b_row(self, opt_type, strike, pct, direction):
+     317:    def _spx_del_row_b(self):
+     326:    def add_strike_from_chain(self, strike: float, opt_type: str):
+     335:    def _spx_start(self):
+     376:    def _spx_stop(self):
+     391:    def _spx_save(self):
+     420:    def _spx_load(self):
+     459:    def _spx_set_light(self, state):
+     463:    def _spx_log(self, msg):
+     471:    def _on_spx_alert(self, level: int, msg: str):
+
+  ── 📄 call_put_tab/watchlist_font_patch.py
+     38:def patch_watchlist_font(grid_instance, delta: int = 3):
+
+  ── 📄 call_put_tab/watch_logic.py
+     30:class WatchLogicMixin:
+     36:    def _add_watch_rule(self):
+     116:    def _del_watch_rule(self, row):
+     127:    def _clear_watch_rules(self):
+     136:    def _eval_op(self, actual, op: str, threshold) -> bool:
+     147:    def _check_watch_rules(self):
+     279:    def _save_watch_rules(self):
+     294:    def _load_watch_rules_from_file(self):
+     377:    def _update_watch_status_label(self, active: bool):
+     411:    def _toggle_watch(self):
+     424:    def _load_watch_log(self):
+     436:    def _open_watch_log_folder(self):
+
+  ── 📄 call_put_tab/watch_log_widget.py
+     27:class WatchLogMixin:
+     33:    def _build_log_tab(self) -> QWidget:
+     130:    def _build_rules_tab(self) -> QWidget:
+     151:    def _on_watch_font_change(self, value: int):
+     156:    def _apply_font_to_widget(self, widget, size: int):
+     169:    def _pick_alert_sound(self):
+     180:    def _clear_alert_sound(self):
+     186:    def _play_alert_sound(self):
+     209:    def _show_watch_calendar(self):
+     243:    def _load_watch_log_by_date(self):
+
+════ 📦 call_put_tab/chain_saver ════
+
+  ── 📄 call_put_tab/chain_saver/buffer.py
+     33:def _et_offset_hours() -> int:
+     48:def now_et() -> datetime:
+     53:def today_et() -> date:
+     57:def et_to_kst(et_str: str) -> str:
+     70:def set_rate(r: float):
+     76:def _norm_cdf(x: float) -> float:
+     80:def calc_bs(S: float, K: float, T: float, iv: float,
+     101:def _days_to_expiry(expiry: str) -> float:
+     112:class ChainBuffer:
+     113:    def __init__(self):
+     130:    def register_greeks_subscriber(self, callback: Callable):
+     136:    def unregister_greeks_subscriber(self, callback: Callable):
+     141:    def set_context(self, sym: str, und_price: float):
+     146:    def update_price(self, expiry: str, strike: float, side: str,
+     159:    def update_greeks(self, expiry: str, strike: float, side: str,
+     176:    def update_snapshot(self, expiry: str, strike: float, side: str,
+     194:    def _recalc(self, expiry: str, strike: float, entry: dict):
+     226:    def _broadcast(self, expiry: str, strike: float, side: str,
+     240:    def flush(self) -> List[dict]:
+     270:    def clear(self):
+     274:    def size(self) -> int:
+     278:    def stats(self) -> dict:
+     305:    def reset_stats(self):
+
+  ── 📄 call_put_tab/chain_saver/core_conn_account.py
+     8:class ConnAccountMixin:
+     19:    def get_trading_port(self, is_live: bool, use_gateway: bool = False) -> int:
+     23:    def set_trading_mode(self, is_live: bool, use_gateway: bool = False):
+     50:    def reconnect_with_mode(self, is_live: bool, use_gateway: bool = False):
+     67:    def _connect_to_port(self, port: int):
+     77:    def _on_bridge_open_order(self, oid: int, sym: str, side: str,
+     107:    def _flush_open_orders(self):
+     113:    def _fetch_and_show_account(self):
+     155:    def _apply_account_label(self, acct: str):
+
+  ── 📄 call_put_tab/chain_saver/core_conn_expiry.py
+     9:def _today_et() -> date:
+     25:class ConnExpiryMixin:
+     33:    def _refresh_expiry_list(self):
+     45:    def _fetch_expiry_from_ibkr(self, sym: str):
+     122:    def _apply_ibkr_expiry(self, sym: str, raw_list: list):
+     159:    def _apply_expiry_combo(self):
+     198:    def _apply_local_expiry_fallback(self, sym: str):
+     252:    def _on_exp_change(self, idx):
+     258:    def _open_calendar(self):
+     271:    def _on_date_edit_changed(self, qdate):
+     274:    def _get_expiry(self, silent: bool = False):
+     301:    def _strikes_for_zone(self, atm, step, n):
+
+  ── 📄 call_put_tab/chain_saver/core_conn_ibkr.py
+     9:class ConnIbkrMixin:
+     12:    def _on_connected(self):
+     44:    def _auto_fetch_spxw_today(self):
+     61:    def _on_error(self, rid, code, msg):
+     80:    def _apply_mdt(self):
+     88:    def _apply_mdt_manual(self):
+
+  ── 📄 call_put_tab/chain_saver/core_conn.py
+     22:class CoreConnMixin(
+
+  ── 📄 call_put_tab/chain_saver/core_conn_signals.py
+     11:class ConnSignalsMixin:
+     14:    def _connect_signals(self):
+     44:    def _watch_dog(self):
+     68:    def _reconnect_flow(self):
+     114:    def _hook_fill_callbacks(self):
+     151:    def _on_fill_event(self, sym, qty, side, price):
+     164:    def _log(self, msg):
+     171:    def _on_tick_price(self, reqId, tickType, price, attrib=None):
+
+  ── 📄 call_put_tab/chain_saver/core_conn_spxw.py
+     9:def _today_et() -> date:
+     25:class ConnSpxwMixin:
+     28:    def _build_spxw_combo(self):
+     46:    def _on_spxw_select(self, idx):
+     68:    def _on_zone_change(self, btn):
+
+  ── 📄 call_put_tab/chain_saver/core_fetch.py
+     49:def _mdt_for_sym(sym: str, ib) -> int:
+     64:def _alive(widget):
+     73:class CoreFetchMixin(CoreFetchPosMixin):
+     89:    def _cl_front_month() -> str:
+     143:    def _make_fut_contract(self, sym: str):
+     167:    def _req_und(self, sym):
+     187:    def _refresh_und(self):
+     197:    def _arm_fetch_timeout(self):
+     206:    def _force_release_busy(self):
+     212:    def _fetch(self):
+     374:    def _init_tbl(self, tbl, strikes):
+     387:    def _tbl_click(self, row, col, side):
+     454:    def _tbl_dbl(self, row, col, side):
+     472:    def _on_watch_dbl(self, item):
+     514:    def _on_watch_single_click(self, item):
+     575:    def _notify_sniper_sync(self):
+     584:    def _w_add(self):
+     589:    def _w_del(self):
+
+  ── 📄 call_put_tab/chain_saver/db.py
+     15:def _resolve_dir() -> str:
+     29:def _db_path(day: str) -> str:
+     69:def _migrate(conn: sqlite3.Connection):
+     80:def open_db(day: str) -> sqlite3.Connection:
+     100:def insert_rows(conn: sqlite3.Connection, rows: List[Dict]) -> int:
+     129:def load_chain(day: str, sym: str = "",
+     146:def available_days() -> list:
+     154:def check_recent(day: str, minutes: int = 5) -> dict:
+
+  ── 📄 call_put_tab/chain_saver/__init__.py
+
+  ── 📄 call_put_tab/chain_saver/_init_saver.py
+     17:def init_chain_saver(main_win) -> ChainScheduler:
+
+  ── 📄 call_put_tab/chain_saver/scheduler.py
+     38:class ChainScheduler(QObject):
+     39:    def __init__(self, cp, buf: ChainBuffer, worker: SaveWorker,
+     71:    def set_status_label(self, lbl):
+     74:    def set_detail_label(self, lbl):
+     78:    def set_save_interval(self, ms: int):
+     85:    def _setup_file_logger(self):
+     106:    def log_path_today(self) -> str:
+     111:    def start(self):
+     147:    def stop(self):
+     165:    def _on_5s(self):
+     192:    def _flush_and_save(self):
+     209:    def _on_1min(self):
+     224:    def _on_2min(self):
+     239:    def _on_stat(self):
+     284:    def on_tick_price(self, req_id: int, tick_type: int, price: float):
+     299:    def on_tick_option(self, req_id: int, tick_type: int,
+     316:    def _set_status(self, state: str, count: int = 0):
+
+  ── 📄 call_put_tab/chain_saver/snapshot.py
+     46:def request_otm(ib, sym: str, expiry: str, tag: str,
+     78:def request_next(ib, sym: str, und: float,
+     124:def request_next2(ib, sym: str, und: float,
+     169:def cancel_map(ib, req_map: Dict[int, Tuple]) -> None:
+     178:def _req_stream(ib, rid: int, contract) -> None:
+     186:def _req_snapshot(ib, rid: int, contract) -> None:
+     198:def _today_et() -> date:
+     213:def _next_trading_day(days: int = 1) -> Optional[str]:
+
+  ── 📄 call_put_tab/chain_saver/worker.py
+     30:class SaveWorker:
+     31:    def __init__(self):
+     39:    def start(self):
+     44:    def stop(self):
+     52:    def enqueue(self, rows: List[dict]):
+     66:    def queue_size(self) -> int:
+     70:    def _run(self):
+
+════ 📦 call_put_tab/order_panel ════
+
+  ── 📄 call_put_tab/order_panel/emergency.py
+     15:class EmergencyMixin:
+     18:    def _emergency_sell_all(self):
+     23:    def _emergency_cancel_orders(self):
+     37:    def _on_global_cancel(self):
+     58:    def _emergency_sell_positions(self):
+
+  ── 📄 call_put_tab/order_panel/helpers.py
+     15:def _kst_now() -> str:
+     20:def _animate_press(btn):
+     33:def _spx_tag(sym: str, expiry: str) -> str:
+
+  ── 📄 call_put_tab/order_panel/__init__.py
+     33:class OrderPanelMixin(
+     50:    def _build_quick_order_panel(self) -> QWidget:
+
+  ── 📄 call_put_tab/order_panel/order_actions.py
+     22:class OrderActionsMixin:
+     25:    def _update_kst_labels(self):
+     30:    def _update_commission_label(self, qty=1):
+     34:    def _on_qord_type_toggle(self):
+     43:    def _fetch_open_orders(self):
+     103:    def _populate_open_order_tables(self):
+     121:    def _fill_amend_from_table(self, row):
+     140:    def _fill_cancel_from_table(self, row):
+     145:    def _try_connect_exec_refresh(self):
+
+  ── 📄 call_put_tab/order_panel/sell_actions.py
+     19:class SellActionsMixin(SellPlaceMixin):
+     23:    def _show_pos_sell_panel(self, side, strike, qty=1, price=None):
+     48:    def _pos_sell_execute(self):
+     62:    def _plus1tick_buy(self):
+     87:    def _sell_selected_order(self):
+     125:    def _sell_limit_order(self):
+     155:    def _bump_sell_price(self, delta: float):
+
+  ── 📄 call_put_tab/order_panel/sell_place.py
+     22:class SellPlaceMixin:
+     25:    def _place_sell_lmt(self, side, strike_txt, sym, qty, price, lbl, msg):
+
+  ── 📄 call_put_tab/order_panel/shortcuts.py
+     16:class ShortcutsMixin:
+     19:    def _setup_quick_order_shortcuts(self):
+     42:    def _sc_focus_price(self):
+     46:    def _sc_focus_qty(self):
+     51:    def _install_enter_next(src, dst):
+
+  ── 📄 call_put_tab/order_panel/tab_amend_cancel.py
+     32:def _make_order_tbl(sel_color: str = "#1a3a6b") -> QTableWidget:
+     44:def build_amend_tab(m, tab_w) -> None:
+     96:def build_cancel_tab(m, tab_w) -> None:
+
+  ── 📄 call_put_tab/order_panel/tab_new_order_buttons.py
+     21:def build_new_order_buttons(m, root_v) -> None:
+
+  ── 📄 call_put_tab/order_panel/tab_new_order.py
+     22:def build_new_order_tab(m) -> QWidget:
+     102:    def _on_adpt_toggle(checked):
+
+  ── 📄 call_put_tab/order_panel/tab_sell.py
+     20:def build_sell_tab(m, tab_w) -> None:
+
+  ── 📄 call_put_tab/order_panel/tab_sniper_order.py
+     20:def build_sniper_order_section(m, sn_v) -> None:
+
+  ── 📄 call_put_tab/order_panel/tab_sniper.py
+     23:def build_sniper_tab(m, tab_w) -> None:
+     109:def build_pos_sell_panel(m) -> QWidget:
+
+════ 📦 combo_libs ════
+
+  ── 📄 combo_libs/bridge_price_tick.py
+     45:class PriceTickSignal:
+     56:    def emit(self, req_id: int, tick_type: int, price: float) -> None:
+     72:    def connect(self, cb: Callable, req_ids: Optional[Set[int]] = None) -> None:
+     80:    def disconnect(self, cb: Callable) -> None:
+     85:    def disconnect_all(self) -> None:
+     91:    def subscriber_count(self) -> int:
+     102:def subscribe(cb: Callable, req_ids: Optional[Set[int]] = None) -> None:
+     117:def unsubscribe(cb: Callable) -> None:
+     122:def emit_tick(req_id: int, tick_type: int, price: float,
+
+  ── 📄 combo_libs/combo_constants (copy).py
+     327:def mk_item(text, color=None):
+
+  ── 📄 combo_libs/combo_constants.py
+     18:def _pal() -> dict:
+     35:def _pal() -> dict:
+     51:def get_splitter_style() -> str:
+     66:def get_tbl_style() -> str:
+     373:def mk_item(text, color=None):
+
+  ── 📄 combo_libs/combo_direction_banner.py
+     106:def _get_none_style() -> dict:
+     131:class DirectionBanner(QWidget):
+     137:    def __init__(self, parent=None):
+     141:    def _build_ui(self):
+     168:    def refresh(self, tbl_legs):
+     186:    def _apply(self, mode: str, banner: str, sub: str, tag: str):
+     200:def _parse_all_legs(tbl) -> list:
+     249:def _detect_strategy(legs: list) -> dict:
+     404:def _r(mode, banner, sub, tag) -> dict:
+     407:def _k(leg) -> str:
+     412:def _ks(k: float) -> str:
+
+  ── 📄 combo_libs/combo_order_bag.py
+     43:def _get_selected_exchange(self) -> str:
+     58:def _is_tick_aligned(price: float, tick: float) -> bool:
+     65:def _ask_tick_snap_dialog(parent, price: float, tick: float,
+     98:    def _make_btn(snap_price, label_top, label_bot, color):
+     119:    def _pick(p):
+     147:def _load_conid_cache() -> None:
+     157:def _purge_stale_conid_keys() -> None:
+     168:def _save_conid_cache() -> None:
+     176:def _conid_key(symbol: str, right: str, strike: float, expiry: str) -> str:
+     187:def _sleep_place_sell_order(self, legs: list, lmt_price: float,
+     302:def _place_combo_legs(self, legs: list, strat: str) -> None:
+     344:def _place_bag_with_conids(self, bag, combo_legs: list,
+     371:    def _on_cd(reqId, contractDetails):
+     383:    def _on_cd_end(reqId):
+     393:    def _disconnect_cd():
+     414:    def _on_timeout():
+     429:def _do_send(self, bag, combo_legs: list, legs: list, strat: str,
+     446:def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
+
+  ── 📄 combo_libs/combo_order_callbacks.py
+     41:def _alloc_stream_tid() -> int:
+     51:def connect_order_callbacks(self) -> None:
+     67:def disconnect_order_callbacks(self) -> None:
+     83:def _on_order_status(self, oid: int, status: str,
+     325:def _on_exec_details(self, oid: int, sym: str,
+     375:def _start_position_price_stream(self, pending: dict) -> None:
+     402:    def _make_tick_handler(leg_idx: int):
+     472:def _calc_bag_net(self, oid: int, legs: list) -> Optional[float]:
+     499:def _get_leg_conid(self, leg: dict) -> int:
+     515:def restart_position_price_streams(self) -> None:
+     558:def stop_position_price_stream(self, oid: int) -> None:
+     579:def _set_panel_status(panel, oid: int, text: str) -> None:
+     588:def _set_panel_filled(panel, oid: int, avg_price: Optional[float]) -> None:
+     603:def _set_panel_cancelled(panel, oid: int) -> None:
+     609:def _update_panel_entry_price(panel, oid: int, price: float) -> None:
+     623:def _get_avg_price(self, oid: int) -> Optional[float]:
+     627:def _deactivate_chaser_safe(self, reason: str = "") -> None:
+
+  ── 📄 combo_libs/combo_order_chaser.py
+     60:def _get_tick_size(price: float, symbol: str = "") -> float:
+     74:def _snap_to_tick(price: float, tick: float, direction: str = "buy") -> float:
+     90:def init_chaser_state(self) -> None:
+     108:def register_chaser(self, oid: int, price: float, action: str,
+     161:def deactivate_chaser(self, reason: str = "체결 완료") -> None:
+     178:def cancel_bag_order(self) -> None:
+     204:def _update_cancel_ui(self, active: bool) -> None:
+     228:def on_chase_click(self) -> None:
+     243:def _start_auto_timer(self) -> None:
+     253:def _stop_auto_timer(self) -> None:
+     260:def _auto_chase_tick(self) -> None:
+     281:def _do_chase(self, reason: str = "") -> None:
+     315:    def _cleanup():
+     326:    def _on_tick(req_id: int, tick_type: int, price: float) -> None:
+     343:    def _on_timeout() -> None:
+     381:def _do_chase_with_price(self, mid: Optional[float], reason: str) -> None:
+     437:def _read_mid_from_cache(self) -> Optional[float]:
+     454:def _modify_order(self, oid: int, new_price: float) -> None:
+     496:def _is_auto_mode(self) -> bool:
+     506:def ensure_chaser_auto_off(self) -> None:
+     524:def _update_chaser_ui(self, active: bool) -> None:
+     538:def _notify_user(self, msg: str) -> None:
+
+  ── 📄 combo_libs/combo_order_logic.py
+     55:def _is_after_hours() -> bool:
+     69:def _get_session_info() -> tuple:
+     100:def _calc_margin_local(self, legs: list) -> tuple:
+     128:def _on_synthetic_order(self):
+     170:def _on_check_margin(self):
+     197:def _on_cancel_bag_order(self):
+     205:def _on_close_position_order(self, pos: dict, lmt_price: float = None,
+     281:def _close_ib_position(self, pos: dict, lmt_price: float = None,
+     381:def _place_combo_legs_lmt(self, legs: list, strat: str, lmt_price: float):
+     394:def _init_synthetic_panel_callbacks(self):
+     399:    def _close_cb(pos, lmt_price=None, *args, **kwargs):
+     433:def _on_manual_modify(self, oid: int, new_price: float):
+     450:def _on_chaser_mode_changed(self, mode: str):
+     463:def _on_pos_reconnect_hook(self):
+     522:def _load_ib_positions(self):
+     529:    def _on_pos(account, contract, pos, avg_cost):
+     547:    def _on_pos_end():
+
+  ── 📄 combo_libs/combo_order_open.py
+     69:def on_open_orders(self):
+     96:    def _finish(orders):
+     110:    def _collect_order(oid, contract, order, state):
+     123:    def _on_end(*_):
+     133:    def _disconnect_bridge():
+     190:    def _timeout():
+     219:def on_modify_order(self):
+     225:def on_cancel_order(self):
+     231:def _do_cancel_order(self, oid: int) -> bool:
+     272:def _modify_tick(self, direction: int):
+     367:def _cancel_selected(self):
+     447:def _is_market_hours_et() -> bool:
+     464:def _subscribe_open_order_prices(self, ib, orders: list) -> None:
+
+  ── 📄 combo_libs/combo_order_special_condition.py
+     39:def _tg(msg: str) -> None:
+     47:def _tick(price: float) -> float:
+     51:def _modify_direct(w: dict, new_price: float) -> None:
+     89:def notify_filled(pos: dict, avg_price: float) -> None:
+     103:def notify_closed(pos: dict) -> None:
+     121:class SpecialFillWatcher:
+     127:    def __new__(cls):
+     136:    def get(cls) -> "SpecialFillWatcher":
+     139:    def watch(self, ref, oid: int, target: float,
+     170:    def unwatch(self, oid: int) -> None:
+     180:    def on_net_price_update(self, oid: int, net_price: float) -> None:
+     199:    def _arm(self, oid: int, delay: int) -> None:
+     211:    def _fire(self, oid: int) -> None:
+
+  ── 📄 combo_libs/combo_order_utils.py
+     38:def _parse_legs_from_table(self) -> list:
+     67:def _parse_expiry_display(display: str) -> str:
+     132:def _validate_expiry_not_past(yyyymmdd: str) -> str:
+     151:def _calc_required_margin(legs: list) -> float:
+     185:    def _safe_qty(leg):
+     191:    def _safe_prem(leg):
+     197:    def _sort_by_strike(lst, reverse=False):
+
+  ── 📄 combo_libs/combo_order_whatif.py
+     29:def _on_whatif_acct_value(self, tag: str, value: str, currency: str, account: str):
+     65:def _on_whatif_acct_end(self):
+     80:def _on_whatif_result(self, oid, init_before, init_after,
+     117:def _finish_whatif(self, session_id: int):
+     168:def _send_whatif_order(self, legs: list, strat: str, cost_str: str, on_done=None):
+     325:    def _check_timeout(sid):
+
+  ── 📄 combo_libs/combo_pnl_calc.py
+     18:def _make_price_range(min_s: float, max_s: float,
+     32:def _leg_pnl_at_expiry(leg: dict, price_range: list) -> list:
+     52:def _find_breakevens(price_range: list, total_pnl: list,
+     67:def _fill_scenario_table(self, price_range, total_pnl,
+
+  ── 📄 combo_libs/combo_position_store.py
+     48:def save_one_position(pos: dict) -> None:
+     81:def remove_position(oid: int) -> None:
+     93:def update_position_current(oid: int, current: float) -> None:
+     114:def safe_remove_after_order(oid: int, log_fn=None) -> None:
+     125:def manual_remove_position(oid: int, panel=None, ref=None,
+     154:def record_trade_history(pos: dict, exit_price: float, close_type: str) -> None:
+     185:def load_trade_history() -> list:
+     196:def _append_history(record: dict) -> None:
+     211:def load_positions() -> list:
+     251:def restore_on_reconnect(self) -> None:
+     300:    def _show_file_positions(reason="파일"):
+     332:    def _restore_done(show_file=False):
+     346:    def _on_pos(account, contract, pos_qty, avg_cost):
+     388:    def _on_pos_end():
+     512:    def _timeout():
+     542:def _merge(ib_buf: list, saved_by_oid: dict, self) -> list:
+     551:    def _ib_sig(ib_pos: dict) -> str:
+     617:def _is_expired(pos: dict) -> bool:
+     646:def _enrich_strategy_name(pos: dict) -> str:
+     668:def _ib_sig_simple(ib_pos: dict) -> str:
+     676:def _write(data: list) -> None:
+     688:def _write_atomic(data: list) -> None:
+     696:def _write_atomic_path(path: Path, text: str) -> None:
+     719:def _check_executions_and_clean(self, panel, saved_by_oid: dict,
+     741:    def _cleanup():
+     750:    def _on_exec(req_id, contract, execution):
+     769:    def _on_exec_end(req_id):
+     837:def _ensure_restored_streams(self, saved_by_oid: dict) -> None:
+     923:    def _cleanup():
+     931:    def _on_cd(req_id, cd):
+
+  ── 📄 combo_libs/combo_profit_alert_banner(1).py
+     46:def calc_sell_pct(entry: float, current: float) -> float:
+     52:def calc_buy_pct(entry: float, current: float) -> float:
+     59:class ProfitAlertBanner(QWidget):
+     62:    def __init__(self, parent=None, wolf_banner=None):
+     71:    def _build(self) -> None:
+     190:    def update_pct(self, pct: float) -> None:
+     201:    def clear(self) -> None:
+     207:    def _toggle_test(self) -> None:
+     220:    def _test_tg(self) -> None:
+     232:    def _test_wolf_on(self) -> None:
+     238:    def _test_wolf_off(self) -> None:
+     244:    def _test_watcher(self) -> None:
+     260:    def _apply_style(self, bg, fg, icon, msg, pct_text) -> None:
+
+  ── 📄 combo_libs/combo_profit_alert_banner.py
+     35:def load_thresholds() -> dict:
+     50:def save_thresholds(t1: int, t2: int, t3: int) -> None:
+     62:def _build_levels(t1: int, t2: int, t3: int) -> list:
+     82:def _btn_base_ss():
+     111:def calc_sell_pct(entry: float, current: float) -> float:
+     117:def calc_buy_pct(entry: float, current: float) -> float:
+     123:def _play_sound(path: str) -> None:
+     127:    def _run():
+     143:def _tg(msg: str) -> None:
+     151:def _level_tag(pct: float, t1: int = 350, t2: int = 450, t3: int = 500) -> str:
+     160:class ProfitAlertBanner(QWidget):
+     163:    def __init__(self, parent=None, wolf_banner=None):
+     189:    def _build(self) -> None:
+     296:    def update_pct(self, pct: float) -> None:
+     326:    def clear(self) -> None:
+     333:    def set_sound_path(self, path: str) -> None:
+     336:    def reload_thresholds(self) -> None:
+     348:    def _on_alert_tick(self) -> None:
+     352:    def _fire_profit_alert(self, pct: float, level: str) -> None:
+     375:    def _select_sound(self) -> None:
+     396:    def _toggle_test(self) -> None:
+     409:    def _test_tg(self) -> None:
+     412:    def _test_wolf_on(self) -> None:
+     418:    def _test_wolf_off(self) -> None:
+     422:    def _test_watcher(self) -> None:
+     438:    def _set_style(self, bg, fg, icon, msg, pct_text) -> None:
+
+  ── 📄 combo_libs/combo_strategy_guide_popup (copy).py
+     22:class StrategyGuidePopup(QDialog):
+     25:    def __init__(self, guide: dict, parent=None):
+     37:    def _build_ui(self):
+     172:    def _on_confirm(self):
+     178:    def _position_popup(self):
+     195:    def show(self):
+     222:def _step_color(idx: int) -> str:
+     230:def reset_suppress():
+
+  ── 📄 combo_libs/combo_strategy_guide_popup.py
+     24:class StrategyGuidePopup(QDialog):
+     27:    def __init__(self, guide: dict, parent=None):
+     37:    def _build_ui(self):
+     182:    def _on_confirm(self):
+     189:    def _position_popup(self):
+     203:    def show(self):
+     221:def _step_color(idx: int) -> str:
+     230:def reset_suppress():
+
+  ── 📄 combo_libs/combo_ui_chaser_row.py
+     20:def _pal():
+     31:def _build_chaser_row(self) -> QWidget:
+
+  ── 📄 combo_libs/combo_ui_left_chain.py
+     23:def _on_chain_click(self, row: int, col: int, side: str):
+     99:def _write_single(self, leg_row: int, side: str, strike: float, price):
+     118:    def _set(col, text, _r=leg_row):
+     153:def _write_and_fetch_plan(self, plan: list, prices: dict):
+     226:    def _auto_calc():
+     238:def _fetch_single(self, leg_row: int, cp: str, strike: float):
+     245:def _make_dist_item(strike: float, und_price: float, side: str) -> QTableWidgetItem:
+     281:def _bulk_fetch_conids(self, symbol: str, expiry: str,
+     321:    def _finish():
+     330:    def _on_cd(req_id, cd):
+     338:    def _on_cd_end(req_id):
+     359:    def _send(idx):
+     373:    def _timeout():
+     386:def _start_restored_position_streams(self) -> None:
+     427:def _inject_conids_to_legs(self, legs: list, pos: dict) -> None:
+     459:def _update_display_delta(self) -> None:
+
+  ── 📄 combo_libs/combo_ui_left_chain_sync.py
+     28:def attach_chain_sync_timer(panel) -> QTimer | None:
+     55:def detach_chain_sync_timer(panel) -> None:
+
+  ── 📄 combo_libs/combo_ui_left_price.py
+     9:def _req_sym_price(self):
+     56:def _on_combo_und_tick(self, rid, tt, price):
+     64:def _apply_und_price_ui(self, price: float):
+     75:def _refresh_dist_col(self, und_price: float):
+
+  ── 📄 combo_libs/combo_ui_left.py
+     68:class LeftPanelMixin(_SleepOrderMixin):
+     72:    def _build_left_panel(self) -> QGroupBox:
+     77:    def _build_chain_panel(self) -> QGroupBox:
+     202:    def _build_call_chain(self) -> QWidget:
+     221:    def _build_put_chain(self) -> QWidget:
+     241:    def _apply_chain_style(tbl: QTableWidget):
+     250:    def _refresh_chain_tbl_style(tbl: QTableWidget):
+     260:    def refresh_theme(self):
+     322:    def _on_open_capture_folder(self):
+     335:    def _on_delta_toggle(self, state: int):
+     342:    def _req_sym_price(self):
+     345:    def _on_combo_und_tick(self, rid, tt, price):
+     348:    def _apply_und_price_ui(self, price: float):
+     351:    def _refresh_dist_col(self, und_price: float):
+     355:    def _auto_sync_chain(self):
+     361:    def _sync_chain(self):
+     371:    def _sync_chain_from_cp(self, cp, silent=False):
+     578:    def _on_chain_click(self, row: int, col: int, side: str):
+     582:    def _on_capture_toggle(self, checked: bool):
+     603:    def _do_capture(self):
+
+  ── 📄 combo_libs/combo_ui_leg_extra.py
+     28:def _manual_add_leg(self):
+     49:def _manual_del_leg(self):
+     63:def _extra_add_leg(self):
+     100:def _extra_del_leg(self):
+     115:def _on_strike_changed(self, item):
+     131:    def _cell(c):
+     148:def _fetch_conid_then_premium(self, row, symbol, strike, cp, expiry):
+     177:    def _on_cd(req_id, cd):
+     181:    def _on_cd_end(req_id):
+     214:    def _timeout():
+
+  ── 📄 combo_libs/combo_ui_leg_logic (copy).py
+     24:def _fmt_expiry(raw: str) -> str:
+     38:def _on_strat_change(self, idx: int):
+     58:def _maybe_show_setup_guide(self, strat: str):
+     90:def _get_leg_template(self, strat: str) -> list:
+     163:def _rebuild_legs(self, legs: list):
+     204:def _insert_leg_row(self, leg: dict, row_idx: int):
+     237:def _reset_legs(self):
+     257:def _set_leg_mode(self, mode: str):
+     277:def _update_add_btn_state(self):
+
+  ── 📄 combo_libs/combo_ui_leg_logic.py
+     32:def _fmt_expiry(raw: str) -> str:
+     46:def _on_strat_change(self, idx: int):
+     72:def _maybe_show_setup_guide(self, strat: str):
+     93:def _get_leg_template(self, strat: str) -> list:
+     170:def _rebuild_legs(self, legs: list):
+     189:def _insert_leg_row(self, leg: dict, row_idx: int):
+     222:def _reset_legs(self):
+     242:def _set_leg_mode(self, mode: str):
+     262:def _update_add_btn_state(self):
+     278:def _fill_butterfly_legs(self, strat: str, leg0_strike: float):
+     282:    def _set(row, strike):
+     306:def _apply_gap_to_2leg_spread(self, strat: str, leg0_strike: float):
+
+  ── 📄 combo_libs/combo_ui_leg_panel (copy).py
+     24:def _build_leg_left(self) -> QWidget:
+     188:def _update_guide_btn_state(self):
+     208:def _show_guide_popup(self):
+     234:def _on_leg_item_changed(self, item):
+     247:def _recalc_net_price(self) -> float:
+     284:def fill_premium_from_market(self, row: int, con_id: int):
+     288:def _cancel_stream(self, ticker_id: int):
+     292:def cancel_all_streams(self):
+     296:def _set_premium_cell(self, row: int, value: float):
+     303:def _apply_set_input(self, sell_edit, buy_edit):
+     307:def _set_strategy_by_name(self, strat_name: str):
+
+  ── 📄 combo_libs/combo_ui_leg_panel.py
+     34:def _build_leg_left(self) -> QWidget:
+     216:    def _on_item_changed(item):
+     235:def _update_guide_btn_state(self):
+     250:def _show_guide_popup(self):
+     274:def _on_leg_item_changed(self, item):
+     283:def _recalc_net_price(self) -> float:
+     320:def fill_premium_from_market(self, row: int, con_id: int):
+     325:def _cancel_stream(self, ticker_id: int):
+     330:def cancel_all_streams(self):
+     335:def _set_premium_cell(self, row: int, value: float):
+     342:def _apply_set_input(self, sell_edit, buy_edit):
+     347:def _set_strategy_by_name(self, strat_name: str):
+     351:def _on_gap_changed(self, gap: int):
+     366:    def _set(row, strike):
+
+  ── 📄 combo_libs/combo_ui_leg_setinput.py
+     10:def _apply_set_input(self, sell_edit, buy_edit):
+     52:def _set_strategy_by_name(self, strat_name: str):
+     64:def build_set_input_panel(self):
+
+  ── 📄 combo_libs/combo_ui_leg_stream.py
+     22:def _cache_conid_from_row(self, row: int, con_id: int):
+     64:def fill_premium_from_market(self, row: int, con_id: int):
+     93:    def _on_tick(req_id: int, tick_type: int, price: float):
+     123:def _cancel_stream(self, ticker_id: int):
+     141:def cancel_all_streams(self):
+     161:def _set_premium_cell(self, row: int, value: float):
+
+  ── 📄 combo_libs/combo_ui_net_price_display.py
+     30:def _pal() -> dict:
+     52:def _debit_colors(t: dict) -> tuple[str, str]:
+     60:def _credit_colors(t: dict) -> tuple[str, str]:
+     67:def _delta_colors(t: dict) -> tuple[str, str]:
+     90:def _resolve_colors(key: str, t: dict):
+     109:class NetPriceDisplay(QWidget):
+     130:    def __init__(self, parent=None):
+     149:    def _build_ui(self):
+     236:    def _build_mode_toggle_row(self) -> QHBoxLayout:
+     264:    def _toggle_style(active: bool) -> str:
+     275:    def _set_mode(self, manual: bool):
+     291:    def refresh(self, buy_total: float, sell_total: float):
+     333:    def get_net_price(self) -> float:
+     340:    def get_bag_params(self) -> dict:
+     364:    def apply_theme(self) -> None:
+     402:    def reset(self):
+     423:    def update_delta_pnl(self, legs: list, entry: float = 0.0) -> None:
+     441:    def _recalc_delta_pnl(self, entry: float) -> None:
+     495:    def _blink_dot(self):
+
+  ── 📄 combo_libs/combo_ui_net_price_input.py
+     24:class ManualPriceRow(QWidget):
+     37:    def __init__(self, parent=None):
+     46:    def _build_ui(self):
+     119:    def _step_btn_style(bg: str, fg: str) -> str:
+     132:    def _on_plus(self):
+     135:    def _on_minus(self):
+     138:    def _on_edit_finished(self):
+     145:    def _on_direction_changed(self):
+     148:    def _set_price_clamp(self, val: float):
+     156:    def get_price(self) -> float:
+     160:    def is_ready(self) -> bool:
+     167:    def is_debit(self) -> bool:
+     171:    def set_price(self, val: float):
+     175:    def set_direction(self, is_debit: bool):
+
+  ── 📄 combo_libs/combo_ui_panel_build.py
+     31:def _pal() -> dict:
+     49:class _SyntheticPanelBuildMixin:
+     56:    def _build_ui(self):
+     147:    def refresh_theme(self):
+     212:    def _apply_action_btn_styles(self, t: dict):
+     248:    def _build_margin_tab(self) -> QWidget:
+     303:    def _build_position_tab(self) -> QWidget:
+     368:    def _build_close_control_row(self) -> QWidget:
+     429:    def _build_open_orders_tab(self) -> QWidget:
+
+  ── 📄 combo_libs/combo_ui_panel_constants.py
+     14:def _f(pt: int, bold: bool = False) -> QFont:
+     24:def _pal() -> dict:
+     44:def get_tab_style() -> str:
+     60:def get_tbl_style() -> str:
+
+  ── 📄 combo_libs/combo_ui_panel_utils.py
+     14:def _calc_delta_pnl_pct(pos: dict) -> tuple:
+     73:def _enrich_strategy_name(pos: dict) -> str:
+     102:def _format_expiry(legs: list) -> tuple:
+
+  ── 📄 combo_libs/combo_ui_right_panel.py
+     27:    def _attach_chain_sync(panel): pass  # 모듈 없을 경우 무시
+     35:class RightPanelMixin:
+     39:    def _build_right_panel(self) -> QWidget:
+     65:    def _build_strategy_input_panel(self) -> QGroupBox:
+     85:    def _build_leg_right(self) -> QWidget:
+     293:    def _on_open_orders(self):
+     312:    def _on_modify_order(self):
+     317:    def _on_cancel_order(self):
+     322:    def _on_chaser_mode_changed(self, btn):
+     330:    def _build_account_safety_bar(self) -> QWidget:
+     387:    def _refresh_account_display(self):
+     416:    def _set_account_info(self, acct: str):
+     447:    def _guard_live_order(self) -> bool:
+     468:    def _attach_left_chain_sync(self) -> None:
+     487:    def _on_chase_click(self):
+     535:def _on_synthetic_order_guarded(self):
+     558:def _calc_pnl_with_qty(self):
+     571:def _request_margin_then_order(self, legs, strat, cost_str, confirm=False):
+     584:    def _on_acct_value(reqId, account, tag, value, currency):
+     603:    def _on_acct_end(reqId):
+     704:    def _timeout():
+
+  ── 📄 combo_libs/combo_ui_right_panels_ext (copy).py
+     37:def _detect_strategy_type(legs: list, strat_name: str = "") -> str:
+     56:def _build_result_panel(self) -> QGroupBox:
+     116:def _build_spread_chart_panel(self) -> QGroupBox:
+     148:def _cost_label(net_cost: float, net_cost_100: float) -> str:
+     159:def _calc_pnl(self):
+     314:def _set_scenario_headers(self, col4_label: str, col5_label: str):
+     324:def _colorize_scenario_table(self):
+     346:def _show_strat_desc(self):
+     363:def _toggle_optimizer_panel(self):
+
+  ── 📄 combo_libs/combo_ui_right_panels_ext.py
+     37:def _detect_strategy_type(legs: list, strat_name: str = "") -> str:
+     61:def _build_result_panel(self) -> QGroupBox:
+     138:def _build_spread_chart_panel(self) -> QGroupBox:
+     227:def _apply_chart_style(self, color_list=None):
+     242:def _calc_pnl(self, set_qty=None):
+     422:def _colorize_scenario_table(self, net_cost: float):
+     446:def _show_strat_desc(self):
+     467:def _toggle_optimizer_panel(self):
+
+  ── 📄 combo_libs/combo_ui_scenario_bs.py
+     14:class _ScenarioBSMixin:
+     20:    def _bs_price(S: float, K: float, T: float,
+     56:    def _bs_spread_price(self, S_new: float, T_new: float,
+     116:    def _calc(self, move: float, hours_left: float, div: float) -> dict:
+
+  ── 📄 combo_libs/combo_ui_scenario_logic.py
+     13:class _ScenarioLogicMixin:
+     17:    def set_greeks(self, legs: list, entry: float = 0.0,
+     101:    def _auto_update_time(self) -> None:
+     155:    def _refresh(self):
+
+  ── 📄 combo_libs/combo_ui_scenario_tab.py
+     25:class ScenarioTab(_ScenarioLogicMixin, _ScenarioBSMixin, QWidget):
+     41:    def __init__(self, parent=None):
+     66:    def _build_ui(self):
+     195:    def _mk_info(self, text: str) -> QLabel:
+     200:    def _mk_slider_row(self, label, mn, mx, default, step,
+     224:    def _mk_card(self, title: str, big: bool = False):
+
+  ── 📄 combo_libs/combo_ui_spike_tab.py
+     34:    def _f(pt, bold=False):
+     38:    def get_tbl_style(): return ""
+     39:    def _pal(): return {
+     48:def _spike_tg(ev) -> None:
+     68:class _Bridge(QObject):
+     73:class SpikeMonitorTab(QWidget):
+     75:    def __init__(self, parent=None):
+     85:    def _build(self) -> None:
+     238:    def _on_toggle(self, checked: bool) -> None:
+     288:    def _auto_fill_strikes(self) -> None:
+     306:    def _on_status(self, msg: str) -> None:
+     313:    def _on_event(self, ev) -> None:
+     352:    def _wire(self) -> None:
+     358:    def _find_ref(self):
+     408:    def _clear_table(self) -> None:
+     411:    def _open_log_folder(self) -> None:
+     425:    def _lbl(text: str, t: dict, color: str = "") -> QLabel:
+     433:    def _time_edit(default: str) -> QLineEdit:
+     446:    def _strike_edit() -> QLineEdit:
+     458:    def _spin(mn, mx, val, suffix="") -> QSpinBox:
+     470:    def _dspin(mn, mx, val, suffix="") -> QDoubleSpinBox:
+     483:    def _btn_style(active: bool) -> str:
+     495:    def _hline() -> QFrame:
+     502:    def _sep_v() -> QFrame:
+
+  ── 📄 combo_libs/combo_ui_synthetic_panel_patch.py
+     25:def _refresh_pos_table(self):
+     192:def update_position_prices(self, oid: int, current_price: float):
+     224:    def _set(col, text, color):
+
+  ── 📄 combo_libs/combo_ui_synthetic_panel.py
+     49:class SyntheticStatusPanel(_SyntheticPanelBuildMixin, QWidget):
+     52:    def __init__(self, parent=None):
+     94:    def _on_pos_row_clicked(self, row, col):
+     123:    def _on_close_lmt(self):
+     135:    def _on_close_mkt(self):
+     161:    def _on_close_position(self):
+     165:    def _on_cancel_pos_order(self):
+     177:    def _on_chaser_mode_toggle(self):
+     189:    def _on_order_row_clicked(self, row, col):
+     200:    def _on_manual_price_send(self):
+     215:    def _on_modify_tick(self, direction: int) -> None:
+     250:    def _on_margin_mode_toggle(self):
+     261:    def _inject_sleep_ref(self):
+     294:    def _refresh_pos_table(self):
+     448:    def update_position_prices(self, oid: int, current_price: float):
+     524:    def add_position(self, fill_info: dict):
+     534:    def _open_close_reserve_dialog(self, pos: dict) -> None:
+     702:    def _manual_delete_position(self, oid: int) -> None:
+     737:    def clear_positions(self):
+     741:    def update_margin(self, available: float, required: float,
+     763:    def update_open_orders(self, orders: list):
+     789:    def get_selected_order(self):
+     792:    def update_scenario_greeks(self, legs: list, entry: float = 0.0,
+     798:    def set_close_position_callback(self, cb):
+     801:    def set_cancel_order_callback(self, cb):
+     804:    def set_manual_modify_callback(self, cb):
+     807:    def set_chaser_mode_callback(self, cb):
+     810:    def set_margin_mode_callback(self, cb):
+
+  ── 📄 combo_libs/combo_wolf_system_banner.py
+     40:def _btn_base_ss():
+     60:def _play_sound(path: str) -> None:
+     64:    def _run():
+     84:def _tg(msg: str) -> None:
+     92:class WolfSystemBanner(QWidget):
+     95:    def __init__(self, parent=None):
+     118:    def _build(self) -> None:
+     160:    def set_on(self, target_price: float = 0.0, strategy: str = "") -> None:
+     178:    def set_off(self) -> None:
+     189:    def is_on(self) -> bool:
+     192:    def set_sound_path(self, path: str) -> None:
+     197:    def _on_alert_tick(self) -> None:
+     201:    def _fire_alert(self) -> None:
+     213:    def _select_sound(self) -> None:
+     232:    def _blink(self) -> None:
+     238:    def _apply_on(self) -> None:
+     248:    def _apply_off(self) -> None:
+
+  ── 📄 combo_libs/core_conn_ibkr.py
+     20:class ConnIbkrMixin:
+     23:    def _on_connected(self):
+     77:    def _auto_fetch_spxw_today(self):
+     105:    def _on_error(self, rid, code, msg):
+     126:    def _apply_mdt(self):
+     134:    def _apply_mdt_manual(self):
+     178:    def _setup_tick_router(self) -> None:
+
+  ── 📄 combo_libs/core_conn_tick_cache.py
+     26:    def _tick_subscribe(cb, req_ids=None): pass
+     27:    def _tick_unsubscribe(cb): pass
+     34:    def _notify_sleep_watcher(cp, r): pass
+     35:    def _flush_chain_price(cp, r): pass
+     36:    def _patch_chain_price(ct, cp, r): pass
+     43:class TickCacheMixin:
+     46:    def _init_tick_cache(self):
+     61:    def _on_tick_price(self, reqId: int, tickType: int,
+     90:    def _on_tick_option(self, reqId: int, tickType: int,
+     106:    def _flush_tick_ui(self):
+     114:    def _flush_one_req(self, req_id: int):
+     147:    def _set_cell_price(self, tbl, row: int, col: int,
+     167:    def _apply_greeks_to_row(self, tbl, row: int,
+     177:    def _apply_tick_price_direct(self, req_id: int, price_ticks: dict):
+     184:    def _refresh_opt_panel_from_cache(self, req_id: int):
+     192:    def get_cached_price(self, req_id: int, tick_type: int) -> float | None:
+     195:    def get_cached_greek(self, req_id: int, field: str) -> float | None:
+     198:    def pause_tick_ui_flush(self):
+     202:    def resume_tick_ui_flush(self):
+
+  ── 📄 combo_libs/core_conn_tick_cache_sleep.py
+     22:def _notify_sleep_watcher(cp, reqId: int) -> None:
+     44:def _flush_chain_price(cp, reqId: int) -> None:
+     63:def _patch_chain_price(combo_tab, cp, reqId: int) -> None:
+
+  ── 📄 combo_libs/core_theme.py
+     517:def set_theme(name: str) -> None:
+     526:def current_palette() -> dict[str, str]:
+     535:def make_style(fs: int = DEFAULT_FONT_SIZE, theme: str = None) -> str:
+     750:def make_theme_selector(parent=None, on_change=None):
+     769:    def _apply(theme_name: str):
+
+  ── 📄 combo_libs/futures_monitor_tab.py
+     48:    def _pal():
+     57:    def get_tbl_style():
+     72:def _now_et() -> str:
+     80:def _futures_log(direction: str, price: float, n: int, cond_type: str = "CONSEC") -> None:
+     95:def _tg_send(msg: str) -> None:
+     97:    def _send():
+     106:def _play_sound(path: str = "") -> None:
+     107:    def _do():
+     140:class WatchCondition:
+     189:class _Bridge(QObject):
+     199:class FuturesMonitorCore:
+     206:    def __init__(self, bridge: _Bridge):
+     217:    def add_cond(self, cond: WatchCondition):
+     221:    def remove_cond(self, cond_id: str):
+     225:    def all_conds(self) -> list[WatchCondition]:
+     230:    def on_tick(self, sym: str, price: float):
+     242:    def _build_tick_candle(self, sym: str, price: float):
+     267:    def _eval_candle_conds(self, sym: str, close: float):
+     276:    def _eval_consec_for_sym(self, sym: str, close: float):
+     285:    def _eval_tick_conds(self, sym: str, price: float):
+     297:    def on_option(self, sym: str, bid: float, ask: float):
+     314:    def _eval_consec(self, c: WatchCondition):
+     332:    def _eval_level(self, c: WatchCondition, price: float):
+     349:    def _eval_double_bottom(self, c: WatchCondition, price: float):
+     388:    def _reset_db(self, c: WatchCondition, price: float):
+     395:    def _fire(self, c: WatchCondition, detail: dict):
+     432:class FuturesMonitorTab(QWidget):
+     437:    def __init__(self, parent=None):
+     451:    def _build_ui(self):
+     688:    def _connect_signals(self):
+
+  ── 📄 combo_libs/__init__.py
+
+  ── 📄 combo_libs/Main_config.py
+     67:class MainConfigStore:
+     79:    def __new__(cls):
+     86:    def _load(self):
+     97:    def save(self):
+     105:    def get(self, key, default=None):
+     108:    def set(self, key, value):
+     113:    def heartbeat_interval_min(self) -> int:
+     117:    def chain_save_interval_sec(self) -> int:
+     121:    def chain_initial_count(self) -> int:
+     125:    def atm_extra_above(self) -> int:
+     129:    def atm_extra_below(self) -> int:
+     133:    def chain_columns(self) -> list:
+     138:    def overlay_candle_half(self) -> int:
+     142:    def overlay_width_pct(self) -> int:
+     146:    def overlay_height_pct(self) -> int:
+     160:class HeartbeatManager(QObject):
+     164:    def __init__(self, parent=None):
+     171:    def start(self, interval_min: int = None):
+     180:    def stop(self):
+     185:    def set_interval(self, interval_min: int):
+     192:    def is_active(self) -> bool:
+     195:    def attach_dashboard(self, dashboard):
+     208:    def _check_auto_start(self):
+     227:    def send_now(self):
+     231:    def _send_heartbeat(self):
+     266:def _get_heartbeat_mgr() -> "HeartbeatManager":
+     281:def _gb(title: str, color: str = "#5dade2") -> QGroupBox:
+     292:def _lbl(text: str, color: str = "#dde0f0", size: int = 14) -> QLabel:
+     298:def _open_path(path: str):
+     320:def _path_lbl(path: str) -> QLabel:
+
+  ── 📄 combo_libs/order_panel.py
+     34:def _kst_now() -> str:
+     39:def _animate_press(btn):
+     53:def _spx_tag(sym: str, expiry: str) -> str:
+     70:class OrderPanelMixin:
+     73:    def _build_quick_order_panel(self) -> QWidget:
+     821:    def _try_connect_exec_refresh(self):
+     838:    def _update_kst_labels(self):
+     844:    def _update_commission_label(self, qty=1):
+     849:    def _on_qord_type_toggle(self):
+     859:    def _fetch_open_orders(self):
+     902:    def _populate_open_order_tables(self):
+     920:    def _fill_amend_from_table(self, row):
+     933:    def _fill_cancel_from_table(self, row):
+     938:    def _show_pos_sell_panel(self, side, strike, qty=1, price=None):
+     967:    def _pos_sell_execute(self):
+     980:    def _plus1tick_buy(self):
+     1010:    def _sell_selected_order(self):
+     1114:    def _sell_limit_order(self):
+     1203:    def _bump_sell_price(self, delta: float):
+     1240:    def _on_global_cancel(self):
+     1264:    def _emergency_sell_all(self):
+     1269:    def _emergency_sell_positions(self):
+     1429:    def _emergency_cancel_orders(self):
+     1444:    def _setup_quick_order_shortcuts(self):
+     1471:    def _sc_focus_price(self):
+     1474:    def _sc_focus_qty(self):
+     1478:    def _install_enter_next(src, dst):
+
+  ── 📄 combo_libs/test_special_condition.py
+     11:class FakeOrder:
+     12:    def __init__(self):
+     17:class FakeIB:
+     18:    def __init__(self):
+     20:    def placeOrder(self, oid, bag, order):
+     28:class FakeMW:
+     29:    def __init__(self):
+     32:class FakeRef:
+     33:    def __init__(self):
+     36:class FakeBag:
+     51:class FakeTG:
+     53:    def get(cls): return cls()
+     54:    def send(self, ch, msg):
+     70:def make_watch(oid=1055, target=3.00, action="SELL", qty=1):
+     78:def ok(name):
+     80:def ng(name, reason=""):
+
+════ 📦 combo_libs/combo_op ════
+
+  ── 📄 combo_libs/combo_op/combo_op_constants.py
+     50:def _strat_key(strat_text: str) -> str:
+     65:def _norm_cdf(x: float) -> float:
+     70:def _calc_pop(S: float, K: float, T_days: float,
+
+  ── 📄 combo_libs/combo_op/combo_op_dialog.py
+     18:class OptimizerDialog(QDialog):
+     28:    def __init__(self, parent_widget):
+     74:    def closeEvent(self, event):
+     82:def _toggle_optimizer_panel(self):
+
+  ── 📄 combo_libs/combo_op/combo_op_search.py
+     24:def _opt_params(self) -> dict:
+     38:def _atm_dist_pct(self, strike: float) -> float:
+     45:def _atm_ok(self, strike: float, limit: float) -> bool:
+     54:def _run_optimizer(self):
+     108:def _on_search_done(self, results: list):
+     133:def _on_search_error(self, msg: str):
+
+  ── 📄 combo_libs/combo_op/combo_op_strategies.py
+     21:def _search_vertical(self, strikes, chain, cp, label,
+     78:def _search_credit_vertical(self, strikes, chain, cp, label,
+     143:def _search_straddle(self, qty, budget, min_ror, p) -> list:
+     193:def _search_strangle(self, qty, budget, min_ror, p) -> list:
+     250:def _search_iron_condor(self, qty, budget, min_ror, p) -> list:
+
+  ── 📄 combo_libs/combo_op/combo_op_table.py
+     21:def _populate_opt_table(self, results: list):
+     63:def _on_opt_result_click(self, row, col):
+     70:def _fill_legs_from_result(self):
+     96:    def _apply():
+     150:def _set_leg_row(self, row: int, strike: str,
+     152:    def _s(col, val):
+     159:def _get_chain_price(self, cp: str, strike: float) -> float:
+
+  ── 📄 combo_libs/combo_op/combo_op_ui.py
+     20:def _build_optimizer_panel(self) -> QGroupBox:
+     164:def _opt_label(text: str) -> QLabel:
+     171:def _opt_spin_style() -> str:
+
+  ── 📄 combo_libs/combo_op/combo_op_worker.py
+     10:class _SearchWorker(QThread):
+     15:    def __init__(self, fn, *args):
+     20:    def run(self):
+
+  ── 📄 combo_libs/combo_op/combo_ui_right_panel.py
+     31:class RightPanelMixin:
+     35:    def _build_right_panel(self) -> QWidget:
+     59:    def _build_strategy_input_panel(self) -> QGroupBox:
+     79:    def _build_leg_right(self) -> QWidget:
+     183:    def _on_open_orders(self):
+     202:    def _on_modify_order(self):
+     207:    def _on_cancel_order(self):
+     212:    def _on_chaser_mode_changed(self, btn):
+     220:    def _build_account_safety_bar(self) -> QWidget:
+     273:    def _refresh_account_display(self):
+     302:    def _set_account_info(self, acct: str):
+     333:    def _guard_live_order(self) -> bool:
+     354:    def _on_chase_click(self):
+     402:def _on_synthetic_order_guarded(self):
+     436:def _request_margin_then_order(self, legs, strat, cost_str, confirm=False):
+     449:    def _on_acct_value(reqId, account, tag, value, currency):
+     468:    def _on_acct_end(reqId):
+     556:    def _timeout():
+     569:def _parse_legs_from_table(self) -> list:
+     618:def _calc_required_margin(legs: list) -> float:
+     685:def _parse_expiry_display(display: str) -> str:
+
+  ── 📄 combo_libs/combo_op/__init__.py
+
+════ 📦 combo_libs/Sleep_Order ════
+
+  ── 📄 combo_libs/Sleep_Order/chain_spike_monitor.py
+     36:def _now_et() -> datetime:
+     42:def _hhmm_to_minutes(hhmm) -> int:
+     51:def _tick_size(price: float) -> float:
+     55:class SpikeEvent:
+     60:    def __init__(self, time_str, strike, cp, prev, curr,
+     73:class ChainSpikeMonitor:
+     79:    def __new__(cls):
+     88:    def get(cls) -> "ChainSpikeMonitor":
+     91:    def __init__(self):
+     121:    def start(self, ref: object) -> bool:
+     160:    def stop(self, reason: str = "수동 중지") -> None:
+     168:    def is_active(self) -> bool:
+     171:    def reconfigure(self, **kwargs) -> None:
+     179:    def _schedule_next(self) -> None:
+     185:    def _tick_snapshot(self) -> None:
+     245:    def _evaluate(self, time_str: str, strike: float,
+     285:    def _emit_event(self, ev: SpikeEvent) -> None:
+     295:    def _write_log(self, ev: SpikeEvent) -> None:
+     319:    def _log_info(self, msg: str) -> None:
+     334:    def _on_timeout(self) -> None:
+     338:    def _cancel_timers(self) -> None:
+     345:    def _set_status(self, msg: str) -> None:
+     350:    def _sym(self) -> str:
+
+  ── 📄 combo_libs/Sleep_Order/night_alert_checker.py
+     24:class NightAlertChecker:
+     26:    def __init__(self, log_fn=None):
+     42:    def set_main_window(self, mw):
+     45:    def adjust_base(self, label: str, direction: int) -> str:
+     73:    def status_summary(self) -> str:
+     100:    def tick(self):
+     109:    def _run(self):
+     168:    def _collect_sample(
+     203:    def _check_slot(
+     261:    def _scan_range(
+     281:    def _scan_pre_alert(
+     303:    def _build_chain_dicts(self, cp_tab) -> tuple[dict, dict]:
+     339:    def _best_price(rec: dict) -> float | None:
+     352:    def _send_tg(self, msg: str):
+     366:    def _fire(self, rt, cache_key: str, opt_type, strike, curr_prem, pct, tg_fmt):
+
+  ── 📄 combo_libs/Sleep_Order/night_alert_tab.py
+     12:class NightAlertTab(QWidget):
+     13:    def __init__(self, parent=None):
+     21:    def set_checker(self, checker):
+     25:    def _build_ui(self):
+     41:    def _make_banner(self):
+     67:    def _next_banner(self):
+     73:    def _edit_banner(self):
+     91:    def _make_base_box(self):
+     184:    def set_main_window(self, mw):
+     193:    def _find_and_set_atm_by_premium(self):
+     276:    def _make_slots_box(self):
+     327:    def _refresh_tracked(self):
+     384:    def _add_slot_row(self, slot=None):
+     453:    def _del_slot_row(self, row):
+     456:    def _load_rows(self):
+     460:    def _load_preset(self):
+     476:    def _make_base_adjust_box(self):
+     496:    def _refresh_adjust_combo(self):
+     503:    def _adjust_base(self, direction: int):
+     512:    def _make_tg_box(self):
+     520:    def _make_btn_bar(self):
+     529:    def _save(self):
+     557:    def _reload(self):
+
+  ── 📄 combo_libs/Sleep_Order/night_alert_template.py
+     12:class NightSlot:
+     35:    def is_in_sampling_window(self) -> bool:
+     57:    def is_active_now(self) -> bool:
+     72:    def should_fire(self, current_prem: float, fallback_base: float = 0.0) -> bool:
+     83:class NightAlertConfig:
+     93:    def default(cls):
+     100:def load_config() -> NightAlertConfig:
+     120:def save_config(cfg: NightAlertConfig) -> None:
+     129:def get_active_slots(cfg: NightAlertConfig) -> list:
+     133:def parse_hhmm(raw: str) -> str:
+     149:def make_preset(preset_id: int) -> list:
+     183:def _make_daytime_preset() -> list:
+
+  ── 📄 combo_libs/Sleep_Order/position_close_config.py
+     35:class PositionCloseConfig:
+     38:    def __new__(cls):
+     45:    def _load(self) -> None:
+     58:    def save(self) -> None:
+     67:    def get_slot(self, idx: int) -> dict:
+     72:    def set_slot(self, idx: int, key: str, value) -> None:
+     76:    def register_position(self, idx: int, pos: dict) -> None:
+     82:    def clear_slot(self, idx: int) -> None:
+     88:    def is_slot_active(self, idx: int) -> bool:
+     97:    def n_slots(self) -> int:
+
+  ── 📄 combo_libs/Sleep_Order/position_close_section.py
+     32:def build_position_close_section(parent) -> QGroupBox:
+     59:def _build_slot(parent, idx: int, tz: str) -> QGroupBox:
+     179:def _update_thresh_lbl(lbl_w: QLabel, price: float) -> None:
+     191:def _on_register(parent, idx: int) -> None:
+     237:def _on_cancel(parent, idx: int) -> None:
+     251:def _on_slot_status(parent, idx: int, text: str) -> None:
+     257:def _reset_slot_ui(parent, idx: int) -> None:
+     270:def _set_status(parent, idx: int, text: str) -> None:
+     292:def _save_slot(parent, idx: int) -> None:
+     308:def _load_all_slots(parent) -> None:
+     336:def _connect_watcher(parent) -> None:
+     345:def _find_ref(widget) -> object | None:
+
+  ── 📄 combo_libs/Sleep_Order/position_close_watcher_cancel_patch.py
+     15:def cancel(self, idx: int) -> None:
+     57:def _cancel_sleep_reservation(slot_idx: int, pos_oid: int) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/position_close_watcher.py
+     41:def _tick_size(price: float, symbol: str = "") -> float:
+     48:def _in_range(current: float, target: float, symbol: str = "") -> bool:
+     55:def _in_time_window(now_dt: datetime, from_str: str, to_str: str) -> bool:
+     80:def _tg(msg: str) -> None:
+     81:    def _run():
+     93:class _SlotState:
+     99:    def __init__(self, idx: int):
+     116:    def reset(self):
+     135:def _cancel_sleep_reservation(slot_idx: int, pos_oid: int) -> None:
+     154:class PositionCloseWatcher(QObject):
+     165:    def get(cls) -> "PositionCloseWatcher":
+     170:    def __init__(self, parent=None):
+     180:    def register(self, idx: int, pos: dict, ref) -> None:
+     233:    def cancel(self, idx: int) -> None:
+     265:    def is_active(self, idx: int) -> bool:
+     270:    def on_order_placed(self, oid: int, pos_oid: int = None,
+     295:    def on_price_update(self, oid: int, current_price: float) -> None:
+     314:    def _tick_all(self) -> None:
+     324:    def _tick_waiting(self, slot: _SlotState) -> None:
+     352:    def _check_price(self, slot: _SlotState, current: float) -> None:
+     390:    def _tick_ordered(self, slot: _SlotState) -> None:
+     439:    def _send_order(self, slot: _SlotState, is_correction: bool) -> None:
+     498:    def _modify_order(self, slot: _SlotState, oid: int, new_price: float) -> None:
+     518:    def _send_market(self, slot: _SlotState) -> None:
+     552:    def _last_resort_market(self, slot: _SlotState,
+     588:    def _finish(self, slot: _SlotState, reason: str) -> None:
+     603:    def _reset_idle(self, idx: int) -> None:
+     610:    def _pos_exists(self, slot: _SlotState) -> bool:
+     639:    def _get_current_price(self, slot: _SlotState) -> Optional[float]:
+     655:    def _get_bid_price(self, slot: _SlotState) -> Optional[float]:
+
+  ── 📄 combo_libs/Sleep_Order/sleep_order_config_condition_b.py
+
+  ── 📄 combo_libs/Sleep_Order/sleep_order_config_props.py
+     12:class _SingleSellProps:
+     18:    def single_spike_enabled(self) -> bool:          return bool(self._data.get("single_spike_enabled", False))
+     20:    def single_spike_use_own_schedule(self) -> bool: return bool(self._data.get("single_spike_use_own_schedule", True))
+     22:    def single_spike_start(self) -> str:
+     25:    def single_spike_end(self) -> str:
+     28:    def single_spike_ref_mode(self) -> str:     return str(self._data.get("single_spike_ref_mode", "time"))
+     30:    def single_spike_ref_minutes(self) -> int:  return int(self._data.get("single_spike_ref_minutes", 3))
+     32:    def single_tick_window(self) -> int:        return int(self._data.get("single_tick_window", 7))
+     34:    def single_drop_ratio(self) -> int:         return int(self._data.get("single_drop_ratio", 40))
+     36:    def single_abs_floor(self) -> float:        return float(self._data.get("single_abs_floor", 0.20))
+     38:    def single_strike_mode(self) -> str:        return str(self._data.get("single_strike_mode", "atm_offset"))
+     40:    def single_strike_value(self) -> float:     return float(self._data.get("single_strike_value", 0.0))
+     42:    def single_dist_pct(self) -> float:         return float(self._data.get("single_dist_pct", 0.50))
+     44:    def single_dist_min(self) -> float:         return float(self._data.get("single_dist_min", 0.30))
+     46:    def single_dist_max(self) -> float:         return float(self._data.get("single_dist_max", 0.80))
+     48:    def single_cp(self) -> str:                 return str(self._data.get("single_cp", "P"))
+     50:    def single_order_mode(self) -> str:         return str(self._data.get("single_order_mode", "ask+1"))
+     52:    def single_fixed_price(self) -> float:      return float(self._data.get("single_fixed_price", 0.15))
+     54:    def single_budget(self) -> int:             return int(self._data.get("single_budget", 100))
+     56:    def single_modify_wait_sec(self) -> int:    return int(self._data.get("single_modify_wait_sec", 2))
+     58:    def single_modify_step(self) -> float:      return float(self._data.get("single_modify_step", 0.05))
+     60:    def single_modify_max_count(self) -> int:   return int(self._data.get("single_modify_max_count", 3))
+     62:    def single_modify_price_cap(self) -> float: return float(self._data.get("single_modify_price_cap", 0.30))
+     66:    def auto_sell_enabled(self) -> bool:        return bool(self._data.get("auto_sell_enabled", False))
+     68:    def auto_sell_mode(self) -> str:            return str(self._data.get("auto_sell_mode", "multiplier"))
+     70:    def auto_sell_fixed_price(self) -> float:   return float(self._data.get("auto_sell_fixed_price", 2.50))
+     72:    def auto_sell_multiplier(self) -> float:    return float(self._data.get("auto_sell_multiplier", 3.0))
+     74:    def single_auto_sell_enabled(self) -> bool:       return bool(self._data.get("single_auto_sell_enabled", False))
+     76:    def single_auto_sell_mode(self) -> str:           return str(self._data.get("single_auto_sell_mode", "multiplier"))
+     78:    def single_auto_sell_fixed_price(self) -> float:  return float(self._data.get("single_auto_sell_fixed_price", 2.50))
+
+  ── 📄 combo_libs/Sleep_Order/sleep_order_config.py
+     126:class SleepOrderConfigStore(_SingleSellProps):
+     129:    def __new__(cls):
+     137:    def _load(self) -> None:
+     146:    def save(self) -> None:
+     160:    def get(self, key: str, default=None):
+     163:    def set(self, key: str, value) -> None:
+     166:    def all(self) -> dict:
+     171:    def schedule_start(self) -> str:      return str(self._data.get("schedule_start", "04:40"))
+     173:    def schedule_end(self) -> str:        return str(self._data.get("schedule_end",   "05:14"))
+     175:    def expiry_offset(self) -> int:       return int(self._data.get("expiry_offset", 1))
+     177:    def strike_dist_min(self) -> float:   return float(self._data.get("strike_dist_min", 0.60))
+     179:    def strike_dist_max(self) -> float:   return float(self._data.get("strike_dist_max", 0.95))
+     181:    def spread_width(self) -> int:        return int(self._data.get("spread_width", 5))   # [XSP]
+     183:    def target_price_1(self) -> float:    return float(self._data.get("target_price_1", 0.50))
+     185:    def target_price_2(self) -> float:    return float(self._data.get("target_price_2", 0.40))
+     187:    def max_budget(self) -> int:          return int(self._data.get("max_budget", 100))
+     189:    def schedule_enabled(self) -> bool:   return bool(self._data.get("schedule_enabled", False))
+     191:    def roi_min(self) -> int:             return int(self._data.get("roi_min", 0))
+     193:    def roi_max(self) -> int:             return int(self._data.get("roi_max", 1200))
+     195:    def aggressive_entry(self) -> bool:   return bool(self._data.get("aggressive_entry", True))
+     197:    def aggressive_ticks(self) -> int:    return int(self._data.get("aggressive_ticks", 1))
+     199:    def cancel_cooldown_sec(self) -> int: return int(self._data.get("cancel_cooldown_sec", 120))
+     201:    def dry_run(self) -> bool:            return bool(self._data.get("dry_run", False))
+     203:    def correction_enabled(self) -> bool: return bool(self._data.get("correction_enabled", False))
+     205:    def correction_wait_sec(self) -> int: return int(self._data.get("correction_wait_sec", 3))
+     209:    def spike_enabled(self) -> bool:          return bool(self._data.get("spike_enabled", False))
+     211:    def spike_use_own_schedule(self) -> bool: return bool(self._data.get("spike_use_own_schedule", True))
+     213:    def spike_start(self) -> str:
+     216:    def spike_end(self) -> str:
+     219:    def spike_ref_mode(self) -> str:      return str(self._data.get("spike_ref_mode", "time"))
+
+  ── 📄 combo_libs/Sleep_Order/sleep_order_config_single.py
+
+  ── 📄 combo_libs/Sleep_Order/sleep_order_mixin_orders.py
+     21:class SleepOrderOrdersMixin:
+     24:    def _sleep_modify_order(self, oid: int, new_lmt: float,
+     42:    def _sleep_place_sell_order(self, legs: list, lmt_price: float,
+     52:    def _sleep_place_single_order(self, strike: float, cp: str,
+     59:    def _sleep_place_single_sell_order(self, strike: float, cp: str,
+     67:    def _sleep_single_order_core(self, strike: float, cp: str,
+     121:    def _sleep_modify_single_order(self, oid: int, new_lmt: float,
+
+  ── 📄 combo_libs/Sleep_Order/sleep_order_mixin.py
+     18:def _opt_tick(net: float, symbol: str = "") -> float:
+     25:def _check_premium_anomaly(net: float, up_p: float, lo_p: float,
+     55:class SleepOrderMixin(SleepOrderOrdersMixin):
+     59:    def _sleep_subscribe_chain(self) -> None:
+     96:    def _sleep_unsubscribe_chain(self) -> None:
+     115:    def _sleep_on_tick(self, req_id: int, tick_type: int,
+     134:    def _sleep_get_underlying_price(self) -> float:
+     145:    def _sleep_get_chain(self, expiry_offset: int) -> list:
+     220:    def _sleep_place_order(self, legs: list, lmt_price: float,
+     330:def _effective_spread_width(sleep_cfg, symbol: str) -> float:
+     340:def _detect_strike_step(strikes: list) -> float:
+     348:def _offset_expiry(expiry8: str, offset: int) -> str:
+
+  ── 📄 combo_libs/Sleep_Order/sleep_order_section_a.py
+     21:def build_schedule_section_a(parent) -> QGroupBox:
+     162:def _build_call_cond_group(parent) -> "QGroupBox":
+     220:def _on_direction_changed(parent) -> None:
+     235:def _on_call_indep_changed(parent) -> None:
+     240:def _on_slider_changed(parent, val: int) -> None:
+     256:def _save_schedule(parent) -> None:
+     300:def _load_schedule(parent) -> None:
+     342:def _update_direction_badge(parent) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/sleep_order_ui.py
+     21:class SleepOrderRightPanel(QWidget):
+     29:    def __init__(self, parent=None):
+     34:    def _build(self) -> None:
+     44:    def _make_left_col(self) -> QWidget:
+     67:    def _make_right_col(self) -> QWidget:
+     87:    def _build_schedule_section(self):
+     91:    def _build_position_close_section(self):
+     98:def _vline() -> QFrame:
+     105:def _make_scroll() -> QScrollArea:
+     120:class SleepOrderButton(QWidget):
+     123:    def __init__(self, ref: object, parent=None):
+     132:    def set_ref(self, ref: object) -> None:
+     135:    def _build(self) -> None:
+     158:    def _connect_watcher(self) -> None:
+     165:    def _on_click(self) -> None:
+     184:    def _set_on(self) -> None:
+     191:    def _set_off(self) -> None:
+     198:    def _on_status(self, text: str) -> None:
+     212:class PositionCloseButton(QWidget):
+     219:    def __init__(self, parent=None):
+     227:    def _build(self) -> None:
+     256:    def _connect_watcher(self) -> None:
+     264:    def _on_slot_status(self, idx: int, text: str) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/sleep_order_watcher.py
+     14:class SleepOrderWatcher(QObject):
+     19:    def __new__(cls, parent=None):
+     25:    def __init__(self, parent=None):
+     37:    def get(cls) -> "SleepOrderWatcher":
+     44:    def toggle(self, ref: object) -> bool:
+     48:    def start(self, ref: object) -> None:
+     98:    def stop(self, reason: str = "수동 중지") -> None:
+     112:    def is_active(self) -> bool:
+     115:    def on_price_update(self, ref, net_price: float) -> None:
+     136:    def _tick(self) -> None:
+     176:    def _now_et() -> tuple:
+     185:    def _in_window(self, start: str, end: str) -> bool:
+     192:    def _past_end(self, end: str) -> bool:
+
+  ── 📄 combo_libs/Sleep_Order/spike_catcher_debit.py
+     14:class DebitSpikeCatcher:
+     16:    def __init__(self, key: str, ref: object, legs: list, strat: str = ""):
+     26:    def reconfigure(self) -> None:
+     31:    def _tracker(self):
+     35:    def on_price_update(self, net: float, ask: float = 0.0) -> None:
+     46:    def _fire(self, net: float, ask: float, ref: float) -> None:
+     70:    def _arm_modify(self) -> None:
+     76:    def _try_modify(self) -> None:
+     91:    def _place_order(self, lmt: float, qty: int) -> Optional[int]:
+     99:    def _modify_order(self, oid: int, new_lmt: float) -> None:
+     105:    def on_filled(self, fill_price: float = 0.0) -> None:
+     111:    def _place_sell(self, fill_price: float) -> None:
+     130:    def on_cancelled(self) -> None:
+     135:    def reset(self) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/spike_catcher_single.py
+     13:class SingleOptSpikeCatcher:
+     15:    def __init__(self, strike: float, cp: str, ref: object, strat: str = ""):
+     25:    def reconfigure(self) -> None:
+     30:    def _tracker(self):
+     34:    def on_price_update(self, price: float, ask: float = 0.0) -> None:
+     45:    def _fire(self, price: float, ask: float, ref: float) -> None:
+     70:    def _arm_modify(self) -> None:
+     76:    def _try_modify(self) -> None:
+     91:    def _place_order(self, lmt: float, qty: int) -> Optional[int]:
+     100:    def _modify_order(self, oid: int, new_lmt: float) -> None:
+     107:    def on_filled(self, fill_price: float = 0.0) -> None:
+     113:    def _place_sell(self, fill_price: float) -> None:
+     133:    def on_cancelled(self) -> None:
+     138:    def reset(self) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/spike_scan_call_helper.py
+     10:def find_call_item(ref: object, put_strike: float, sleep_cfg) -> dict | None:
+
+  ── 📄 combo_libs/Sleep_Order/spike_scan.py
+     20:def tg(msg: str) -> None:
+     22:    def _run():
+     28:def _ensure_fire_lock(watcher) -> threading.Lock:
+     41:def _get_symbol(ref) -> str:
+     47:def _opt_tick(net: float, symbol: str = "") -> float:
+     53:def _effective_spread_width(sleep_cfg, symbol: str) -> float:
+     72:def _round_to_tick(net: float, symbol: str = "") -> float:
+     81:def calc_entry_price(net: float, sleep_cfg, symbol: str = "") -> float:
+     87:def _now_str() -> str:
+     98:def _check_call_anomaly(buy_prem: float, sell_prem: float,
+     119:def scan_and_check(watcher) -> None:
+     129:def _scan_and_check_inner(watcher) -> None:
+     264:def _scan_and_fire_call_only(watcher, ref, und: float, sleep_cfg) -> None:
+     322:def _scan_and_fire_call(watcher, ref, und: float, sleep_cfg) -> None:
+     379:def _fire_put(watcher, ref, legs: list, net: float,
+     426:def _fire_call(watcher, ref, call_item: dict, sleep_cfg) -> None:
+     471:def _peek_call_net(ref, und: float, sleep_cfg) -> float | None:
+     499:def _scan_and_fire_call_b(watcher, ref, und: float, sleep_cfg,
+     561:def _peek_put_net(put_chain: list, und: float, sleep_cfg,
+     582:def _fire_put_from_chain(watcher, ref, put_chain: list,
+     601:def _fire_call_from_peek(watcher, ref, und: float, sleep_cfg) -> None:
+     654:def _tg_wait_secondary(side: str, current_net, threshold: float,
+     668:def _tg_both_summary(ref, sleep_cfg) -> None:
+     680:def fire_order(watcher, legs: list, net: float,
+
+  ── 📄 combo_libs/Sleep_Order/spike_tracker.py
+     14:class PriceRefTracker:
+     17:    def __init__(self, window: int = 7):
+     22:    def set_window(self, window: int) -> None:
+     28:    def update(self, price: float) -> None:
+     35:    def ref_price(self) -> Optional[float]:
+     42:    def count(self) -> int:
+     46:    def reset(self) -> None:
+     51:class PriceTimeRefTracker:
+     58:    def __init__(self, minutes: int = 3):
+     64:    def set_minutes(self, minutes: int) -> None:
+     70:    def update(self, price: float) -> None:
+     86:    def _prune(self) -> None:
+     93:    def ref_price(self) -> Optional[float]:
+     98:    def count(self) -> int:
+     103:    def seconds_until_ready(self) -> float:
+     112:    def reset(self) -> None:
+     118:def build_tracker(ref_mode: str, minutes: int, window: int):
+
+  ── 📄 combo_libs/Sleep_Order/spike_utils.py
+     10:def tg(msg: str) -> None:
+     18:def tick_size(price: float) -> float:
+     22:def in_time_window(start: str, end: str) -> bool:
+     39:def calc_lmt(price: float, ask: float, order_mode: str,
+     48:def calc_qty(lmt: float, budget: int) -> int:
+
+  ── 📄 combo_libs/Sleep_Order/spike_watcher_debit.py
+     12:class DebitSpikeWatcher:
+     17:    def __new__(cls):
+     26:    def get(cls) -> "DebitSpikeWatcher":
+     29:    def register(self, key: str, ref: object,
+     36:    def on_price_update(self, key: str, net: float, ask: float = 0.0) -> None:
+     42:    def unwatch_by_oid(self, oid: int, fill_price: float = 0.0) -> bool:
+     54:    def unwatch_cancelled_by_oid(self, oid: int) -> bool:
+     62:    def any_fired(self) -> bool:
+     67:    def evict_out_of_range(self, und_price: float) -> None:
+     83:    def reset_all(self) -> None:
+     88:    def reconfigure_all(self) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/spike_watcher_single.py
+     12:def resolve_single_strikes(ref: object) -> List[float]:
+     50:class SingleOptSpikeWatcher:
+     55:    def __new__(cls):
+     64:    def get(cls) -> "SingleOptSpikeWatcher":
+     67:    def register(self, strike: float, ref: object, strat: str = "") -> SingleOptSpikeCatcher:
+     75:    def on_price_update(self, strike: float, price: float, ask: float = 0.0) -> None:
+     81:    def unwatch_by_oid(self, oid: int, fill_price: float = 0.0) -> bool:
+     93:    def unwatch_cancelled_by_oid(self, oid: int) -> bool:
+     101:    def reset_all(self) -> None:
+     106:    def reconfigure_all(self) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/ui_helpers.py
+     17:def _is_edt() -> bool:
+     31:def kst_to_et(hhmm: str) -> str:
+     41:def et_to_kst(hhmm: str) -> str:
+     53:def gb(title: str, color: str = "#5dade2") -> QGroupBox:
+     63:def lbl(text: str, color: str = "#dde0f0", size: int = 16) -> QLabel:
+     69:def btn(text: str, bg: str = "#1c1c3a", fg: str = "#dde0f0") -> QPushButton:
+     79:def spinbox(mn, mx, val, suffix="") -> QSpinBox:
+     91:def dspinbox(mn: float, mx: float, val: float,
+     106:def time_edit(hhmm: str = "04:40") -> QTimeEdit:
+     120:def combo(items: list, width: int = 200) -> QComboBox:
+     135:def checkbox(text: str, color: str = "#dde0f0",
+     148:def sep() -> QFrame:
+     154:def spike_btn_style(active: bool) -> str:
+     166:def load_kst_time(te: QTimeEdit, et_value: str) -> None:
+     176:def update_et_preview(te: QTimeEdit, lbl_widget: QLabel) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/ui_panel_combo_ratio_io.py
+     10:def save_combo_ratio(panel) -> None:
+     33:def load_combo_ratio(panel) -> None:
+     53:def _dir_label(d: str) -> str:
+
+  ── 📄 combo_libs/Sleep_Order/ui_panel_debit_io.py
+     11:def save_debit(panel) -> None:
+     39:def load_debit(panel) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/ui_panel_debit.py
+     25:class DebitSpikePanel(QGroupBox):
+     27:    def __init__(self, parent=None):
+     38:    def _build(self) -> None:
+     176:    def _on_toggle(self, checked: bool) -> None:
+     189:    def _on_mode_changed(self, *_) -> None:
+     194:    def _on_sell_mode_changed(self, *_) -> None:
+     200:    def _update_sell_preview(self, *_) -> None:
+     206:    def save(self) -> None:
+     210:    def load(self) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/ui_panel_single_io.py
+     9:def save_single(panel) -> None:
+     48:def load_single(panel) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/ui_panel_single.py
+     26:class SingleOptSpikePanel(QGroupBox):
+     28:    def __init__(self, parent=None):
+     39:    def _build(self) -> None:
+     73:    def _on_toggle(self, checked: bool) -> None:
+     86:    def _on_strike_mode_changed(self, idx: int) -> None:
+     89:    def _on_ref_mode_changed(self, *_) -> None:
+     94:    def _on_sell_mode(self, *_) -> None:
+     100:    def _update_preview(self, *_) -> None:
+     106:    def _build_header(self, lay, r: int) -> None:
+     133:    def _build_strike_stack(self, lay, r: int) -> None:
+     157:    def _build_ref_drop(self, lay, r: int) -> None:
+     176:    def _build_order_section(self, lay, r: int) -> None:
+     200:    def _build_sell_section(self, lay, r: int) -> None:
+     219:    def save(self) -> None:
+     223:    def load(self) -> None:
+
+  ── 📄 combo_libs/Sleep_Order/watch_alert_tab.py
+     56:class WatchAlertPanel(QWidget):
+     58:    def __init__(self, parent=None):
+     112:    def set_main_window(self, mw):
+     129:    def _build_ui(self):
+     189:    def _make_header(self) -> QHBoxLayout:
+     236:    def mousePressEvent(self, event):
+     241:    def mouseMoveEvent(self, event):
+     246:    def mouseReleaseEvent(self, event):
+     249:    def _make_cond_a_box(self) -> QGroupBox:
+     259:    def _make_cond_a_row(self, idx: int) -> dict:
+     288:    def _make_cond_b_box(self) -> QGroupBox:
+     324:    def _make_control_bar(self) -> QHBoxLayout:
+     340:    def _make_suppress_bar(self) -> QHBoxLayout:
+     374:    def _make_log_box(self) -> QTextEdit:
+     383:    def _check_session_auto(self):
+     421:    def _try_snapshot_base_price(self):
+     457:    def _start(self):
+     469:    def _stop(self):
+     477:    def _apply_cond_a(self):
+     488:    def _reset_suppress(self, key: str):
+     493:    def _reset_suppress_b(self):
+     502:    def add_strike_from_chain(self, strike: float, opt_type: str):
+     516:    def _remove_selected_strike(self):
+     525:    def _on_pct_dir_changed(self):
+     542:    def _on_alert(self, level: int, msg: str):
+     547:    def _on_alert_ui(self, level: int, msg: str):
+     560:    def _on_tick(self):
+     619:    def _on_night_tick(self):
+     631:    def _get_price_n_min_ago(self, ctx, minutes: int, exec_time: datetime, get_ctx_fn) -> float | None:
+     661:    def _set_light(self, state: str):
+
+════ 📦 tab_chart_libs ════
+
+  ── 📄 tab_chart_libs/apply_patch_v2.py
+     26:def _c(code, text): return f"\033[{code}m{text}\033[0m"
+     36:def find_project_root(hint: str = None) -> Path:
+     64:def backup(path: Path) -> Path:
+     70:def restore(bak: Path, original: Path):
+     78:def patch_copy_files(target_dir: Path) -> bool:
+     121:def patch_side_bottom(target_dir: Path) -> bool:
+     162:def main():
+
+  ── 📄 tab_chart_libs/apply_patch_v3_db_bridge.py
+     26:def _c(code, text): return f"\033[{code}m{text}\033[0m"
+     100:def find_target(hint: str = None) -> Path:
+     125:def patch_record_trade_history(fpath: Path) -> bool:
+     151:def patch_save_one_position(fpath: Path) -> bool:
+     173:def main():
+
+  ── 📄 tab_chart_libs/chart_aux_fill.py
+     20:def _fill_aux_table(self, df, file_type, label, clean, C):
+     77:def _set_ftd_row(self, ri, vals, C):
+     97:def _set_short_row(self, ri, vals, C):
+     118:def on_aux_date_click(self, row: int, col: int):
+
+  ── 📄 tab_chart_libs/chart_aux_table.py
+     28:def load_aux_file(self):
+     60:    def clean(val):
+
+  ── 📄 tab_chart_libs/chart_build_chart.py
+     21:def build_chart_area(self) -> QWidget:
+
+  ── 📄 tab_chart_libs/chart_build_handlers.py
+     49:def _on_order_panel_toggle(self, checked: bool):
+     55:def _toggle_table_panel(self, checked: bool):
+
+  ── 📄 tab_chart_libs/chart_build_main.py
+
+  ── 📄 tab_chart_libs/chart_build_right_panel.py
+     12:def _build_right_panel(self, rw, rbox):
+
+  ── 📄 tab_chart_libs/chart_build_side_bottom.py
+     12:def _build_bottom_section(self, side):
+     77:def _make_sep():
+
+  ── 📄 tab_chart_libs/chart_build_side.py
+     42:def build_sidebar(self) -> QScrollArea:
+
+  ── 📄 tab_chart_libs/chart_build_tables.py
+     19:def build_tables(self) -> QWidget:
+
+  ── 📄 tab_chart_libs/chart_calendar_widget.py
+     18:class _CustomCalendar(QWidget):
+     44:    def __init__(self, parent=None):
+     55:    def selectedDate(self) -> QDate:
+     59:    def setSelectedDate(self, qdate: QDate):
+     66:    def _build(self):
+     141:    def _render(self):
+     199:    def _on_day_click(self):
+     209:    def _go_today(self):
+     217:    def _prev_month(self):
+     222:    def _next_month(self):
+     227:    def _prev_week(self):
+     234:    def _next_week(self):
+
+  ── 📄 tab_chart_libs/chart_candle_item.py
+
+  ── 📄 tab_chart_libs/chart_capture.py
+     16:def capture_chart(self):
+
+  ── 📄 tab_chart_libs/chart_condition_columns.py
+     20:def _build_col_cond(self):
+     71:def _build_col_live(self):
+     110:def _build_col_order(self):
+
+  ── 📄 tab_chart_libs/chart_condition_monitor.py
+     27:def _et_now() -> datetime:
+     36:def _et_now_str() -> str:
+     40:def _kst_str_to_et_str(kst_str: str) -> str:
+     69:class Monitor:
+     70:    def __init__(self, mw):
+     89:    def subscribe(self, strike_str: str):
+     100:    def unsubscribe(self):
+     109:    def _make_contract(self, strike_str: str):
+     130:    def _on_tick(self, rid, tick_type, price):
+     137:    def check(self, cfg: dict) -> tuple:
+     172:    def place_order(self, cfg: dict) -> str:
+     202:    def get_price(self) -> dict:
+     205:    def tick_10s(self) -> int:
+     210:    def _ibkr(self):
+     215:    def et_range_str(self, cfg: dict) -> str:
+
+  ── 📄 tab_chart_libs/chart_condition_order.py
+     26:def build_condition_panel(mw):
+     34:def stop_condition_monitor(panel_widget):
+
+  ── 📄 tab_chart_libs/chart_condition_ui.py
+     40:class ConditionPanel(QWidget):
+     42:    def __init__(self, mw, parent=None):
+     53:    def _build(self):
+     104:    def _on_price_chk(self, state): self._price_detail.setVisible(bool(state))
+     105:    def _on_price_op(self, op):
+     108:    def _on_limit_chk(self, state):
+     113:    def _get_cfg(self) -> dict:
+     131:    def _on_start(self):
+     150:    def _on_stop(self):
+     158:    def _tick(self):
+     191:    def _set_status(self, status: str):
+     201:    def _log(self, msg: str, warn: bool = False):
+     210:def _play_alert():
+
+  ── 📄 tab_chart_libs/chart_condition_widgets.py
+     25:def _lbl(text, color=C_GRAY, bold=False):
+     31:def _inp(default="", width=64):
+     37:def _sep():
+     42:def _vsep():
+     47:def _mini_title(text):
+     54:def _spin_widget(lo, hi, val, w=58, decimals=0, step=1):
+
+  ── 📄 tab_chart_libs/chart_daily_helpers.py
+     12:def _daily_csv_path(symbol_up):
+     15:def _daily_marker_path(symbol_up, d):
+     18:def _has_daily_marker(symbol_up, d):
+     21:def _set_daily_marker(symbol_up, d):
+
+  ── 📄 tab_chart_libs/chart_daily_overlay.py
+     59:def _cfg_half() -> int:
+     67:def _cfg_w() -> float:
+     75:def _cfg_h() -> float:
+     88:class _DragOverlay(QtWidgets.QGraphicsObject):
+     95:    def __init__(self, chart_self, x, y, w, h):
+     118:    def vb(self):
+     121:    def resize(self, x, y, w, h):
+     129:    def boundingRect(self):
+     132:    def paint(self, painter, option, widget=None):
+     160:    def mousePressEvent(self, ev):
+     169:    def mouseMoveEvent(self, ev):
+     179:    def mouseReleaseEvent(self, ev):
+     187:    def hoverMoveEvent(self, ev):
+     194:    def _save_frac(self):
+     211:def init_daily_overlay(self):
+     226:def update_daily_overlay(self):
+     264:def _draw_overlay(self, df, cal_date_str: str):
+     350:def _ensure_overlay_obj(self):
+     394:def _refit_overlay(self):
+     415:def _track(self, item):
+     421:def _clear_overlay_items(self, vb):
+     430:def clear_daily_overlay(self):
+
+  ── 📄 tab_chart_libs/chart_daily.py
+     32:class _DailyCandle(pg.GraphicsObject):
+     33:    def __init__(self, data, body_w=0.55):
+     38:    def _gen(self):
+     52:    def paint(self, p, *args): p.drawPicture(0, 0, self._pic)
+     53:    def boundingRect(self):    return pg.QtCore.QRectF(self._pic.boundingRect())
+     55:def toggle_daily_view(self):
+     72:def load_daily_data(self):
+
+  ── 📄 tab_chart_libs/chart_daily_render.py
+     23:def render_daily(self, df):
+     85:def center_on_calendar(self, plot, bars):
+     128:def _draw_cal_vline(plot, bars, calendar):
+
+  ── 📄 tab_chart_libs/chart_daily_worker.py
+     24:class _DailyFillWorker(QThread):
+     34:    def __init__(self, symbol, center_date_str, api_key):
+     40:    def run(self):
+     89:    def _download_missing(self, sym, missing_dates, csv_path, existing_df):
+
+  ── 📄 tab_chart_libs/chart_data_nav.py
+     28:def on_calendar(self, qdate=None):
+     50:def on_multi_chk(self, days: int, chk, state: int):
+     64:def do_multi_day(self, num_days: int):
+
+  ── 📄 tab_chart_libs/chart_data.py
+     73:def update_display(self, force_regular=False):
+     81:    def get_et(r):
+
+  ── 📄 tab_chart_libs/chart_data_render.py
+     10:def _render_left_table(self, hi_rows, fx, C):
+
+  ── 📄 tab_chart_libs/chart_data_table.py
+     21:def append_right(self, data, eok):
+     47:def clr_right(self):
+     51:def push_trend_df(self):
+
+  ── 📄 tab_chart_libs/chart_exec_marker.py
+     52:def _get_chart_symbol(self) -> str:
+     60:def convert_exec_price(trade_symbol: str, trade_price: float,
+     93:def _ts_to_epoch_ms(ts_str: str) -> int:
+     127:def _et_utc_offset(d) -> int:
+     133:    def _nth_sun(year, month, nth):
+     155:def init_exec_markers(self):
+     170:def add_exec_marker(self, ts_ms: int, action: str, price: float,
+     190:def redraw_exec_markers(self):
+     245:    def _add_scatter(xs, ys, symbol_shape, color, tips):
+     268:def clear_exec_markers(self):
+     280:def load_exec_markers_from_db(self, date_str: str = None,
+     341:def _ts_to_epoch_ms_kst(ts_str: str) -> int:
+     363:def _log(msg: str):
+
+  ── 📄 tab_chart_libs/chart_exec_marker_ui.py
+     35:def build_exec_marker_panel(self) -> 'QGroupBox':
+     121:def _parse_date(txt: str) -> str:
+     139:def _on_load(self):
+     171:def _on_clear(self):
+     182:def _set_status(self, msg: str, error: bool = False):
+
+  ── 📄 tab_chart_libs/chart_foldable_group.py
+     12:class _FoldableGroup(QWidget):
+     18:    def __init__(self, header_text: str, content: QWidget, parent=None,
+     50:    def _update_label(self, text: str):
+     55:    def _toggle(self, checked: bool):
+
+  ── 📄 tab_chart_libs/chart_hlines.py
+     26:def on_chart_click(self, event):
+     72:def on_hline_chk(self, slot_idx: int, state: int):
+     93:def del_hlines(self):
+     110:def redraw_hlines(self):
+
+  ── 📄 tab_chart_libs/chart_ibkr_bar_timer.py
+     12:class IBKRBarTimer(QTimer):
+     21:    def __init__(self, ib, symbol, parent=None):
+     31:    def start(self, msec=None):
+     39:    def _subscribe(self):
+     48:    def _watchdog(self):
+     57:    def _parse_bar(self, rid, bar):
+     69:    def _on_bar(self, rid, bar):
+     75:    def _on_bar_update(self, rid, bar):
+     81:    def stop(self):
+
+  ── 📄 tab_chart_libs/chart_labels.py
+     29:def _label_color(text: str) -> str:
+     34:def _make_text_item(label: str, x: float, y: float) -> "pg.TextItem":
+     49:def on_chart_label_click(self, event):
+     99:def on_label_chk(self, slot_idx: int, state: int):
+     125:def del_labels(self):
+     146:def redraw_labels(self):
+
+  ── 📄 tab_chart_libs/chart_markers.py
+     39:def parse_time_input(txt: str) -> str:
+     66:def _time_to_min(t_str: str) -> int:
+     74:def add_time_marker(self):
+     133:def on_marker_chk(self, slot_idx: int, state: int):
+     154:def redraw_time_markers(self):
+
+  ── 📄 tab_chart_libs/chart_memo_actions.py
+     8:def _memo_save(self):
+     28:def _memo_delete(self):
+     57:def _set_memo_status(self, msg: str, error: bool = False):
+
+  ── 📄 tab_chart_libs/chart_memo_io.py
+     11:def _load_memos() -> dict:
+     21:def _save_memos(memos: dict):
+     33:def _date_key(qdate) -> str:
+
+  ── 📄 tab_chart_libs/chart_memo.py
+     27:def build_memo_panel(self) -> QWidget:
+     147:def toggle_memo_panel(self):
+     168:def on_memo_date_changed(self, qdate):
+
+  ── 📄 tab_chart_libs/chart_peaks.py
+     22:def _time_to_min(t_str: str) -> int:
+     30:def peak1(self):
+     47:def peak2(self):
+     65:def update_peak3(self, tbl):
+
+  ── 📄 tab_chart_libs/chart_polygon_worker.py
+     9:class PolygonWorker(QThread):
+     12:    def __init__(self, api_key, symbol):
+     18:    def run(self):
+     46:    def stop(self):
+
+  ── 📄 tab_chart_libs/chart_rt.py
+     44:def on_rt_btn(self):
+     51:def start_stream(self, symbol):
+     109:def stop_rt(self):
+     144:def on_bar_in(self, data):
+     173:def fetch_missing_polygon(self, symbol):
+
+  ── 📄 tab_chart_libs/chart_rt_tick.py
+     16:def _on_chart_tick(rid: int, tt: int, price: float):
+     25:def _set_p3_visible(self, visible: bool):
+     33:def _start_tick_subscription(self, symbol: str):
+     54:def _stop_tick_subscription(self):
+
+  ── 📄 tab_chart_libs/chart_tab_ibkr_force.py
+     24:def force_redownload(self):
+
+  ── 📄 tab_chart_libs/chart_tab_ibkr.py
+     45:def fetch_ibkr_history(self, symbol, tgt):
+     65:def _on_ibkr_hist_bar(self, rid, bar):
+     75:def _on_ibkr_hist_end(self, rid):
+     94:def fetch_polygon_history(self, symbol, tgt):
+     112:def load_day_df(self, symbol: str, tgt):
+     152:def download_day(self, symbol: str, tgt, fp):
+
+  ── 📄 tab_chart_libs/chart_theme.py
+     46:def apply_theme(self):
+     100:def c_up(self) -> str:
+     104:def c_dn(self) -> str:
+
+  ── 📄 tab_chart_libs/chart_tick_speed.py
+     55:def on_ibkr_tick(tick_type: int, price: float):
+     64:def set_current_sym(sym: str):
+     70:def _purge(cutoff: float):
+     75:def _count(q: deque, window: int) -> int:
+     80:def _get_color(count: int, hist: list) -> str:
+     90:def _ratio_str(count: int, hist: list) -> str:
+     99:    def init_tick_speed(self):
+     134:    def stop_tick_speed(self):
+     140:    def init_tick_speed(self): pass
+     141:    def stop_tick_speed(self): pass
+
+  ── 📄 tab_chart_libs/chart_tick_updater.py
+     19:def _update(self):
+     88:def _save_to_db(counts: dict):
+     112:def _trim_bars(plot, bar_list: list, max_len: int):
+
+  ── 📄 tab_chart_libs/chart_time_utils.py
+     8:def et_to_kst_str(self, et_dt) -> str:
+     39:def fmt_time(self, et_dt) -> str:
+     44:def on_range_changed(self, vb, ranges):
+
+  ── 📄 tab_chart_libs/chart_vol_surge.py
+     68:def _calc_surge_mask(volumes, lookback=LOOKBACK, mult=SURGE_MULT):
+     79:def draw_vol_surge(self, candle_data, vol_data):
+     110:def _redraw_vol_bars(self, vol_data, mask):
+     132:def _draw_plain_vol(self, vol_data):
+     144:def clear_vol_surge(self):
+
+  ── 📄 tab_chart_libs/chart_workers.py
+
+  ── 📄 tab_chart_libs/db_manager.py
+     63:class DBManager:
+     67:    def get(cls):
+     72:    def __init__(self):
+     80:    def insert_trade(self, symbol, action, qty, price,
+     92:    def fetch_pnl(self, symbol=None, date=None, limit=500):
+     106:    def today_pnl_summary(self):
+     116:    def insert_alert(self, symbol, alert_type, condition=""):
+     124:    def fetch_alerts_today(self):
+     132:    def insert_tick_speed(self, symbol,
+     144:    def insert_tick_speed_batch(self, rows: list):
+     156:    def fetch_tick_speed(self, symbol=None, date=None, limit=1000):
+     170:    def tick_surge_moments(self, symbol, date=None, window="w10_tick", mult=3.0):
+     177:    def close(self):
+
+  ── 📄 tab_chart_libs/db_schema.py
+     58:def init_db():
+
+  ── 📄 tab_chart_libs/PATCH_GUIDE.py
+     8:class SignalBridge(QObject):
+     77:def tickPrice(self, reqId, tickType, price, attrib):
+
+════ 📦 Greeks ════
+
+  ── 📄 Greeks/greeks_chart.py
+     27:class GexSkewPanel(QWidget):
+     28:    def __init__(self, parent=None):
+     58:    def update(self, strikes: List[float], cell_data: dict):
+     113:class NormalBandPanel(QWidget):
+     119:    def __init__(self, parent=None):
+     159:    def update_band(self,
+     191:    def clear(self):
+     202:def _find_zero_gamma(xs, vals):
+     211:def _fill_band(plot_widget, xs, upper, lower, QColor_str='#33334488'):
+
+  ── 📄 Greeks/greeks_context.py
+     25:class ContextDetector:
+     32:    def __init__(self):
+     39:    def detect(self, rows: List[Dict], day: str, sym: str) -> List[str]:
+     78:    def _detect_call_surge(self, call_rows: List[Dict]) -> List[float]:
+     98:    def _detect_put_baseline_dev(self, put_rows: List[Dict],
+     144:    def _is_index_rising(self, und_price: float) -> bool:
+     151:    def _prev_trading_day(day: str) -> Optional[str]:
+
+  ── 📄 Greeks/greeks_db.py
+     27:def _resolve_greeks_dir() -> str:
+     37:def _db_path(day: str) -> str:       return os.path.join(GREEKS_DIR, f"greeks_{day}.db")
+     38:def _events_path() -> str:           return os.path.join(GREEKS_DIR, "events_log.db")
+     39:def _baseline_path() -> str:         return os.path.join(GREEKS_DIR, "baseline.db")
+     41:def open_db(day: str, db_dir: Optional[str] = None) -> sqlite3.Connection:
+     52:def open_events_db(db_dir: Optional[str] = None) -> sqlite3.Connection:
+     63:def open_baseline_db(db_dir: Optional[str] = None) -> sqlite3.Connection:
+     76:def _et_offset_hours() -> int:
+     106:def _now_et() -> datetime:
+     144:def _is_market_hours() -> bool:
+     159:def _today_et() -> str:
+     173:def _get_today_conn() -> sqlite3.Connection:
+     199:def save_snapshot(conn: Optional[sqlite3.Connection], rows: List[Dict]) -> None:
+     259:def save_event(ec: sqlite3.Connection, ts: str, sym: str, ttype: str,
+     264:def save_baseline(rows: List[Dict], day: Optional[str] = None) -> None:
+     276:def load_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[Dict]:
+     286:def available_days() -> List[str]:
+     290:def load_timestamps(day: str) -> List[str]:
+     297:def load_baseline(day: str, sym: str) -> List[Dict]:
+     305:def detect_spike(day: str, sym: str, current_rows: List[Dict],
+     359:def _chain_db_path(day: str) -> str:
+     362:def load_chain_snapshots(day: str, from_ts: str = "", to_ts: str = "") -> List[Dict]:
+     389:def available_expiries_for_day(day: str) -> List[str]:
+     416:def load_merged_snapshots(day: str, from_ts: str = "", to_ts: str = "",
+     450:def available_days_merged() -> List[str]:
+     465:def load_und_price_history(minutes: int = 60) -> List[Dict]:
+
+  ── 📄 Greeks/greeks_render.py
+     45:def gamma_bg(gamma: float, max_gamma: float) -> Optional[QColor]:
+     55:def delta_color(delta: float, side: str) -> QColor:
+     62:def arrow_str(curr: float, prev: float, thr: float = 1e-6) -> str:
+     69:def arrow_color(curr: float, prev: float) -> Optional[QColor]:
+     79:def init_table(tbl: QTableWidget):
+     98:def _style_header(tbl: QTableWidget):
+     114:def init_row(tbl: QTableWidget, row: int, strike: float, atm_strike: float):
+     134:def set_cell(tbl, row, col, value, side, key, max_gamma, is_atm,
+     183:def render_rows(tbl, strikes, atm_strike, cell_data, prev,
+
+  ── 📄 Greeks/greeks_render_replay.py
+     89:def _fmt_fg(key: str, val: float, side: str):
+     112:def init_table_replay(tbl: QTableWidget):
+     138:def init_row_replay(tbl: QTableWidget, row: int,
+     156:def apply_view_mode(tbl: QTableWidget, mode: str):
+     163:def render_rows_replay(tbl: QTableWidget,
+     194:def _set_replay_cell(tbl, row, col, val, pv, key, side,
+     227:def _cols_to_mode(view_cols: Optional[List[str]]) -> str:
+     238:def _hdr_color(col: int) -> str:
+     248:def _hdr_fg(col: int) -> str:
+
+  ── 📄 Greeks/greeks_replay_ctrl.py
+     53:def build_ctrl_bar(panel: QWidget) -> QVBoxLayout:
+     67:def _build_top_row(panel: QWidget) -> QHBoxLayout:
+     136:def _build_view_row(panel: QWidget) -> QHBoxLayout:
+     160:def _on_view_toggled(checked: bool, key: str, panel: QWidget):
+     171:def _lbl(text: str) -> QLabel:
+
+  ── 📄 Greeks/greeks_replay_data.py
+     18:    def et_to_kst(s): return s
+     28:def load_replay_data(panel, day: str, t_fr: str, t_to: str,
+     68:def render_frame(panel, idx: int):
+     94:def _parse_range(day: str, t_fr: str, t_to: str):
+     104:    def _fmt(t: str, end: bool = False) -> str:
+     123:def _build_frames(panel, rows: list):
+
+  ── 📄 Greeks/greeks_replay.py
+     29:class ReplayPanel(QWidget):
+     40:    def __init__(self, parent=None):
+     61:    def _build(self):
+     86:    def _refresh_days(self):
+     92:    def _on_day_changed(self, day: str):
+     97:    def _refresh_expiries(self, day: str):
+     108:    def _load(self):
+     131:    def _toggle_play(self):
+     144:    def _stop(self):
+     152:    def _step(self):
+     162:    def _on_slider(self, val: int):
+     166:    def _on_speed(self, key: str):
+     172:    def _render(self, idx: int):
+     177:    def refresh(self):
+     183:def _fmt_expiry(exp: str, day: str) -> str:
+
+  ── 📄 Greeks/greeks_snapshot_mgr.py
+     51:class SnapshotManager(QObject):
+     68:    def __init__(self, ib, make_contract_fn, on_data_fn, on_status_fn: StatusFn = None):
+     120:    def start(self, sym: str, und_price: float, expiry_0dte: str,
+     141:    def stop(self):
+     163:    def update_und_price(self, price: float):
+     166:    def get_req_info(self, rid: int) -> Optional[Tuple[str, float, str]]:
+     170:    def is_managed_req(self, rid: int) -> bool:
+     173:    def record_received(self, rid: int):
+     185:    def _do_record_received(self, rid: int):
+     204:    def _dummy_tick(self, rid: int, *args):
+     210:    def _notify(self, slot: int, event: str, label: str = ""):
+     217:    def _slot_for_expiry(self, expiry: str) -> int:
+     224:    def _snap_0dte(self):
+     241:    def _cancel_snapshot(self, c_base: int, p_base: int, max_range: int):
+     254:    def _snap_1dte(self):
+     266:    def _snap_2dte(self):
+     278:    def _request_snapshot(self, expiry: str, c_base: int, p_base: int,
+     309:    def _enqueue(self, rid: int, contract, snapshot: bool, slot: int):
+     312:    def _send_one(self):
+     331:    def _resolve_tag(sym: str, expiry: str) -> str:
+     345:    def _symbol_cfg(self) -> dict:
+     358:    def _strikes(und: float, wing: int, step: int) -> List[float]:
+     363:    def _next_bday(n: int) -> str:
+
+  ── 📄 Greeks/tab_greeks_fetch.py
+     40:def _start_snap_mgr(self, label: str = ""):
+     61:def _normalize_expiry(expiry: str) -> str:
+     79:def fetch(self):
+     158:def auto_fetch_if_market_hours(self):
+     194:def attach_chain_buffer(self, buf):
+     201:def on_chain_buf_update(self, expiry: str, strike: float, side: str, data: dict):
+     223:def apply_chain_buf_update(self, payload: str):
+     253:def attach_chain_store(self, store):
+     273:def _poll_chain_store(self):
+
+  ── 📄 Greeks/tab_greeks.py
+     66:class GreeksGrid(QWidget):
+     67:    def __init__(self, main_win, parent=None):
+     141:    def _check_date_change(self):
+     154:    def _build(self):
+     160:    def _connect_signals(self):
+     191:    def _refresh_expiry(self):
+     201:    def _on_sym_changed(self, sym: str):
+     204:    def _on_expiry_changed(self, idx: int):
+     207:    def _current_expiry(self) -> tuple:
+     220:    def _calc_strikes(self, und: float, wing: int = ATM_WING,
+     225:    def _next_trading_expiry(self) -> Optional[str]:
+     231:    def _fetch(self):                       _fe.fetch(self)
+     232:    def _auto_fetch_if_market_hours(self):  _fe.auto_fetch_if_market_hours(self)
+     233:    def attach_chain_buffer(self, buf):     _fe.attach_chain_buffer(self, buf)
+     234:    def attach_chain_store(self, store):    _fe.attach_chain_store(self, store)
+     235:    def _on_chain_buf_update(self, *a):     _fe.on_chain_buf_update(self, *a)
+     237:    def _apply_chain_buf_update(self, p):   _fe.apply_chain_buf_update(self, p)
+     239:    def _on_tick_price(self, *a):           _tk.on_tick_price(self, *a)
+     240:    def _on_tick_opt(self, *a):             _tk.on_tick_opt(self, *a)
+     241:    def _on_snap_data(self, *a):            _tk.on_snap_data(self, *a)
+     242:    def _on_ibkr_error(self, *a):           _tk.on_ibkr_error(self, *a)
+     243:    def _on_raw_tick_option(self, *a):      _tk.on_raw_tick_option(self, *a)
+     245:    def _flush(self):                       _re.flush(self)
+     246:    def _apply_delta_filter(self, v):       _re.apply_delta_filter(self, v)
+     247:    def _update_band(self):                 _re.update_band(self)
+     248:    def _render_dirty_cells(self, dc):      _re.render_dirty_cells(self, dc)
+     250:    def _autosave(self):                    _sv.autosave(self)
+     251:    def _save_baseline(self, rows):         _sv.save_baseline(self, rows)
+     252:    def _on_save_interval_changed(self, i): _sv.on_save_interval_changed(self, i)
+     254:    def _open_chainsaver_log(self):         _ui.open_chainsaver_log(self)
+
+  ── 📄 Greeks/tab_greeks_render.py
+     19:def flush(self):
+     69:def apply_delta_filter(self, val: int):
+     78:def update_band(self):
+     105:def render_dirty_cells(self, dirty_cells: list):
+
+  ── 📄 Greeks/tab_greeks_replay.py
+     18:    def et_to_kst(s): return s
+     23:def set_replay_mode(self, on: bool):
+     38:def rp_refresh_days(self):
+     45:def rp_on_day_changed(self, day: str):
+     50:def rp_refresh_expiries(self, day: str):
+     65:def rp_load(self):
+     122:def rp_toggle_play(self):
+     135:def rp_stop(self):
+     143:def replay_step(self):
+     153:def rp_on_slider(self, val: int):
+     158:def rp_render(self, idx: int):
+
+  ── 📄 Greeks/tab_greeks_save.py
+     27:def _refresh_conn_if_needed(self) -> None:
+     53:def autosave(self):
+     136:def save_baseline(self, rows):
+     158:def on_save_interval_changed(self, index: int):
+
+  ── 📄 Greeks/tab_greeks_status.py
+     24:def _make_light(parent=None):
+     31:def _make_txt(text: str, color: str = "#888888", parent=None) -> QLabel:
+     39:def build_status_panel(host) -> QFrame:
+     102:def blink_tick(self):
+     112:def status_saving(self, slot: int, count: int, label: str):
+     130:def status_done(self, slot: int, count: int, label: str):
+     149:def status_idle(self, slot: int, reason: str = "대기"):
+     167:def status_offhour(self, is_offhour: bool):
+     171:def status_req_count(self, total: int):
+     175:def on_snap_status(self, slot: int, event: str, count: int, label: str):
+
+  ── 📄 Greeks/tab_greeks_tick.py
+     32:def on_tick_price(self, req_id: int, tick_type: int, price: float):
+     51:def on_tick_opt(self, req_id: int, tick_type: int,
+     134:def on_snap_data(self, expiry: str, strike: float, side: str, data: dict):
+     160:def on_ibkr_error(self, req_id: int, error_code: int, msg: str):
+     180:def on_raw_tick_option(self, req_id: int, tick_type: int,
+
+  ── 📄 Greeks/tab_greeks_ui.py
+     25:def build_ctrl(host) -> QHBoxLayout:
+     65:def build_replay_bar(host) -> QHBoxLayout:
+     140:def open_chainsaver_log(host):
+     160:def build_main(host, AUTOSAVE_MS, THROTTLE_MS,
+
+════ 📦 trade_log ════
+
+  ── 📄 trade_log/alert_logger.py
+     28:class AlertLogger:
+     39:    def __init__(self, log_dir=DEFAULT_LOG_DIR):
+     55:    def _log_path(self, date_str: str = "") -> Path:
+     61:    def today_path(self) -> Path:
+     66:    def write(self, level: str, msg: str) -> None:
+     75:    def write_info(self, msg: str) -> None:
+     79:    def flush(self) -> None:
+     83:    def close(self) -> None:
+     89:    def load_today(self) -> List[str]:
+     94:    def load_date(self, date_str: str) -> List[str]:
+     99:    def _load(self, path: Path) -> List[str]:
+     110:    def list_log_files(self) -> List[str]:
+
+  ── 📄 trade_log/db.py
+     17:def get_conn() -> sqlite3.Connection:
+     26:def _migrate_add_column(conn: sqlite3.Connection,
+     39:def _init_tables(conn: sqlite3.Connection) -> None:
+
+  ── 📄 trade_log/__init__.py
+
+  ── 📄 trade_log/logger_buffer.py
+     36:class LogLineBuffer:
+     48:    def __init__(
+     72:    def push(self, line: str) -> None:
+     82:    def flush_all(self) -> None:
+     88:    def stop(self) -> None:
+     94:    def _flush_locked(self) -> None:
+     112:    def _timer_loop(self) -> None:
+
+  ── 📄 trade_log/logger.py
+     25:def _db_worker():
+     40:def start_db_worker():
+     51:def flush_db_queue():
+     62:def _et_now() -> tuple[str, str]:
+     67:def log_exec(
+     91:    def _write():
+     109:def log_order(
+     129:    def _write():
+     146:def log_commission(oid: int, commission: float) -> None:
+     148:    def _write():
+
+  ── 📄 trade_log/matcher.py
+     27:def run_match(source: str, sym: str, expiry: str,
+     38:    def _write():
+     53:def expire_worthless(sym: str, expiry: str, right: str,
+     87:    def _write():
+     99:def expire_worthless_by_expiry(expired_date: str) -> int:
+     134:    def _write():
+     153:def get_expired_trades(date: str | None = None) -> list[dict]:
+     180:def _count_open(conn, sym, expiry, right, strike, source) -> int:
+     198:def _expire(conn, sym, expiry, right, strike, expired_date, source) -> None:
+     229:def _expire_by_id(conn, trade_id: int, expired_date: str) -> None:
+     264:def _match(conn, source, sym, expiry, right, strike) -> None:
+
+  ── 📄 trade_log/price_buffer.py
+     23:class UndBuffer:
+     28:    def __init__(self, maxlen: int = 200):
+     31:    def push(self, price: float) -> None:
+     36:    def get_context(self) -> dict:
+     61:    def _closest_before(self, target: datetime) -> Optional[float]:
+     75:def push(price: float) -> None:
+     78:def get_context() -> dict:
+
+  ── 📄 trade_log/query.py
+     14:def get_executions_by_date(date: str) -> list[dict]:
+     24:def get_grouped_executions_by_date(date: str) -> list[dict]:
+     93:def _make_summary(legs: list) -> dict:
+     123:def get_executions_range(start: str, end: str) -> list[dict]:
+     132:def get_order_log_by_date(date: str) -> list[dict]:
+     141:def get_order_log_by_oid(oid: int) -> list[dict]:
+     150:def get_trades_by_date(date: str) -> list[dict]:
+     159:def get_open_trades() -> list[dict]:
+     168:def get_daily_summary(date: str) -> dict:
+     199:def get_monthly_summary(year: int, month: int) -> dict:
+     272:def get_monthly_detail(year: int, month: int) -> list[dict]:
+     301:def get_monthly_daily_breakdown(year: int, month: int) -> list[dict]:
+
+  ── 📄 trade_log/und_saver_db.py
+     46:def _db_path(date_str: str) -> Path:
+     50:def _ensure_table(conn) -> None:
+     61:def _to_aware(dt: datetime) -> datetime:
+     69:def save_to_db(ts_str: str, price: float) -> None:
+     71:    def _write():
+     88:def query_before(target: datetime, minutes: int) -> Optional[float]:
+     113:def warmup_from_db(buf: deque, lock: Lock) -> None:
+
+  ── 📄 trade_log/und_saver.py
+     60:def _to_aware(dt: datetime) -> datetime:
+     68:def _warmup_task():
+     77:def warmup() -> None:
+     86:def set_interval(seconds: int) -> None:
+     93:def get_interval() -> int:
+     97:def push(price: float) -> None:
+     119:def get_context(exec_time=None, minutes: Optional[int] = None):
+     137:    def _from_buf(mins: int) -> Optional[float]:
+     144:    def _lookup(mins: int) -> Optional[float]:
+     165:def is_running() -> bool:
+     170:def get_warmup_status() -> dict:
+
+════ 📦 telegram_bot ════
+
+  ── 📄 telegram_bot/alert_notifier.py
+     12:class AlertNotifier:
+     14:    def notify(self, level: int, condition: str, detail: str):
+     29:    def _beep(level: int):
+
+  ── 📄 telegram_bot/__init__.py
+
+  ── 📄 telegram_bot/integration_examples.py
+     16:class SniperLogicMixin:
+     19:    def _fire_sniper_alert(self, strike: float, opt_type: str, price: float):
+     35:class ComboOrderHandler:
+     38:    def __init__(self):
+     43:    def _register_tg_commands(self):
+     51:    def _tg_buy(self, text: str, from_id: str) -> str:
+     76:    def _tg_sell(self, text: str, from_id: str) -> str:
+     92:    def _tg_status(self, text: str, from_id: str) -> str:
+     95:    def _tg_cancel(self, text: str, from_id: str) -> str:
+     98:    def _place_order(self, side: str, opt_type: str, strike: float, qty: int) -> str:
+     104:    def on_order_filled(self, side: str, opt_type: str, strike: float,
+     118:def start_telegram():
+
+  ── 📄 telegram_bot/tg_client_patch.py
+     12:def _send_raw_silent(self, text: str) -> bool:
+
+  ── 📄 telegram_bot/tg_client.py
+     19:class TelegramClient:
+     25:    def __new__(cls):
+     32:    def __init__(self):
+     56:    def get(cls) -> "TelegramClient":
+     59:    def send(self, tag: str, message: str) -> bool:
+     74:    def start_polling(self):
+     96:    def stop_polling(self):
+     99:    def register_chat_callback(self, fn: Callable):
+     104:    def unregister_chat_callback(self, fn: Callable):
+     110:    def _poll_loop(self):
+     121:    def _get_updates(self) -> list:
+     135:    def _handle_update(self, upd: dict):
+     244:    def _send_photo_raw(self, image_bytes: bytes, caption: str = "") -> bool:
+     279:    def _send_raw(self, text: str) -> bool:
+     303:    def _send_inline_keyboard(self, text: str, buttons: list) -> bool:
+     331:    def _edit_inline_message(self, chat_id: str, message_id: int,
+     360:    def _answer_callback_query(self, callback_query_id: str) -> bool:
+     377:    def test_connection(self) -> str:
+     393:    def _classify_tag(text: str) -> str:
+     402:    def _is_order_cmd(text: str) -> bool:
+     406:    def _fire_callback(self, direction: str, tag: str, text: str, raw: str):
+
+  ── 📄 telegram_bot/tg_command_router.py
+     14:class TgCommandRouter:
+     19:    def __new__(cls):
+     25:    def register(self, command: str, handler: Callable[[str, str], Optional[str]]):
+     33:    def unregister(self, command: str):
+     36:    def dispatch(self, text: str, from_chat_id: str) -> Optional[str]:
+     54:    def registered_commands(self):
+     60:    def register_info_handler(self, fn):
+     67:    def dispatch_info(self, chat_id: str):
+     85:    def dispatch_info_select(self, text: str, chat_id: str) -> bool:
+
+  ── 📄 telegram_bot/tg_config_patch.py
+     42:def watch_level(self, level: int) -> dict:
+     61:def set_watch_level(self, level: int, enabled: bool, min_pt: float, silent: bool):
+
+  ── 📄 telegram_bot/tg_config.py
+     27:class TgConfig:
+     32:    def __new__(cls):
+     43:    def token(self) -> str:
+     47:    def token(self, v: str):
+     51:    def chat_id(self) -> str:
+     55:    def chat_id(self, v: str):
+     59:    def enabled(self) -> bool:
+     63:    def enabled(self, v: bool):
+     66:    def notify_enabled(self, tag: str) -> bool:
+     70:    def set_notify(self, tag: str, v: bool):
+     74:    def order_enabled(self) -> bool:
+     78:    def order_enabled(self, v: bool):
+     81:    def save(self):
+     89:    def _load(self):
+     101:    def _deep_merge(base: dict, override: dict):
+
+  ── 📄 telegram_bot/tg_config_widget_patch.py
+     28:def _make_watch_level_group(self) -> QGroupBox:
+     104:def _save_watch_levels(self):
+
+  ── 📄 telegram_bot/tg_config_widget.py
+     27:class _BubbleWidget(QWidget):
+     35:    def __init__(self, direction: str, tag: str, text: str, raw: str, parent=None):
+     39:    def _build(self, direction: str, tag: str, text: str, raw: str):
+     110:class _ChatPanel(QWidget):
+     116:    def __init__(self, parent=None):
+     121:    def _build_ui(self):
+     220:    def append(self, direction: str, tag: str, text: str, raw: str):
+     224:    def set_status(self, connected: bool):
+     236:    def _append_bubble(self, direction: str, tag: str, text: str, raw: str):
+     244:    def _on_send(self):
+     267:class _SettingsPanel(QWidget):
+     268:    def __init__(self, chat_panel: _ChatPanel, parent=None):
+     274:    def _build_ui(self):
+     372:    def _save(self):
+     384:    def _test_connection(self):
+     398:class TgConfigWidget(QWidget):
+     406:    def __init__(self, parent=None):
+     411:    def _build_ui(self):
+     439:    def _register_callback(self):
+     443:    def closeEvent(self, event):
+
+════ 📦 watch_dog ════
+
+  ── 📄 watch_dog/alert_engine.py
+     31:class CondARow:
+     39:class CondBStrike:
+     47:class CondC:
+     52:class AlertState:
+     57:    def is_suppressed(self) -> bool:
+     60:    def can_fire(self) -> bool:
+     68:    def record(self):
+     72:    def reset(self):
+     79:class AlertEngine:
+     85:    def __init__(self, on_alert: Callable[[int, str], None]):
+     97:    def start(self):
+     100:    def stop(self):
+     103:    def reset_counts(self):
+     107:    def reset_count_for(self, key: str):
+     114:    def add_strike(self, strike: float, opt_type: str,
+     123:    def update_strike(self, strike: float, opt_type: str,
+     133:    def update_all_strikes(self, pct: float, direction: str):
+     139:    def remove_strike(self, strike: float, opt_type: str):
+     145:    def push_spx(self, minutes_ago: int, price_then: float, price_now: float):
+     160:    def push_opt(self, strike: float, opt_type: str,
+     172:    def push_vix(self, vix_now: float, vix_prev: float):
+     184:    def _eval_cond_a(self, idx: int, row: CondARow, change: float):
+     206:    def _eval_cond_b(self, b: CondBStrike, pct: float):
+     229:    def _fire(self, key: str, level: int, msg: str):
+     245:    def get_counts(self) -> Dict[str, int]:
+     248:    def get_suppressed_keys(self) -> List[str]:
+     252:    def total_alert_count(self) -> int:
+     255:    def is_running(self) -> bool:
+
+  ── 📄 watch_dog/alert_logger.py
+     20:class AlertLogger:
+     21:    def __init__(self, log_dir: Path = LOG_DIR):
+     32:    def write(self, level: int, msg: str):
+     38:    def log_path_today(self) -> Path:
+     44:    def _rotate_if_needed(self):
+     61:    def _close_handler(self):
+
+  ── 📄 watch_dog/alert_notifier.py
+     35:class AlertNotifier:
+     40:    def __init__(self):
+     43:    def set_ui_callback(self, cb: callable):
+     47:    def notify(self, level: int, msg: str):
+     56:    def _send_tg(self, level: int, msg: str):
+     99:    def _play_sound(self, level: int):
+     109:def _parse_pt(msg: str) -> Optional[float]:
+
+  ── 📄 watch_dog/__init__.py
+
+  ── 📄 watch_dog/night_alert_checker.py
+     24:class NightAlertChecker:
+     26:    def __init__(self, log_fn=None):
+     42:    def set_main_window(self, mw):
+     45:    def adjust_base(self, label: str, direction: int) -> str:
+     73:    def status_summary(self) -> str:
+     100:    def tick(self):
+     109:    def _run(self):
+     168:    def _collect_sample(
+     203:    def _check_slot(
+     261:    def _scan_range(
+     281:    def _scan_pre_alert(
+     303:    def _build_chain_dicts(self, cp_tab) -> tuple[dict, dict]:
+     339:    def _best_price(rec: dict) -> float | None:
+     352:    def _send_tg(self, msg: str):
+     366:    def _fire(self, rt, cache_key: str, opt_type, strike, curr_prem, pct, tg_fmt):
+
+  ── 📄 watch_dog/night_alert_tab.py
+     12:class NightAlertTab(QWidget):
+     13:    def __init__(self, parent=None):
+     21:    def set_checker(self, checker):
+     25:    def _build_ui(self):
+     41:    def _make_banner(self):
+     67:    def _next_banner(self):
+     73:    def _edit_banner(self):
+     91:    def _make_base_box(self):
+     184:    def set_main_window(self, mw):
+     193:    def _find_and_set_atm_by_premium(self):
+     276:    def _make_slots_box(self):
+     327:    def _refresh_tracked(self):
+     384:    def _add_slot_row(self, slot=None):
+     453:    def _del_slot_row(self, row):
+     456:    def _load_rows(self):
+     460:    def _load_preset(self):
+     476:    def _make_base_adjust_box(self):
+     496:    def _refresh_adjust_combo(self):
+     503:    def _adjust_base(self, direction: int):
+     512:    def _make_tg_box(self):
+     520:    def _make_btn_bar(self):
+     529:    def _save(self):
+     557:    def _reload(self):
+
+  ── 📄 watch_dog/night_alert_template.py
+     12:class NightSlot:
+     35:    def is_in_sampling_window(self) -> bool:
+     57:    def is_active_now(self) -> bool:
+     72:    def should_fire(self, current_prem: float, fallback_base: float = 0.0) -> bool:
+     83:class NightAlertConfig:
+     93:    def default(cls):
+     100:def load_config() -> NightAlertConfig:
+     120:def save_config(cfg: NightAlertConfig) -> None:
+     129:def get_active_slots(cfg: NightAlertConfig) -> list:
+     133:def parse_hhmm(raw: str) -> str:
+     149:def make_preset(preset_id: int) -> list:
+     183:def _make_daytime_preset() -> list:
+
+  ── 📄 watch_dog/und_saver_patch.py
+     11:def get_context(exec_time, minutes=None):
+     24:    def _lookup(target_dt):
+
+  ── 📄 watch_dog/watch_alert_tab.py
+     56:class WatchAlertPanel(QWidget):
+     58:    def __init__(self, parent=None):
+     112:    def set_main_window(self, mw):
+     129:    def _build_ui(self):
+     189:    def _make_header(self) -> QHBoxLayout:
+     236:    def mousePressEvent(self, event):
+     241:    def mouseMoveEvent(self, event):
+     246:    def mouseReleaseEvent(self, event):
+     249:    def _make_cond_a_box(self) -> QGroupBox:
+     259:    def _make_cond_a_row(self, idx: int) -> dict:
+     288:    def _make_cond_b_box(self) -> QGroupBox:
+     324:    def _make_control_bar(self) -> QHBoxLayout:
+     340:    def _make_suppress_bar(self) -> QHBoxLayout:
+     374:    def _make_log_box(self) -> QTextEdit:
+     383:    def _check_session_auto(self):
+     421:    def _try_snapshot_base_price(self):
+     457:    def _start(self):
+     469:    def _stop(self):
+     477:    def _apply_cond_a(self):
+     488:    def _reset_suppress(self, key: str):
+     493:    def _reset_suppress_b(self):
+     502:    def add_strike_from_chain(self, strike: float, opt_type: str):
+     516:    def _remove_selected_strike(self):
+     525:    def _on_pct_dir_changed(self):
+     542:    def _on_alert(self, level: int, msg: str):
+     547:    def _on_alert_ui(self, level: int, msg: str):
+     560:    def _on_tick(self):
+     619:    def _on_night_tick(self):
+     631:    def _get_price_n_min_ago(self, ctx, minutes: int, exec_time: datetime, get_ctx_fn) -> float | None:
+     661:    def _set_light(self, state: str):
+
+════ 📦 strategy_report ════
+
+  ── 📄 strategy_report/__init__.py
+
+  ── 📄 strategy_report/report_const.py
+     52:def apply_korean_font(app: QApplication | None = None) -> str:
+     143:def init_db() -> sqlite3.Connection:
+     205:def hline() -> QFrame:
+     213:def section_label(text: str) -> QLabel:
+     223:def field_label(text: str) -> QLabel:
+     252:class StarWidget(QWidget):
+     255:    def __init__(self, parent=None):
+     276:    def _set(self, v: int):
+     280:    def _refresh(self):
+     284:    def value(self) -> int:
+     287:    def setValue(self, v: int):
+
+  ── 📄 strategy_report/report_left.py
+     35:class ReportLeftPanel(QWidget):
+     44:    def __init__(self, parent=None):
+     51:    def _build(self):
+     160:    def _on_item_change(self, current, previous):
+     171:    def load_list(self, conn: sqlite3.Connection):
+     245:    def current_record(self) -> tuple[int, str] | tuple[None, None]:
+     252:    def select_item(self, rec_id: int, rec_type: str):
+
+  ── 📄 strategy_report/report_product.py
+     35:class ProductFormPanel(QScrollArea):
+     38:    def __init__(self, parent=None):
+     75:    def _lbl(self, text: str) -> QLabel:
+     80:    def _sec(self, text: str) -> QLabel:
+     88:    def _hline(self):
+     97:    def _build_header(self):
+     138:    def _build_section1(self):
+     204:    def _on_tick_changed(self, text: str):
+     208:    def _build_section2(self):
+     236:    def _build_section3(self):
+     255:    def _build_section4(self):
+     273:    def _build_section5(self):
+     314:    def _build_section6(self):
+     334:    def _build_section7(self):
+     344:    def _build_footer(self):
+     370:    def tick_size_value(self) -> str:
+
+  ── 📄 strategy_report/report_right.py
+     30:class TradeFormPanel(QScrollArea):
+     33:    def __init__(self, parent=None):
+     55:    def _build_header(self):
+     121:    def _build_section1(self):
+     135:    def _build_section2(self):
+     187:    def _build_section3(self):
+     227:    def _build_section4(self):
+     262:    def _build_section5(self):
+     272:    def _build_footer(self):
+
+  ── 📄 strategy_report/tab_report.py
+     36:class ReportTab(QWidget):
+     46:    def __init__(self, dashboard=None):
+     60:    def _build_ui(self):
+     98:    def _connect_signals(self):
+     129:    def _load_list(self):
+     132:    def _on_item_selected(self, rec_id: int, rec_type: str):
+     144:    def _delete_record(self):
+     170:    def _new_trade(self):
+     176:    def _load_trade(self, report_id: int):
+     211:    def _clear_trade_form(self):
+     229:    def _save_trade(self):
+     277:    def _save_trade_and_new(self):
+     284:    def _new_product(self):
+     289:    def _load_product(self, product_id: int):
+     331:    def _clear_product_form(self):
+     353:    def _save_product(self):
+     409:    def _save_product_and_new(self):
+     416:    def _save_current(self):
+     425:    def _update_hint(self):
+     433:    def _get_strategies(self) -> list[str]:
+     440:    def _pick_chart(self):
+     448:    def _clear_chart(self):
+     451:    def _set_chart_image(self, path: str):
+     470:    def _auto_fill_market_data(self, overwrite: bool = True):
+     493:    def _safe_float(text: str) -> float:
+     499:    def on_tab_activate(self):
+     502:    def on_tab_deactivate(self):
+     505:    def closeEvent(self, event):
+
+════ 📦 tab_account ════
+
+  ── 📄 tab_account/balance_data.py
+     31:class BalanceDataMixin:
+     34:    def _on_acct(self, tag, val, cur, acct):
+     81:    def _on_pos(self, acct, sym, right, pos, avg):
+     89:    def _on_order(self, oid, sym, right, action, qty, price, status):
+     102:    def _record_pnl(self, nlv, pnl):
+     109:    def _update_chart(self):
+     118:    def _save_history(self):
+     126:    def _load_history(self):
+
+  ── 📄 tab_account/balance_grid.py
+     28:class BalanceGrid(BalancePnlMixin, BalanceDataMixin, BalanceSessionMixin, BalanceJournalMixin, GridTab):
+     40:    def __init__(self, mw):
+     53:    def _build(self):
+     76:    def _connect_signals(self):
+     87:    def _refresh(self):
+     101:    def on_tab_activate(self):
+     112:    def _auto_expire_past_positions(self):
+     145:    def on_tab_deactivate(self):
+
+  ── 📄 tab_account/balance_journal.py
+     25:class BalanceJournalMixin:
+     28:    def _jnl_load(self):
+     138:    def _monthly_load(self):
+     212:    def _monthly_expire_dialog(self):
+
+  ── 📄 tab_account/balance_pnl.py
+     18:class BalancePnlMixin:
+     21:    def _start_rt_pnl(self):
+     42:    def _stop_rt_pnl(self):
+     53:    def _hook_pnl_callback(self):
+     76:    def _apply_rt_pnl(self, daily_pnl, unrealized, realized):
+     97:    def _on_rt_pnl(self, req_id, daily_pnl, unrealized, realized):
+
+  ── 📄 tab_account/balance_session.py
+     19:class BalanceSessionMixin:
+     22:    def _clear_session(self):
+     27:    def add_trade(self, sym, direction, qty, entry, exit_p, hold_min):
+     42:    def _update_session_stats(self):
+     62:    def _on_order_status_log(self, oid: int, status: str,
+     76:    def _on_exec_log(self, oid: int, sym: str,
+     89:    def _apply_theme(self):
+
+  ── 📄 tab_account/greeks_grid.py
+     37:class GreeksGrid(GreeksSaveMixin, GridTab):
+     47:    def __init__(self, mw):
+     61:    def _build(self):
+     93:    def _connect_signals(self):
+     100:    def _get_expiry(self):
+     106:    def _fetch(self):
+     138:    def _on_tick_price(self, rid, tt, price):
+     147:    def _on_tick_opt(self, rid, tt, iv, delta, op, gamma, vega, theta):
+     169:    def _apply_theme(self):
+
+  ── 📄 tab_account/greeks_save.py
+     22:class GreeksSaveMixin:
+     25:    def _snapshot(self):
+     41:    def _autosave(self):
+     55:    def _manual_save(self):
+
+  ── 📄 tab_account/__init__.py
+
+  ── 📄 tab_account/multi_price_build.py
+     19:class MultiPriceBuildMixin(MultiPriceSlotsMixin, MultiPricePanelsMixin):
+     22:    def _build(self):
+
+  ── 📄 tab_account/multi_price_grid.py
+     22:class MultiPriceGrid(MultiPriceBuildMixin, MultiPriceLogicMixin, GridTab):
+     34:    def __init__(self, mw):
+
+  ── 📄 tab_account/multi_price_logic.py
+     34:class MultiPriceLogicMixin(MultiPriceSoundMixin):
+     37:    def _connect_signals(self):
+     42:    def _on_watch_click(self, item):
+     47:    def _load_from_input(self, idx):
+     51:    def _load_slot(self, idx, sym):
+     65:    def _on_tick(self, rid, tt, price):
+     91:    def _on_tick_opt(self, rid, tt, iv, delta, op, gamma, vega, theta):
+     100:    def _add_trigger(self):
+     114:    def _on_trg_dbl(self, row, col):
+     118:    def _trg_keypress(self, event):
+     122:    def _del_trigger(self):
+     126:    def _clr_triggers(self):
+     131:    def _check_triggers(self, slot_idx, price):
+
+  ── 📄 tab_account/multi_price_panels.py
+     21:class MultiPricePanelsMixin:
+     24:    def _build_trigger_panel(self) -> QSplitter:
+     82:    def _build_file_sound_panel(self) -> QSplitter:
+
+  ── 📄 tab_account/multi_price_slots.py
+     34:class MultiPriceSlotsMixin:
+     37:    def _build_watchlist(self):
+     55:    def _build_slots(self):
+     118:    def _get_extra_settings(self) -> dict:
+     130:    def _apply_extra_settings(self, s: dict):
+
+  ── 📄 tab_account/multi_price_sound.py
+     26:class MultiPriceSoundMixin:
+     29:    def _pick_alert_sound(self):
+     41:    def _clear_alert_sound(self):
+     47:    def _play_alert_sound(self):
+     74:    def _save_sound_setting(self, path: str):
+     82:    def _restore_sound_setting(self):
+     93:    def _save_log(self):
+     101:    def _load_log(self):
+     111:    def _w_add(self):
+     116:    def _w_del(self):
+     121:    def _apply_theme(self):
+
+  ── 📄 tab_account/tab_account.py
+
+════ 📦 Account_info ════
+
+  ── 📄 Account_info/balance_journal_load.py
+     16:def _item(text: str, bold: bool = False,
+     33:def jnl_load(self):
+     192:def jnl_fetch_ib(self):
+     218:    def _tmp_exec_details(reqId, contract, execution):
+     234:    def _tmp_exec_details_end(reqId):
+     255:    def _force_end():
+     265:def _save_buf_to_db(self, buf: list, lbl):
+     339:def monthly_load(self):
+
+  ── 📄 Account_info/balance_panel_hero.py
+     18:def build_hero(self) -> QWidget:
+
+  ── 📄 Account_info/balance_panel_journal.py
+     15:def _make_exec_tbl() -> QTableWidget:
+     33:def _make_tbl(headers: list) -> QTableWidget:
+     45:def _wrap(widget: QWidget) -> QWidget:
+     51:def build_journal(self) -> QWidget:
+     72:def _build_header(self) -> QWidget:
+     95:    def _switch(idx):
+     139:def _build_summary_bar(self) -> QLabel:
+     148:def _build_pages(self) -> list:
+     173:def _build_monthly_page(self) -> QWidget:
+     254:    def _on_expire_click():
+     265:def _inline_expire_dialog(self) -> None:
+     337:def _build_footer(self) -> QWidget:
+
+  ── 📄 Account_info/balance_panel_mid.py
+     27:def build_chart_panel(self) -> QGroupBox:
+     73:def build_session_panel(self) -> QGroupBox:
+     119:def build_order_panel(self) -> QGroupBox:
+
+  ── 📄 Account_info/balance_panel_top.py
+     18:def build_acct_panel(self) -> QGroupBox:
+     31:def build_kpi_panel(self) -> QGroupBox:
+     67:def build_position_panel(self) -> QGroupBox:
+
+  ── 📄 Account_info/balance_style.py
+
+  ── 📄 Account_info/__init__.py
+
+  ── 📄 Account_info/multi_price_build.py
+     18:def build_multi_price(self) -> None:
+
+════ 📦 korea_chart_tab ════
+
+  ── 📄 korea_chart_tab/kr_build_main.py
+     26:def _make_table(headers):
+     40:def build_tables(self) -> QWidget:
+     103:def build_chart_area(self) -> QWidget:
+     215:def _clr_right(self):
+
+  ── 📄 korea_chart_tab/kr_build_side.py
+     22:def build_sidebar(self) -> QScrollArea:
+     294:def _make_sep():
+
+  ── 📄 korea_chart_tab/kr_chart_daily.py
+     24:def toggle_daily_view(self):
+     36:def load_daily_data(self):
+     74:def render_daily(self, records: list, center_date_str: str = ""):
+     125:def center_on_calendar(self):
+
+  ── 📄 korea_chart_tab/kr_chart_data.py
+     45:def fmt_kst(self, ts_ms: int) -> str:
+     59:def on_range_changed(self, vb, ranges):
+     77:def on_calendar(self, qdate=None):
+     98:def on_multi_chk(self, days: int, chk, state: int):
+     112:def _do_multi_day(self, num_days: int):
+     140:def do_fetch_date(self, sym: str, tgt: date):
+     161:def update_display(self, force_regular=False):
+     170:    def get_kst(r):
+     266:def push_trend_df(self):
+
+  ── 📄 korea_chart_tab/kr_chart_hlines.py
+     11:def on_chart_click(self, event):
+     38:def on_hline_chk(self, slot_idx: int, state: int):
+     47:def del_hlines(self):
+     58:def redraw_hlines(self):
+
+  ── 📄 korea_chart_tab/kr_chart_kiwoom.py
+     39:def _marker_path(code, tgt):
+     42:def _set_marker(code, tgt):
+     47:def _has_marker(code, tgt):
+     50:def _clear_marker(code, tgt):
+     55:def _csv_path(code, tgt):
+     63:def _parse_df(code, df):
+     96:def _date_range_str(records):
+     107:def _oldest_date(records):
+     121:def download_opt10080(self, code, is_next=False):
+     174:def _save_by_date(code, records):
+     206:def fetch_history(self, code, tgt):
+     248:def fetch_max(self):
+     264:def _fetch_max_step(self):
+     280:def _fetch_max_done(self):
+     299:def fetch_20days(self):
+     323:def _fetch_20days_step(self):
+     352:def force_redownload(self, code, tgt):
+     370:def load_day_df(self, code, tgt):
+
+  ── 📄 korea_chart_tab/kr_chart_labels.py
+     13:def on_chart_label_click(self, event):
+     33:def on_label_chk(self, slot_idx: int, state: int):
+     42:def del_labels(self):
+     53:def redraw_labels(self):
+
+  ── 📄 korea_chart_tab/kr_chart_markers.py
+     17:def _parse_time(txt: str) -> str:
+     29:def _t2min(t: str) -> int:
+     34:def add_time_marker(self):
+     62:def on_marker_chk(self, slot_idx: int, state: int):
+     72:def redraw_time_markers(self):
+     88:def capture_chart(self):
+
+  ── 📄 korea_chart_tab/kr_chart_overlay.py
+     46:def init_overlays(self):
+     53:def on_overlay_chk(self, code, name, checked):
+     75:def _uncheck_by_code(self, code):
+     88:def _add_overlay(self, code, name):
+     129:    def _sync_vb():
+     150:def _remove_overlay(self, code):
+     164:def clear_all_overlays(self):
+     172:def redraw_overlays(self):
+     194:def _align_to_main(self, records):
+     227:def _load_overlay_records(self, code):
+
+  ── 📄 korea_chart_tab/kr_chart_peaks.py
+     7:def _parse_t(txt: str) -> int:
+     19:def _row_eok(processed, i: int) -> float:
+     25:def _row_time_min(processed, i: int) -> int:
+     33:def peak1(self):
+     54:def peak2(self):
+     68:def update_peak3(self, table):
+
+  ── 📄 korea_chart_tab/kr_chart_tab.py
+     82:class KoreaChartGrid(QWidget):
+     85:    def __init__(self, mw):
+     153:    def _on_multi_chk(self, days, chk, state):
+     157:    def _clr_right(self):
+     161:    def _load_watchlist(self):
+     172:    def _save_watchlist(self):
+     184:    def _w_add(self):
+     198:    def _w_del(self):
+     215:    def _add_watch_item(self, code, name):
+     235:    def _on_watch_click(self, item):
+     244:    def _on_sym_changed(self):
+     248:    def keyPressEvent(self, event):
+     255:    def _ask_date_input(self):
+     271:    def _on_rt_btn(self, checked):
+     281:    def _start_rt(self):
+     295:    def _stop_rt(self):
+     305:    def _on_rt_bar(self, records):
+     315:    def _get_extra_settings(self) -> dict:
+     325:    def _apply_extra_settings(self, s: dict):
+     336:    def _build(self):
+     365:    def _connect_kiwoom(self):
+     390:    def _update_connect_ui(self, connected: bool):
+     406:    def _clear_all_markers(self):
+     418:    def _on_force_reload(self):
+
+  ── 📄 korea_chart_tab/kr_chart_theme.py
+     33:def apply_theme(self):
+     76:def c_up(self) -> str:
+     80:def c_dn(self) -> str:
+
+  ── 📄 korea_chart_tab/kr_chart_workers.py
+     73:class KrBarTimer(QObject):
+     89:    def __init__(self, parent_grid, symbol: str, interval_ms: int = 10000):
+     97:    def start(self):
+     101:    def stop(self):
+     104:    def _fetch(self):
+
+════ 📦 Scanner ════
+
+  ── 📄 Scanner/Main_scanner.py
+     31:class FetchThread(QThread):
+     36:    def __init__(self, start_date, end_date, weekday_no, pct_threshold):
+     43:    def run(self):
+     118:class MainWindow(QMainWindow):
+     119:    def __init__(self):
+     127:    def _build_ui(self):
+     254:    def _on_search(self):
+     281:    def _on_clear(self):
+     286:    def _on_result(self, rows):
+     326:    def _on_error(self, msg):
+     330:    def _bold_font():
+
+════ 📦 spread_tele ════
+
+  ── 📄 spread_tele/.init.py
+
+  ── 📄 spread_tele/spread_calc.py
+     38:def _et_today() -> _date:
+     45:def get_base_price(tab: "CallPutGrid") -> Optional[float]:
+     54:def get_price_label(tab: "CallPutGrid") -> str:
+     65:def resolve_expiry(tab: "CallPutGrid", which: str) -> Tuple[Optional[str], str]:
+     96:def _build_row_map(data_dict: dict) -> dict:
+     117:def _mid(info: Optional[dict]) -> Optional[float]:
+     131:def calc_spread_pnl(long_k: float, short_k: float,
+     148:def _get_spread_row(strikes: list, k: float) -> Optional[int]:
+     160:def _tab_current_expiry_main(tab: "CallPutGrid") -> Optional[str]:
+     184:def _calc_spreads(strikes: List[float], row_map: dict,
+     230:def _fetch_ticks_for_expiry(
+     263:    def _run_on_main():
+     332:def get_call_spreads(tab: "CallPutGrid", expiry_code: str,
+     369:    def _cb(row_map: dict):
+     380:def get_put_spreads(tab: "CallPutGrid", expiry_code: str,
+     410:    def _cb(row_map: dict):
+
+  ── 📄 spread_tele/spread_config.py
+
+  ── 📄 spread_tele/spread_tele_bot.py
+     40:def set_tab(tab: "CallPutGrid") -> None:
+     47:def _fmt(val: Optional[float], decimals: int = 2) -> str:
+     51:def _dist_arrow(pct: float, is_call: bool) -> str:
+     55:def _chunk_text(text: str, limit: int = 4000) -> List[str]:
+     69:def _build_spread_msg(spreads: List[dict], price_lbl: str,
+     139:def _send_result(spreads: List[dict], price_lbl: str,
+     191:def handle_callback(data: str, chat_id: str, message_id: int) -> bool:
+     273:def _clear(chat_id: str) -> None:
+
+════ 루트 기타 모듈 ════
+
+  ── 📄 1분데이터만조회.py
+     96:class Sig(QObject):
+     174:class Fetcher:
+     407:class MainWindow(QMainWindow):
+     604:def main():
+
+  ── 📄 apply_patch.py
+
+  ── 📄 chart_history.py
+     38:def _is_valid_row(row: dict) -> bool:
+     54:def _calc_dur(max_bars: int, tf: int) -> str:
+     73:class HistoryMixin(VlineMixin, IbkrHistMixin):
+
+  ── 📄 chart_history_vline.py
+     10:class VlineMixin:
+
+  ── 📄 chart_ibkr.py
+     51:def _hist_what_rth(sym: str):
+     73:def _make_hist_contract(sym: str, is_weekend: bool = False,
+     113:def _is_valid_bar(bar: dict) -> bool:
+     138:def _parse_bar(bd: dict, is_daily: bool) -> dict:
+     149:class IbkrHistMixin:
+
+  ── 📄 chart_ohlc.py
+     22:def _calc_x_tick_interval(n: int) -> int:
+     32:def draw_ohlc_candles(pw, items_list: list, bars: list,
+     122:def _utc_to_et(unix_sec: float) -> datetime:
+     128:def _utc_to_kst(unix_sec: float) -> datetime:
+     134:def _bars_to_rows(bars: List[Dict[str, Any]],
+
+  ── 📄 chart_panel_builder.py
+     32:def _lbl(text):
+     39:def _build_realtime_tab(host):
+     131:def _build_daily_tab(host):
+     202:def build_chart_panel(host):
+     278:def wrap_tbl(host, tbl, title, color):
+
+  ── 📄 chart_panel_tabs.py
+     35:def _lbl(text):
+     39:def _vsep():
+     52:def _build_intraday_tab(host):
+     227:def _build_tick_tab(host):
+
+  ── 📄 chart_prefetch.py
+     43:def _marker_path(sym: str, d: date) -> Path:
+     46:def _has_marker(sym: str, d: date) -> bool:
+     49:def _set_marker(sym: str, d: date):
+     57:def _last_n_trading_days(n: int = 7) -> List[date]:
+     69:def _download_polygon(sym: str, tgt: date, api_key: str) -> Optional[pd.DataFrame]:
+     85:def _save_to_csv(sym: str, tgt: date, df: pd.DataFrame):
+     107:class PrefetchWorker(QThread):
+     145:class PrefetchManager(QObject):
+
+  ── 📄 chart_tick.py
+     11:class TickMixin:
+
+  ── 📄 chart_utils.py
+     14:def _polygon_key() -> str:
+     39:def polygon_aggs(sym: str, start: _date, end: _date,
+     74:def is_dst(dt=None) -> bool:
+     83:def et_to_kst(dt_et):
+     123:class _FetchSignal(QObject):
+
+  ── 📄 combo_hot_reload.py
+     91:def hot_reload(panel_instance, log_fn=None):
+     140:def install_refresh_button(panel_instance, parent_widget, log_fn=None):
+
+  ── 📄 combo_logic.py
+     33:def _norm_cdf(x: float) -> float:
+     37:def _bs_price(S: float, K: float, T_days: float,
+     67:class PnlLogicMixin:
+
+  ── 📄 combo_optimizer.py
+     29:class OptimizerPanelMixin:
+
+  ── 📄 combo_second_logic.py
+     58:class TrendAnalyzer:
+     180:def execute_logic(data_frame: pd.DataFrame) -> dict:
+     195:def reload_and_run(mw, df: pd.DataFrame) -> dict:
+
+  ── 📄 combo_trend_panel.py
+     41:def _score_color(score: int) -> str:
+     48:def _bar_html(score: int, max_score: int, color: str) -> str:
+     58:class TrendScorePanel(QGroupBox):
+
+  ── 📄 combo_ui_chaser_row.py
+     10:def _build_chaser_row(self) -> QWidget:
+
+  ── 📄 combo_ui_left.py
+     41:class LeftPanelMixin:
+     402:def _bulk_fetch_conids(self, symbol: str, expiry: str,
+
+  ── 📄 combo_ui_right_panels_ext.py
+     25:def _build_result_panel(self) -> QGroupBox:
+     91:def _build_spread_chart_panel(self) -> QGroupBox:
+     114:def _show_strat_desc(self):
+     132:def _toggle_optimizer_panel(self):
+
+  ── 📄 config_ui.py
+     24:class ConfigMixin:
+
+  ── 📄 futures_tick_speed_widget.py
+     34:class FuturesTickSpeedWidget(QWidget):
+
+  ── 📄 __init__.py
+
+  ── 📄 iv_rank_panel.py
+     59:def _mk(text: str, color: str = "#ccc") -> QTableWidgetItem:
+     68:def _norm_side(raw: str) -> str:
+     76:def _flt(val) -> float:
+     84:class IVPanel(QWidget):
+
+  ── 📄 main_backup.py
+     86:class EmptyGrid(GridTab):
+     101:class TradingDashboard(QMainWindow):
+
+  ── 📄 main_color_config.py
+     33:def apply_theme(mw, theme_name: str) -> None:
+     201:def _sync_theme_buttons(mw, theme_name: str, t: dict) -> None:
+     225:def build_theme_bar(mw) -> QWidget:
+
+  ── 📄 main_config_theme.py
+     75:class _ColorSwatch(QPushButton):
+     119:class ThemeConfigPanel(QWidget):
+     350:def get_safe_palette_light() -> dict:
+     376:def apply_light_fg_fix():
+
+  ── 📄 mini_chart_canvas.py
+     24:class MiniChartCanvas(FigureCanvas):
+
+  ── 📄 order_panel_amend.py
+     12:class AmendPanelMixin:
+
+  ── 📄 order_panel_tabs.py
+     22:class OrderTabsMixin:
+
+  ── 📄 price_history_buffer.py
+     31:class PriceHistoryBuffer:
+
+  ── 📄 shared_chain_store.py
+     28:class SharedChainStore:
+
+  ── 📄 spxw_1min_tab.py
+     40:def _make_1min_save_path(expiry: str, symbol_raw: str) -> str:
+     48:def _list_1min_xlsx_for_date(expiry: str) -> List[str]:
+     53:def _load_1min_bars_from_file(expiry: str, symbol_raw: str) -> List[Dict[str, Any]]:
+     72:class OneMiniTab(QWidget):
+
+  ── 📄 spxw_core.py
+     70:def _provider_key(provider: object) -> int:
+     74:def _http_session():
+     86:def build_spx_zero_day_symbol(strike: Union[float, str], callput: str,
+     106:def opt_ticker(symbol_raw: str) -> str:
+     110:def _hhmm_to_tuple(hhmm: str) -> Tuple[int, int]:
+     117:def is_in_night_session_kst(hhmm: str) -> bool:
+     129:def _night_session_sort_key(hhmm: str) -> int:
+     136:def normalize_rows(rows: Any, tz_kst: bool = True) -> List[Dict[str, Any]]:
+     184:def filter_night_session(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+     190:def limit_rows(rows: List[Dict[str, Any]], count: int) -> List[Dict[str, Any]]:
+     196:def cache_dir(base: str, expiry: str, strike: float, side: str) -> str:
+     202:def cache_file_path(base: str, expiry: str, strike: float, side: str) -> str:
+     209:def _npz_path_from_csv(path_csv: str) -> str:
+     214:def save_rows_csv(path: str, rows: List[Dict[str, Any]]) -> None:
+     237:def _rows_from_npz(npz_path: str) -> List[Dict[str, Any]]:
+     260:def _load_npz_cached(npz_path: str, mtime: float):
+     265:def _load_csv_cached(csv_path: str, mtime: float):
+     283:def load_rows_csv(path: str) -> List[Dict[str, Any]]:
+     303:def fetch_minutes_polygon(provider: object, symbol_raw: str, date: str,
+     363:def merge_call_put(data_list: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+
+  ── 📄 spxw_main.py
+     18:def _log(msg: str):
+     28:def _global_exc_hook(exc_type, exc_value, exc_tb):
+     35:def _thread_exc_hook(args):
+     52:class MainWindow(QMainWindow):
+     74:def main():
+
+  ── 📄 spxw_tab.py
+     61:class ZeroDayTab(QWidget):
+
+  ── 📄 strategy_panel.py
+     140:class StrategyPanelMixin:
+
+  ── 📄 tab_account.py
+
+  ── 📄 tab_balance.py
+     41:class BalanceGrid(GridTab):
+
+  ── 📄 tab_chart_backup.py
+     145:class PolygonWorker(QThread):
+     181:class IBKRBarTimer(QTimer):
+     215:class ChartGrid(QWidget):
+
+  ── 📄 tab_chart.py
+     120:class ChartGrid(QWidget):
+
+  ── 📄 tab_combo_shortcut.py
+     34:class ShortcutMixin:
+     74:def _atm_shortcut(self, offset: int):
+     141:def _build_plan(self, strat: str, offset: int, und_price: float,
+     191:def _write_leg_row(self, leg_row: int, cp: str, strike: float):
+     222:def _trigger_premium(self, plan: list):
+
+  ── 📄 tab_combo_strategy.py
+     28:class ComboStrategyGrid(
+
+  ── 📄 tab_delta_band.py
+     41:def _norm_cdf(x: float) -> float:
+     45:def _norm_pdf(x: float) -> float:
+     49:def bs_delta(S, K, T, r, sigma, right):
+     59:def bs_gamma(S, K, T, r, sigma):
+     66:def bs_theta(S, K, T, r, sigma, right):
+     79:def bs_vega(S, K, T, r, sigma):
+     86:def implied_vol_bisect(market_price, S, K, T, r, right,
+     120:def parse_option_fname(fname: str):
+     132:def time_to_expiry_years(bar_dt: datetime, exp_date: date) -> float:
+     147:def load_delta_series(csv_path, underlying_prices=None, r=RISK_FREE_RATE):
+     285:class CalcThread(QThread):
+     345:class DeltaBandViewer(QWidget):
+     854:def _attach_callput(self, tab):
+     866:def main():
+
+  ── 📄 tab_greeks_OLD.py
+     39:class GreeksGrid(GridTab):
+
+  ── 📄 tab_greeks.py
+     39:class GreeksGrid(GridTab):
+
+  ── 📄 tab_greeks_unUsed.py
+     90:def _init_db() -> sqlite3.Connection:
+     111:def _save_to_db(conn, sym, expiry, und_price, rows):
+     126:def _gamma_bg(gamma: float, max_gamma: float):
+     137:def _delta_color(delta: float, side: str) -> QColor:
+     148:def _arrow_str(curr: float, prev: float, threshold: float = 1e-6):
+     156:def _arrow_color(curr: float, prev: float):
+     166:class GreeksGrid(GridTab):
+     794:def _vline() -> QFrame:
+
+  ── 📄 tab_kr_futures.py
+     70:def _make_kr_opt(strike: float, right: str, expiry: str):
+     86:def _make_kr_und():
+     96:def _make_kr_order(action, qty, otype, lmt=0.0):
+     115:def _kr_2nd_thu(year, month):
+     123:def build_kr_expiry_list():
+     151:def _mk(text, color=None):
+     157:def _kr_table(headers, rows=0):
+     209:class KRFuturesGrid(QWidget):
+
+  ── 📄 tab_multi_price.py
+     39:class MultiPriceGrid(GridTab):
+
+  ── 📄 tab_oi.py
+     27:def _mk(text, color=None):
+     34:class OITrackerGrid(GridTab):
+
+  ── 📄 tab_opt_intraday.py
+     68:class _Bridge(QObject):
+     80:class CandlestickItem(pg.GraphicsObject):
+     154:class OptIntradayGrid(QWidget):
+
+  ── 📄 tab_options_core.py
+     45:class CoreMixin:
+
+  ── 📄 tab_options_order.py
+     35:class OrderMixin(AdaptiveMixin):
+
+  ── 📄 tab_options_price_patch.py
+     34:def _mk_chg(text: str, color: str) -> QTableWidgetItem:
+     43:def _chg_color(pct: float) -> str:
+     52:def render_chain_chg(tbl, row: int, price, prev_close):
+
+  ── 📄 tab_options_watch.py
+     34:class WatchMixin:
+
+  ── 📄 tab_sniper.py
+     32:def _mk(text, color=None):
+     39:class SniperGrid(QWidget):
+
+  ── 📄 tab_spx_history.py
+     51:class _Bridge(QObject):
+     60:class _PolygonWorker(QThread):
+     166:class SpxHistoryGrid(QWidget):
+
+  ── 📄 tab_spy_scanner.py
+     45:def load_daily_df(start_date: str, end_date: str) -> pd.DataFrame:
+     123:class _CalendarDialog(QDialog):
+     145:class _DateButton(QPushButton):
+     174:class _AnalyzeThread(QThread):
+     248:class SpyScannerGrid(GridTab):
+
+  ── 📄 tab_trading.py
+     62:def _mk(text, color=None):
+     72:def make_order(action: str, qty: int, order_type: str,
+     92:def make_stock_contract(symbol: str):
+     111:class TradingGrid(GridTab):
+
+  ── 📄 watchlist_font_patch.py
+     11:def patch_watchlist_font(widget, delta: int = 3):
+
+  ── 📄 zone_patch.py
+     20:def _strikes_for_zone(self, atm: float, step: float, n: int):

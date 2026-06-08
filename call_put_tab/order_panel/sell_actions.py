@@ -1,18 +1,11 @@
 """
 order_panel/sell_actions.py — 빠른매도·지정가매도·bump·잔고패널·+1호가 로직
 ════════════════════════════════════════════════════════════════════
-포함 메서드 (OrderPanelMixin에 mixin):
-  _show_pos_sell_panel()    잔고 청산 패널 표시 + 빠른매도 탭 전환
-  _pos_sell_execute()       잔고 청산 매도 주문 실행
-  _sell_selected_order()    Bid가 LMT 즉시매도
-  _sell_limit_order()       지정가 입력 LMT 매도
-  _bump_sell_price()        미체결 주문 전체 가격 ±delta 정정
-  _plus1tick_buy()          최고가 BUY +$0.05 호가 정정
-  _place_sell_lmt()         공통 LMT SELL 주문 전송 (sell_place.py)
+[수정]
+  _pos_sell_execute(): 화면 만기 → 보유 포지션 실제 만기 사용
+                       _place_sell_lmt() 경로로 통일 (conId 주입 포함)
 """
-
 from PyQt5.QtWidgets import QMessageBox
-
 from .sell_place import SellPlaceMixin
 
 
@@ -46,17 +39,61 @@ class SellActionsMixin(SellPlaceMixin):
             lbl.setText(f"선택: {label} {strike}  {qty}계약  — 가격 확인 후 매도")
 
     def _pos_sell_execute(self):
+        """
+        잔고 청산 매도 — 보유 포지션의 실제 만기/심볼 사용.
+        _place_sell_lmt() 경로로 통일하여 conId 주입·error 핸들러 복원 포함.
+        """
         side   = getattr(self, '_ps_side',   None)
         strike = getattr(self, '_ps_strike', None)
         if not side or not strike:
-            self._log("⚠ 매도 대상 없음"); return
+            self._log("⚠ 매도 대상 없음 — 잔고 테이블을 다시 클릭하세요.")
+            return
+
+        # ── 만기/심볼: 보유 포지션 기준 ──────────────────────
+        expiry = getattr(self, '_ps_expiry', None)
+        sym    = getattr(self, '_ps_sym',    None)
+        if not expiry:
+            expiry, _ = self._get_expiry()
+        if not expiry:
+            self._log("⚠ 만기 정보 없음 — 잔고 테이블을 다시 클릭하세요.")
+            return
+        if not sym:
+            sym = self.edit_sym.text().strip().upper() if hasattr(self, 'edit_sym') else ""
+
+        # Monthly 만기는 SPX 티커로
+        try:
+            from call_put_tab.core_expiry_utils import _is_monthly_expiry
+            if _is_monthly_expiry(expiry):
+                sym = "SPX"
+        except Exception:
+            pass
+
+        qty       = self._ps_qty.value()
         price_txt = self._ps_price.text().strip()
-        self._qord_fill(side, strike,
-                        float(price_txt) if price_txt else None,
-                        source="← 잔고 청산")
-        self.qord_qty.setValue(self._ps_qty.value())
+        is_lmt    = bool(price_txt)
+        try:
+            price = float(price_txt) if is_lmt else 0.0
+        except ValueError:
+            self._log("⚠ 가격 형식 오류")
+            return
+
+        if not is_lmt:
+            self._log("⚠ 가격을 입력하세요 (시장가 미지원)")
+            lbl = getattr(self, 'lbl_sell_status', None)
+            if lbl: lbl.setText("⚠ 매도 가격을 입력하세요")
+            return
+
+        if not self.mw.connected:
+            QMessageBox.warning(self, "미연결", "TWS에 먼저 연결하세요.")
+            return
+
+        label      = "CALL" if side == "C" else "PUT"
+        msg        = f"매도 LMT  {sym} {label} {strike}  {qty}계약  ${price:.2f}"
+        lbl        = getattr(self, 'lbl_sell_status', None)
+
+        # _place_sell_lmt()로 통일 → conId 주입 + error 핸들러 복원 포함
+        self._place_sell_lmt(side, strike, sym, qty, price, lbl, msg)
         self._pos_sell_panel.setVisible(False)
-        self._qord_place("SELL")
 
     # ── +1호가 매수 ──────────────────────────────────────────
     def _plus1tick_buy(self):
@@ -83,7 +120,7 @@ class SellActionsMixin(SellPlaceMixin):
         except Exception as e:
             self._log(f"❌ +1호가 정정 오류: {e}")
 
-    # ── 빠른매도: Bid LMT ───────────────────────────────────
+    # ── 빠른매도: Bid LMT ────────────────────────────────────
     def _sell_selected_order(self):
         side       = getattr(self, '_ps_side',   None)
         strike_txt = getattr(self, '_ps_strike', None)
@@ -92,7 +129,6 @@ class SellActionsMixin(SellPlaceMixin):
         self._log(f"📤 빠른매도: _ps_side={side} _ps_strike={strike_txt}")
         if not side or not strike_txt:
             if lbl: lbl.setText("⚠ 잔고 행을 먼저 클릭하세요"); return
-        # [버그수정 P1-②] sell_qty 위젯 None 시 qty=1 폴백 제거 → 조기 리턴
         if not sell_qty_w:
             msg = "❌ 수량 위젯 초기화 안 됨 — 탭을 닫았다 다시 여세요"
             if lbl: lbl.setText(msg)
@@ -116,9 +152,9 @@ class SellActionsMixin(SellPlaceMixin):
             else:
                 if lbl: lbl.setText("⚠ Bid 가격 없음 — 체인 행 클릭 or 가격 직접 입력")
                 self._log("⚠ 빠른매도: _pp_opt_bid 없고 sell_price 비어있음"); return
-        sym   = getattr(self, '_ps_sym', None) or (
-                self.edit_sym.text().strip().upper() if hasattr(self, 'edit_sym') else "")
-        msg   = f"매도 LMT  {sym} {'CALL' if side=='C' else 'PUT'} {strike_txt}  {qty}계약  {price_src}"
+        sym = getattr(self, '_ps_sym', None) or (
+              self.edit_sym.text().strip().upper() if hasattr(self, 'edit_sym') else "")
+        msg = f"매도 LMT  {sym} {'CALL' if side=='C' else 'PUT'} {strike_txt}  {qty}계약  {price_src}"
         self._place_sell_lmt(side, strike_txt, sym, qty, price, lbl, msg)
 
     # ── 빠른매도: 지정가 ─────────────────────────────────────
@@ -132,7 +168,6 @@ class SellActionsMixin(SellPlaceMixin):
         if not side or not strike_txt:
             if lbl: lbl.setText("⚠ 잔고 행을 먼저 클릭하세요"); return
         price_txt = sell_price_w.text().strip() if sell_price_w else ""
-        # [버그수정 P1-②] sell_qty 위젯 None 시 qty=1 폴백 제거 → 조기 리턴
         if not sell_qty_w:
             if lbl: lbl.setText("❌ 수량 위젯 초기화 안 됨 — 탭을 닫았다 다시 여세요")
             self._log("❌ 지정가매도 중단: sell_qty 위젯 없음"); return

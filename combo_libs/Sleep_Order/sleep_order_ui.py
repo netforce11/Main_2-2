@@ -124,6 +124,8 @@ class SleepOrderButton(QWidget):
         super().__init__(parent)
         self._ref = ref
         self.setStyleSheet("background:transparent;")
+        # [FIX-FLOAT] parent가 있어도 Qt가 toplevel로 표시하는 경우 방지
+        self.setWindowFlags(Qt.Widget)
         self._build()
         QTimer.singleShot(0, self._connect_watcher)
 
@@ -217,6 +219,8 @@ class PositionCloseButton(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background:transparent;")
+        # [FIX-FLOAT] toplevel 방지
+        self.setWindowFlags(Qt.Widget)
         self._build()
         QTimer.singleShot(0, self._connect_watcher)
 

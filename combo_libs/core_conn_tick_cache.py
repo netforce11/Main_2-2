@@ -18,8 +18,8 @@ from PyQt5.QtCore import QTimer
 from core import REQ_UND, REQ_CALL, REQ_PUT
 
 try:
-    from call_put_tab.bridge_price_tick import subscribe as _tick_subscribe
-    from call_put_tab.bridge_price_tick import unsubscribe as _tick_unsubscribe
+    from combo_libs.bridge_price_tick import subscribe as _tick_subscribe
+    from combo_libs.bridge_price_tick import unsubscribe as _tick_unsubscribe
     _HAS_ROUTER = True
 except ImportError:
     _HAS_ROUTER = False

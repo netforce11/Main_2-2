@@ -266,10 +266,78 @@ class OrderUtilMixin:
         strike = getattr(self, '_ps_strike', None)
         if not side or not strike:
             self._log("⚠ 매도 대상 없음. 잔고 테이블을 다시 클릭하세요."); return
+        # ── 만기/심볼: 보유 포지션 기준 (화면 combo_exp 무관) ──
+        expiry = getattr(self, '_ps_expiry', None)
+        sym    = getattr(self, '_ps_sym',    None)
+        if not expiry:
+            expiry, _ = self._get_expiry()
+        if not expiry:
+            self._log("⚠ 만기 정보 없음 — 잔고 테이블을 다시 클릭하세요.")
+            return
+        if not sym:
+            sym = self.edit_sym.text().strip().upper()
+
+        qty       = self._ps_qty.value()
         price_txt = self._ps_price.text().strip()
-        self._qord_fill(side, strike,
-                        float(price_txt) if price_txt else None,
-                        source="← 잔고 청산")
-        self.qord_qty.setValue(self._ps_qty.value())
-        self._pos_sell_panel.setVisible(False)
-        self._qord_place("SELL")
+        is_lmt    = bool(price_txt)
+        try:
+            price = float(price_txt) if is_lmt else 0.0
+        except ValueError:
+            self._log("⚠ 가격 형식 오류 — 숫자를 입력하세요.")
+            return
+
+        label      = "CALL" if side == "C" else "PUT"
+        price_disp = ("$" + f"{price:.2f}") if is_lmt else "시장가"
+        msg = ("매도 " + ("LMT" if is_lmt else "MKT") + "  "
+               + sym + " " + label + " " + strike
+               + "  " + str(qty) + "계약  " + price_disp)
+
+        from PyQt5.QtWidgets import QMessageBox
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("잔고 청산 확인")
+        dlg.setText("⚠ 보유 포지션을 청산합니다.\n\n" + msg + "\n\n계속하시겠습니까?")
+        dlg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        dlg.setDefaultButton(QMessageBox.Yes)
+        yes_btn = dlg.button(QMessageBox.Yes)
+        if yes_btn:
+            yes_btn.setStyleSheet(
+                "QPushButton{background:#6b1a1a;color:#ff6666;"
+                "font-weight:bold;padding:4px 16px;border-radius:4px;"
+                "border:1px solid #ff6666;}"
+                "QPushButton:hover{background:#8b2a2a;}")
+        if dlg.exec_() != QMessageBox.Yes:
+            return
+
+        if not self.mw.connected:
+            self._log("⚠ TWS 미연결 — 먼저 연결하세요.")
+            return
+
+        try:
+            from ibapi.order import Order as IbOrder
+            from core_contract import make_opt_contract
+            from call_put_tab.core_expiry_utils import _is_monthly_expiry
+            if _is_monthly_expiry(expiry):
+                sym = "SPX"
+            contract = make_opt_contract(sym, float(strike), side, expiry, "")
+            ibord = IbOrder()
+            ibord.action        = "SELL"
+            ibord.orderType     = "LMT" if is_lmt else "MKT"
+            ibord.totalQuantity = qty
+            ibord.tif           = "DAY"
+            ibord.eTradeOnly    = False
+            ibord.firmQuoteOnly = False
+            if is_lmt:
+                ibord.lmtPrice = price
+            oid = self.mw.ib.get_next_id()
+            if oid is None:
+                self._log("⚠ 주문 ID 획득 실패")
+                return
+            self.mw.ib.placeOrder(oid, contract, ibord)
+            self._pos_sell_panel.setVisible(False)
+            self.lbl_qord_status.setStyleSheet(
+                "color:#ff6666;font-size:11px;"
+                "border:1px solid #333;border-radius:3px;padding:2px;")
+            self.lbl_qord_status.setText("전송(청산): " + msg)
+            self._log("📤 잔고 청산 매도: " + msg + "  (OID=" + str(oid) + ")")
+        except Exception as e:
+            self._log("❌ 잔고 청산 주문 오류: " + str(e))

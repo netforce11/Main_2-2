@@ -48,7 +48,6 @@ from PyQt5.QtWidgets import (
     QPushButton, QSlider, QSizeGrip, QFrame,
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QSize
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QColor, QBrush
 
 # ══════════════════════════════════════════════════════════════

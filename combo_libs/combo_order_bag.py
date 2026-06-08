@@ -1,5 +1,5 @@
 """
-combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.8
+combo_order_bag.py — BAG(Combo) 주문 전송 로직  v3.9
 ──────────────────────────────────────────────────────
 v3.8 변경 (bug fix):
   [BUG-BAG-1 FIX] XSP 종목 $0.01 틱 예외 누락 수정
@@ -208,7 +208,12 @@ def _sleep_place_sell_order(self, legs: list, lmt_price: float,
 
     connect_order_callbacks(self)
     sym_w  = getattr(self, 'edit_sym_combo', None)
-    symbol = sym_w.text().strip().upper() if sym_w else "SPX"
+    # [FIX-SLEEP-SYM] 위젯 없을 때 legs 심볼 추출 → XSP에서 SPX 틱 적용 버그 방지
+    if sym_w:
+        symbol = sym_w.text().strip().upper()
+    else:
+        _leg_sym = (legs[0].get('symbol', '') if legs else '') or ''
+        symbol   = _leg_sym.upper() if _leg_sym else "SPX"
 
     _exch = _get_selected_exchange(self)
     bag = Contract()
@@ -546,7 +551,8 @@ def _do_send_body(self, bag, combo_legs: list, legs: list, strat: str,
     # [SET-QTY] edit_set_qty 위젯에서 세트 수량 읽기
     _set_qty_w = getattr(getattr(self,'synthetic_panel',None),'spin_set_qty',None)
     _set_qty   = int(_set_qty_w.value() if _set_qty_w else 1)
-    _bag_qty   = max((int(float(lg.get("qty", 1))) for lg in legs), default=1) * _set_qty
+    # [FIX-BAG-QTY] BAG totalQuantity = 세트 수량만 반영. comboLeg.ratio 가 레그별 비율 담당
+    _bag_qty   = _set_qty
     ibord               = IbOrder()
     ibord.action        = bag_action
     ibord.orderType     = "LMT"

@@ -96,11 +96,7 @@ def _on_order_status(self, oid: int, status: str,
         close_oids_check.add(oid)
         is_close_match = True
 
-    # [FIX-EXT] 외부(IBKR 앱 등)에서 낸 주문도 취소 콜백 처리
-    # _cancel_sent_oid 로 cancelOrder 보낸 OID면 통과
-    is_cancel_sent = (getattr(self, '_cancel_sent_oid', None) == oid)
-
-    if not is_pending_match and not is_close_match and not is_cancel_sent:
+    if not is_pending_match and not is_close_match:
         return
 
     panel = getattr(self, 'synthetic_panel', None)
@@ -247,20 +243,13 @@ def _on_order_status(self, oid: int, status: str,
         _deactivate_chaser_safe(self, reason="체결 완료")
         self._chaser_current_oid = None
         from PyQt5.QtCore import QTimer as _QT
-        _QT.singleShot(10_000, lambda: getattr(  # [FIX] 30초→10초
+        _QT.singleShot(30_000, lambda: getattr(
             self, '_exec_known_oids', set()).discard(oid))
 
     # ── 취소 확인 ────────────────────────────────────────────
     elif status in _STATUS_CANCELLED:
         self._log(f"✕ OID={oid} 취소 확인됨")
         _set_panel_cancelled(panel, oid)
-        # [FIX-EXT] 외부 주문 취소 시 미체결 캐시·탭 갱신
-        _cached = getattr(self, '_cached_open_orders', [])
-        _updated = [o for o in _cached if o.get('oid') != oid]
-        if len(_updated) != len(_cached):
-            self._cached_open_orders = _updated
-            if panel and hasattr(panel, 'update_open_orders'):
-                panel.update_open_orders(_updated)
         _deactivate_chaser_safe(self, reason="취소 확인")
         try:
             from combo_order_special_condition import SpecialFillWatcher
@@ -467,10 +456,9 @@ def _start_position_price_stream(self, pending: dict) -> None:
         self._pos_stream_slots[oid].append(slot)
         try:
             from ibapi.contract import Contract as IbContract
-            from combo_order_bag import _get_selected_exchange as _gse
             c = IbContract()
             c.conId    = con_id
-            c.exchange = _gse(self)
+            c.exchange = "SMART"
             ib.reqMktData(tid, c, "", False, False, [])
             self._log(
                 f"📡 실시간 손익 구독: 레그{i+1} "
@@ -522,6 +510,49 @@ def _get_leg_conid(self, leg: dict) -> int:
         return int(_CONID_CACHE.get(key, 0))
     except Exception:
         return 0
+
+
+def restart_position_price_streams(self) -> None:
+    """
+    [RECONN] 재접속 후 기존 포지션 실시간 시세 구독 재시작.
+    restore_on_reconnect() 완료 후 호출.
+
+    흐름:
+      1. 기존 구독 전체 cancelMktData
+      2. panel._positions 순회
+      3. 각 포지션의 legs 로 _start_position_price_stream() 재호출
+    """
+    ib = getattr(getattr(self, 'mw', None), 'ib', None)
+    if not ib:
+        return
+    panel = getattr(self, 'synthetic_panel', None)
+    if not panel:
+        return
+
+    # 1) 기존 구독 전체 해제
+    for oid, tids in list(getattr(self, '_pos_stream_tids', {}).items()):
+        for tid in tids:
+            try: ib.cancelMktData(tid)
+            except Exception: pass
+    self._pos_stream_tids    = {}
+    self._pos_stream_slots   = {}
+    self._pos_mid_ticks      = {}
+
+    # 2) 현재 패널 포지션 순회 → 구독 재시작
+    positions = getattr(panel, '_positions', [])
+    restarted = 0
+    for pos in positions:
+        legs = pos.get('legs', [])
+        oid  = pos.get('oid')
+        if not legs or not oid:
+            continue
+        try:
+            _start_position_price_stream(self, pos)
+            restarted += 1
+        except Exception as e:
+            self._log(f"⚠ 재구독 실패 OID={oid}: {e}")
+
+    self._log(f"📡 재접속 실시간 손익 구독 재시작: {restarted}건")
 
 
 def stop_position_price_stream(self, oid: int) -> None:

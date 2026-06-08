@@ -18,9 +18,9 @@ SyntheticStatusPanel 클래스의 UI 구성 전용 믹스인.
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QTabWidget, QTableWidget, QHeaderView, QAbstractItemView,
-    QTableWidgetItem, QPushButton, QDoubleSpinBox,
+    QTableWidgetItem, QPushButton, QDoubleSpinBox, QSizePolicy,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QColor
 
 from combo_ui_panel_constants import _f, get_tab_style, get_tbl_style
@@ -93,6 +93,9 @@ class _SyntheticPanelBuildMixin:
                 sys.path.insert(0, _this_dir)
             from Sleep_Order.sleep_order_ui import SleepOrderButton
             self._sleep_btn = SleepOrderButton(ref=None, parent=self)
+            # [FIX-FLOAT] Widget 플래그 강제 설정으로 독립창 방지
+            from PyQt5.QtCore import Qt as _Qt_sl
+            self._sleep_btn.setWindowFlags(_Qt_sl.Widget)
             mode_row.addWidget(self._sleep_btn)
         except Exception as _e:
             print(f"[SyntheticPanel] sleep_order 버튼 오류: {_e}")
@@ -116,22 +119,24 @@ class _SyntheticPanelBuildMixin:
 
         # ── 탭 위젯 ──────────────────────────────────────────
         self._tabs = QTabWidget()
-        # 탭 5개 — 스크롤 버튼 + 폰트 축소로 한 줄에 표시
+        # [FIX-RESIZE] setExpanding(False)가 탭 전환시 윈도우 확장을 유발
+        # → 구버전(5bf8438) 방식으로 복원: Expanding=True(기본값) 유지
         self._tabs.setUsesScrollButtons(True)
-        self._tabs.tabBar().setExpanding(False)
-        self._tabs.tabBar().setFont(_f(10, bold=False))
-        self._tabs.setStyleSheet(get_tab_style() +
-            "QTabBar::tab{padding:4px 6px;font-size:10px;}"
-            "QTabBar::tab:selected{font-weight:bold;}"
-            "QTabBar::scroller{width:16px;}"
-            "QTabBar QToolButton{background:#1c1c3a;color:#aaa;"
-            "border:1px solid #3a3a7a;min-width:14px;}")
-        self._tabs.addTab(self._build_margin_tab(),      "증거금")
-        self._tabs.addTab(self._build_position_tab(),    "잔고")
-        self._tabs.addTab(self._build_open_orders_tab(), "미체결")
+        self._tabs.tabBar().setFont(_f(12, bold=True))
+        self._tabs.setStyleSheet(get_tab_style())
+        self._tabs.addTab(self._build_margin_tab(),      "📊 증거금 확인")
+        self._tabs.addTab(self._build_position_tab(),    "📋 합성 잔고")
+        self._tabs.addTab(self._build_open_orders_tab(), "📋 미체결")
 
         self._scenario_tab = ScenarioTab()
-        self._tabs.addTab(self._scenario_tab, "시나리오")
+        self._tabs.addTab(self._scenario_tab, "📈 시나리오")
+
+        # [FIX-RESIZE] 탭 전환 시 각 탭 페이지의 sizeHint가 부모 윈도우를
+        # 강제 확장하지 못하도록 Ignored 정책 설정
+        for i in range(self._tabs.count()):
+            page = self._tabs.widget(i)
+            if page:
+                page.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
 
         root.addWidget(self._tabs)
 
@@ -319,16 +324,18 @@ class _SyntheticPanelBuildMixin:
             f"color:{t['group_title']};padding:14px;")
         lay.addWidget(self._lbl_no_pos)
 
-        self._tbl_pos = QTableWidget(0, 10)
+        self._tbl_pos = QTableWidget(0, 10)  # 컬럼 10개: 0~9, 인덱스9=청산예약
         self._tbl_pos.setHorizontalHeaderLabels(
-            ["만기", "전략명", "수량", "진입가", "현재가", "손익", "수익률", "상태", "청산예약"])
+            ["만기", "전략명", "수량", "진입가", "현재가", "손익", "수익률", "5P손익(%)", "상태", "청산예약"])
         self._tbl_pos.setFont(_f(12))
         self._tbl_pos.horizontalHeader().setFont(_f(11, bold=True))
         self._tbl_pos.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeToContents)
+        # [FIX-COL] Stretch → Interactive: 전략명이 col9(청산예약)를 밀어내는 문제 방지
         self._tbl_pos.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.Stretch)
-        for c in range(2, 10):
+            1, QHeaderView.Interactive)
+        self._tbl_pos.setColumnWidth(1, 180)  # 전략명 기본 너비
+        for c in range(2, 9):
             self._tbl_pos.horizontalHeader().setSectionResizeMode(
                 c, QHeaderView.ResizeToContents)
         self._tbl_pos.verticalHeader().setVisible(False)
@@ -338,9 +345,14 @@ class _SyntheticPanelBuildMixin:
         self._tbl_pos.setVisible(False)
         self._tbl_pos.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._tbl_pos.cellClicked.connect(self._on_pos_row_clicked)
-        self._tbl_pos.setColumnWidth(8, 70)   # 청산예약 최소 너비
+        # 컬럼9 = 청산예약: 너비 90px 고정, 행 높이 28px 보장
+        self._tbl_pos.setColumnWidth(9, 90)
         self._tbl_pos.horizontalHeader().setSectionResizeMode(
-            8, QHeaderView.Fixed)
+            9, QHeaderView.Fixed)
+        self._tbl_pos.verticalHeader().setDefaultSectionSize(28)
+        # [FIX-COL] 스크롤바 항상 표시로 col9가 잘리지 않도록
+        from PyQt5.QtCore import Qt as _Qt_tbl
+        self._tbl_pos.setHorizontalScrollBarPolicy(_Qt_tbl.ScrollBarAsNeeded)
         lay.addWidget(self._tbl_pos, 1)
 
         lay.addWidget(self._build_close_control_row())

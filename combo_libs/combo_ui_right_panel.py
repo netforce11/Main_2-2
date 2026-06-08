@@ -8,7 +8,6 @@ combo_ui_right_panel.py — 우측 패널 UI 빌드 전담
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QGroupBox, QSplitter, QSpinBox,
-    QRadioButton, QButtonGroup,
 )
 from PyQt5.QtCore import Qt
 
@@ -271,39 +270,6 @@ class RightPanelMixin:
             "✖ 취소", "#2a0a0a", "#ff4444",
             self._on_cancel_order, "btn_cancel_order", role="cancel")
         grp_a.addWidget(self.btn_cancel_order)
-
-        # ════════════════════════════════════════════════════
-        # 거래소 선택: CBOE(기본) / SMART  — 라디오버튼
-        # ════════════════════════════════════════════════════
-        _exch_sep = QLabel("│")
-        _exch_sep.setStyleSheet("color:#444;font-size:16px;border:none;")
-        _exch_sep.setFixedWidth(12)
-        _exch_sep.setAlignment(Qt.AlignCenter)
-        grp_a.addWidget(_exch_sep)
-
-        _exch_lbl = QLabel("거래소:")
-        _exch_lbl.setStyleSheet("color:#ccc;font-size:11px;font-weight:bold;border:none;")
-        grp_a.addWidget(_exch_lbl)
-
-        _rss = (
-            "QRadioButton{color:#e0e0e0;font-size:12px;font-weight:bold;spacing:4px;}"
-            "QRadioButton::indicator{width:14px;height:14px;border-radius:7px;}"
-            "QRadioButton::indicator:unchecked{background:#222;border:2px solid #666;}"
-            "QRadioButton::indicator:checked{background:#fff;border:2px solid #aaa;}"
-        )
-        self.chk_exch_cboe = QRadioButton("CBOE")
-        self.chk_exch_cboe.setChecked(True)
-        self.chk_exch_cboe.setStyleSheet(_rss)
-        grp_a.addWidget(self.chk_exch_cboe)
-
-        self.chk_exch_smart = QRadioButton("SMART")
-        self.chk_exch_smart.setChecked(False)
-        self.chk_exch_smart.setStyleSheet(_rss)
-        grp_a.addWidget(self.chk_exch_smart)
-
-        self._exch_btn_grp = QButtonGroup(self)
-        self._exch_btn_grp.addButton(self.chk_exch_cboe)
-        self._exch_btn_grp.addButton(self.chk_exch_smart)
 
         v.addLayout(grp_a)
 
@@ -762,6 +728,11 @@ from combo_order_utils import (  # noqa: F401
 # v2.9 이후 combo_order_bag.py 에서 전담. 이 파일에 중복 정의하지 않음.
 
 # 유틸 함수 바인딩
+# ── [FIX-RECONN] 재연결 훅 바인딩 — core_conn_ibkr.py 에서 hasattr 체크 ──
+from combo_order_logic import _on_pos_reconnect_hook as _reconn_hook
+from combo_order_callbacks import restart_position_price_streams as _restart_streams
+RightPanelMixin._on_pos_reconnect_hook          = _reconn_hook        # type: ignore[attr-defined]
+RightPanelMixin._restart_position_price_streams = _restart_streams    # type: ignore[attr-defined]
 RightPanelMixin._request_margin_then_order = _request_margin_then_order  # type: ignore[attr-defined]
 RightPanelMixin._parse_legs_from_table     = _parse_legs_from_table      # type: ignore[attr-defined]
 RightPanelMixin._calc_required_margin      = _calc_required_margin       # type: ignore[attr-defined]

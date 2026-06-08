@@ -1,19 +1,13 @@
 """
 order_panel/tab_amend_cancel.py — 탭2 「✏ 정정」 / 탭3 「✕ 취소」 UI 빌드
-════════════════════════════════════════════════════════════════════════
-포함:
-  build_amend_tab(mixin, tab_w)  → 정정 탭 위젯을 tab_w에 추가
-  build_cancel_tab(mixin, tab_w) → 취소 탭 위젯을 tab_w에 추가
-  _make_order_tbl(tbl_s)         → 공통 미체결 주문 테이블 생성
+[v6.7 수정] 취소 탭에 "미체결 전체 취소" 버튼 추가
 """
-
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit, QSpinBox,
     QTableWidget, QHeaderView, QAbstractItemView,
 )
 from PyQt5.QtCore import Qt
-
 from .helpers import _animate_press, _kst_now
 
 _TBL_S = (
@@ -119,13 +113,28 @@ def build_cancel_tab(m, tab_w) -> None:
     m.cancel_oid = QLineEdit(); m.cancel_oid.setPlaceholderText("위 목록 클릭 or 직접 입력")
     m.cancel_oid.setStyleSheet(_ES); m.cancel_oid.setFixedHeight(26); cv.addWidget(m.cancel_oid)
 
-    btn_cancel = QPushButton("✕ 취소 전송")
+    # ── 취소 버튼 2개 ────────────────────────────────────────
+    btn_cancel = QPushButton("✕ 선택 주문 취소")
     btn_cancel.setStyleSheet(
         "QPushButton{background:#6b1a1a;color:#ff6666;font-size:15px;"
         "font-weight:bold;padding:10px;border-radius:4px;}"
         "QPushButton:pressed{background:#4b0a0a;padding-top:12px;padding-bottom:8px;}")
     btn_cancel.clicked.connect(lambda: (_animate_press(btn_cancel), m._cancel_order()))
     cv.addWidget(btn_cancel)
+
+    # ── [추가] 미체결 전체 취소 버튼 ─────────────────────────
+    btn_cancel_all = QPushButton("✕✕ 미체결 전체 취소")
+    btn_cancel_all.setFixedHeight(36)
+    btn_cancel_all.setStyleSheet(
+        "QPushButton{background:#8b2222;color:#ffaaaa;font-size:14px;"
+        "font-weight:bold;border-radius:4px;border:1px solid #cc4444;}"
+        "QPushButton:hover{background:#aa2a2a;}"
+        "QPushButton:pressed{background:#660000;}")
+    btn_cancel_all.setToolTip(
+        "조회된 미체결 주문 목록 전체를 취소합니다.\n"
+        "먼저 [미체결 주문 조회]를 클릭하세요.")
+    btn_cancel_all.clicked.connect(m._cancel_all_orders)
+    cv.addWidget(btn_cancel_all)
 
     m.lbl_cancel_status = QLabel("대기 중")
     m.lbl_cancel_status.setAlignment(Qt.AlignCenter)

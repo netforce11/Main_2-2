@@ -1,0 +1,236 @@
+======================================
+  내부 의존성 맵 — Main2_1
+  생성: 20260602_203608
+======================================
+
+📄 call_put_tab.chain_saver.core_conn
+   └→ call_put_tab.core_conn_account
+   └→ call_put_tab.core_conn_expiry
+   └→ call_put_tab.core_conn_ibkr
+   └→ call_put_tab.core_conn_signals
+   └→ call_put_tab.core_conn_spxw
+
+📄 call_put_tab.chain_saver.core_fetch
+   └→ call_put_tab.core_fetch_pos
+
+📄 call_put_tab.chain_saver.__init__
+   └→ call_put_tab.chain_saver.scheduler
+   └→ call_put_tab.chain_saver.worker
+
+📄 call_put_tab.chain_saver._init_saver
+   └→ call_put_tab.chain_saver.buffer
+   └→ call_put_tab.chain_saver.scheduler
+   └→ call_put_tab.chain_saver.worker
+
+📄 call_put_tab.chain_saver.scheduler
+   └→ call_put_tab.chain_saver
+   └→ call_put_tab.chain_saver.buffer
+   └→ call_put_tab.chain_saver.db
+   └→ call_put_tab.chain_saver.snapshot
+   └→ call_put_tab.chain_saver.worker
+   └→ core_io
+
+📄 call_put_tab.chain_saver.worker
+   └→ call_put_tab.chain_saver.buffer
+   └→ call_put_tab.chain_saver.db
+
+📄 call_put_tab.core_conn_expiry
+   └→ call_put_tab.core_conn_spxw
+   └→ call_put_tab.core_expiry_utils
+
+📄 call_put_tab.core_conn_ibkr
+   └→ call_put_tab.core_conn_spxw
+
+📄 call_put_tab.core_conn
+   └→ call_put_tab.core_conn_account
+   └→ call_put_tab.core_conn_expiry
+   └→ call_put_tab.core_conn_ibkr
+   └→ call_put_tab.core_conn_signals
+   └→ call_put_tab.core_conn_spxw
+
+📄 call_put_tab.core_conn_signals
+   └→ call_put_tab.core_conn_fill
+   └→ call_put_tab.core_conn_tick_cache
+   └→ call_put_tab.core_conn_watchdog
+
+📄 call_put_tab.core_conn_spxw
+   └→ call_put_tab.core_expiry_utils
+   └→ core_expiry
+
+📄 call_put_tab.core_fetch_chain
+   └→ call_put_tab.core_fetch_contracts
+
+📄 call_put_tab.core_fetch
+   └→ call_put_tab.core_fetch_contracts
+   └→ call_put_tab.core_fetch_pos
+   └→ call_put_tab.core_fetch_subscribe
+   └→ call_put_tab.core_fetch_table
+   └→ call_put_tab.core_fetch_watchlist
+
+📄 call_put_tab.core_fetch_subscribe
+   └→ call_put_tab.core_fetch_chain
+   └→ call_put_tab.core_fetch_contracts
+
+📄 call_put_tab.core_fetch_table
+   └→ call_put_tab.core_fetch_contracts
+   └→ call_put_tab.core_fetch_subscribe
+
+📄 call_put_tab.core_fetch_watchlist
+   └→ call_put_tab.core_fetch_contracts
+   └→ call_put_tab.core_fetch_table
+
+📄 call_put_tab.__init__
+   └→ call_put_tab._init_saver
+   └→ call_put_tab.tab_options
+
+📄 call_put_tab._init_saver
+   └→ call_put_tab.chain_saver
+   └→ call_put_tab.chain_saver.snapshot
+
+📄 call_put_tab.order_logic
+   └→ call_put_tab.order_amend_cancel
+   └→ call_put_tab.order_quick
+   └→ call_put_tab.order_sniper
+
+📄 call_put_tab.order_panel.__init__
+   └→ call_put_tab.order_panel.emergency
+   └→ call_put_tab.order_panel.helpers
+   └→ call_put_tab.order_panel.order_actions
+   └→ call_put_tab.order_panel.sell_actions
+   └→ call_put_tab.order_panel.shortcuts
+   └→ call_put_tab.order_panel.tab_amend_cancel
+   └→ call_put_tab.order_panel.tab_new_order
+   └→ call_put_tab.order_panel.tab_sell
+   └→ call_put_tab.order_panel.tab_sniper
+
+📄 call_put_tab.order_panel_util
+   └→ call_put_tab.order_panel_common
+
+📄 call_put_tab.order_sniper_manage
+   └→ call_put_tab.order_sniper_persist
+
+📄 call_put_tab.order_sniper
+   └→ call_put_tab.order_sniper_exec
+   └→ call_put_tab.order_sniper_manage
+
+📄 call_put_tab.tab_options_panels
+   └→ call_put_tab.tab_options_price
+
+📄 call_put_tab.tab_options
+   └→ call_put_tab.auto_fetch_next_day
+   └→ call_put_tab.auto_spx_fetch
+   └→ call_put_tab.core_conn
+   └→ call_put_tab.core_fetch
+   └→ call_put_tab.order_logic
+   └→ call_put_tab.order_panel
+   └→ call_put_tab.order_panel_util
+   └→ call_put_tab.tab_options_chart
+   └→ call_put_tab.tab_options_panels
+   └→ call_put_tab.tab_options_settings
+   └→ call_put_tab.watch_cond_widget
+   └→ call_put_tab.watch_logic
+   └→ call_put_tab.watch_log_widget
+
+📄 call_put_tab.watch_cond_widget
+   └→ watch_dog.alert_engine
+   └→ watch_dog.alert_logger
+
+📄 chart_panel_tabs
+   └→ spxw_core
+
+📄 combo_libs.core_conn_ibkr
+   └→ call_put_tab.core_conn_spxw
+
+📄 core
+   └→ core_contract
+   └→ core_expiry
+   └→ core_io
+   └→ core_tab_wrapper
+   └→ core_theme
+
+📄 core_tab_wrapper
+   └→ core_io
+
+📄 core_ui
+   └→ core_theme
+
+📄 main_backup
+   └→ GreeksGrid
+   └→ tab_account
+
+📄 main_color_config
+   └→ core_theme
+
+📄 main
+   └→ call_put_tab
+   └→ core_theme
+   └→ GreeksGrid
+   └→ shared_chain_store
+   └→ strategy_report.tab_report
+   └→ tab_chart_libs
+   └→ telegram_bot
+   └→ telegram_bot.tg_client
+   └→ watch_dog
+
+📄 spread_tele..init
+   └→ spread_tele_bot
+
+📄 spxw_1min_tab
+   └→ spxw_core
+
+📄 spxw_main
+   └→ spxw_core
+
+📄 spxw_tab
+   └→ spxw_core
+
+📄 tab_account.balance_grid
+   └→ tab_account.balance_data
+   └→ tab_account.balance_journal
+   └→ tab_account.balance_pnl
+   └→ tab_account.balance_session
+
+📄 tab_account.greeks_grid
+   └→ GreeksSaveMixin
+   └→ tab_account.greeks_save
+
+📄 tab_account.multi_price_build
+   └→ tab_account.multi_price_panels
+   └→ tab_account.multi_price_slots
+
+📄 tab_account.multi_price_grid
+   └→ tab_account.multi_price_build
+   └→ tab_account.multi_price_logic
+
+📄 tab_account.multi_price_logic
+   └→ tab_account.multi_price_sound
+
+📄 tab_account.multi_price_panels
+   └→ tab_account.multi_price_slots
+
+📄 tab_account
+   └→ GreeksGrid
+   └→ tab_account.balance_grid
+   └→ tab_account.greeks_grid
+   └→ tab_account.multi_price_grid
+
+📄 tab_account.tab_account
+   └→ GreeksGrid
+   └→ tab_account.balance_grid
+   └→ tab_account.greeks_grid
+   └→ tab_account.multi_price_grid
+
+📄 tab_combo_strategy
+   └→ combo_logic
+   └→ combo_optimizer
+
+📄 telegram_bot.alert_notifier
+   └→ telegram_bot.tg_client
+
+📄 telegram_bot.integration_examples
+   └→ telegram_bot.tg_client
+   └→ telegram_bot.tg_command_router
+
+📄 watch_dog.__init__
+   └→ watch_dog.alert_engine
+

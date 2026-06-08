@@ -1,5 +1,5 @@
 """
-combo_order_logic.py — 합성 주문 버튼 핸들러  v2.1-fix
+combo_order_logic.py — 합성 주문 버튼 핸들러  v2.2-fix
 ──────────────────────────────────────────────────────
 [FIX-RECONN-RACE] _on_pos_reconnect_hook:
   _pos_hook_active 세팅을 atomic하게 처리
@@ -374,7 +374,8 @@ def _close_ib_position(self, pos: dict, lmt_price: float = None,
                 pass
     except Exception as e:
         # [FIX-OID-INACTIVE] 주문 실패 시 _close_oid_set 오염 방지
-        self._close_oid_set.discard(oid)
+        # [FIX-CLOSE-SET] AttributeError 방지
+        getattr(self, '_close_oid_set', set()).discard(oid)
         self._log(f"❌ 청산 오류: {e}")
 
 
@@ -407,9 +408,13 @@ def _init_synthetic_panel_callbacks(self):
         lambda server: setattr(self, '_margin_mode_server', server))
 
     self._margin_mode_server     = False
-    self._cached_available_funds = 1_000_000.0
-    self._whatif_acct_cache      = {}
-    self._acct_fetched_once      = False
+    # 재연결 시 기존 잔고 캐시 유지 (덮어쓰지 않음)
+    if not hasattr(self, '_cached_available_funds') or self._cached_available_funds == 0.0:
+        self._cached_available_funds = 1_000_000.0
+    if not hasattr(self, '_whatif_acct_cache'):
+        self._whatif_acct_cache = {}
+    if not hasattr(self, '_acct_fetched_once'):
+        self._acct_fetched_once = False
 
     if not hasattr(self, '_close_oid_set'):
         self._close_oid_set = set()
@@ -474,7 +479,7 @@ def _on_pos_reconnect_hook(self):
         self._log("⚠ 재연결 훅 중복 호출 무시 (1초 이내)")
         return
     self._reconn_hook_ts    = _now
-    self._pos_hook_active   = False   # 항상 초기화
+    # [FIX-HOOK-DBL] dead code 제거
     self._pos_hook_active   = True
 
     # [FIX-CACHE] 재연결 시 체결 캐시 초기화 (오래된 OID 데이터 혼입 방지)

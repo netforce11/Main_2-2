@@ -313,6 +313,14 @@ def restore_on_reconnect(self) -> None:
         if skipped:
             msg += f"  / 만기만료 {skipped}건 제외"
         self._log(msg)
+        # [RECONN] 파일 복원 후에도 실시간 손익 재구독
+        try:
+            from combo_order_callbacks import restart_position_price_streams
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(800,
+                lambda: restart_position_price_streams(self))
+        except Exception:
+            pass
 
     # ── 1단계: IB reqPositions() 먼저 발사 ─────────────────
     self._log("🔄 IB 서버 잔고 조회 중...")
@@ -488,6 +496,14 @@ def restore_on_reconnect(self) -> None:
             f"✅ IB 서버 기반 복원 완료 "
             f"(파일={len(saved_by_oid)}건 "
             f"보정={updated}건 추가={added}건)")
+        # [RECONN] 복원 완료 후 실시간 손익 구독 재시작
+        try:
+            from combo_order_callbacks import restart_position_price_streams
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(500,
+                lambda: restart_position_price_streams(self))
+        except Exception as _e:
+            self._log(f"⚠ 재구독 시작 오류: {_e}")
 
     ib.position    = _on_pos
     ib.positionEnd = _on_pos_end
@@ -499,7 +515,7 @@ def restore_on_reconnect(self) -> None:
         self._log("⚠ IB 서버 응답 없음(30초 타임아웃) — 파일 기반 복원으로 폴백")
         _restore_done(show_file=True)
 
-    QTimer.singleShot(5_000, _timeout)   # [FIX] 30초→5초
+    QTimer.singleShot(30_000, _timeout)
 
     try:
         ib.reqPositions()
